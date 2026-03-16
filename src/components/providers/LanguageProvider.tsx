@@ -34,6 +34,15 @@ const translations = {
     "dash.performance": "Course Performance",
     "dash.completion": "Completion Rate",
     "dash.quiz_success": "Quiz Success",
+    "std.dashboard": "My Dashboard",
+    "std.courses": "Enrolled Courses",
+    "std.quizzes": "My Quizzes",
+    "std.certificates": "My Certificates",
+    "std.marks": "Recent Marks",
+    "std.progress": "Learning Progress",
+    "std.active": "Active Courses",
+    "std.welcome": "Welcome back,",
+    "std.subtitle": "Continue your learning journey."
   },
   ar: {
     "nav.home": "الشاشة الرئيسية",
@@ -57,6 +66,15 @@ const translations = {
     "dash.performance": "أداء الدورة",
     "dash.completion": "معدل الإكمال",
     "dash.quiz_success": "نجاح الاختبار",
+    "std.dashboard": "لوحة التحكم",
+    "std.courses": "دوراتي المسجلة",
+    "std.quizzes": "اختباراتي",
+    "std.certificates": "شهاداتي",
+    "std.marks": "الدرجات الأخيرة",
+    "std.progress": "تقدمي الدراسي",
+    "std.active": "الدورات النشطة",
+    "std.welcome": "مرحباً بك مجدداً،",
+    "std.subtitle": "لنكمل رحلتك التعليمية."
   },
 };
 
