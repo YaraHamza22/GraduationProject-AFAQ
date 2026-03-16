@@ -20,9 +20,9 @@
 }
 
 :root {
-  --background: #ffffff;
+  --background: #f1f5f9; /* Solid slate-100 */
   --foreground: #0f172a;
-  --border: rgba(0, 0, 0, 0.1);
+  --border: #cbd5e1; /* Solid slate-300 */
 }
 
 .dark {

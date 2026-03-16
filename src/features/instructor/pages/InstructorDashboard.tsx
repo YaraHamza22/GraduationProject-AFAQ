@@ -67,7 +67,7 @@ export default function InstructorDashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1 }}
-            className="p-6 rounded-[32px] bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-white/5 backdrop-blur-xl relative group overflow-hidden shadow-sm dark:shadow-none"
+            className="p-6 rounded-[32px] bg-white dark:bg-white/5 border border-slate-300 dark:border-white/5 backdrop-blur-xl relative group overflow-hidden shadow-sm dark:shadow-none"
           >
             <div className={`absolute top-0 right-0 p-8 opacity-10 group-hover:scale-150 transition-transform duration-700`}>
                 <stat.icon className={`w-24 h-24 ${stat.color}`} />
@@ -99,7 +99,7 @@ export default function InstructorDashboard() {
                         initial={{ opacity: 0, x: isRTL ? 20 : -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.4 + idx * 0.1 }}
-                        className="group p-4 rounded-3xl bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-white/5 hover:border-indigo-500/30 hover:bg-white dark:hover:bg-white/10 transition-all flex items-center gap-6 shadow-sm dark:shadow-none"
+                        className="group p-4 rounded-3xl bg-white dark:bg-white/5 border border-slate-300 dark:border-white/5 hover:border-indigo-500/30 hover:shadow-md dark:hover:bg-white/10 transition-all flex items-center gap-6 shadow-sm dark:shadow-none"
                     >
                         <div className="w-24 h-20 rounded-2xl overflow-hidden shrink-0">
                             <img src={course.image} alt={course.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
@@ -133,7 +133,7 @@ export default function InstructorDashboard() {
                  </button>
              </div>
 
-             <div className="p-6 rounded-[32px] bg-white/50 dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm dark:shadow-none">
+             <div className="p-6 rounded-[32px] bg-white dark:bg-white/5 border border-slate-300 dark:border-white/5 shadow-sm dark:shadow-none">
                  <h4 className="text-lg font-bold mb-6 flex items-center gap-2">
                      <TrendingUp className="w-5 h-5 text-emerald-500" />
                      {t("dash.performance")}

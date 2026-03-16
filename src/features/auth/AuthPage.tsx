@@ -110,7 +110,7 @@ export default function AuthPage() {
         transition={{
           layout: { duration: 0.8, ease: [0.22, 1, 0.36, 1] }
         }}
-        className={`relative w-full max-w-5xl h-[750px] flex shadow-[0_32px_64px_rgba(0,0,0,0.2)] dark:shadow-[0_32px_64px_rgba(0,0,0,0.5)] rounded-[40px] overflow-hidden glass border-slate-200 dark:border-white/10 ${!isLogin ? "flex-row-reverse" : "flex-row"
+        className={`relative w-full max-w-5xl h-[750px] flex shadow-[0_32px_64px_rgba(0,0,0,0.2)] dark:shadow-[0_32px_64px_rgba(0,0,0,0.5)] rounded-[40px] overflow-hidden glass border border-slate-300 dark:border-white/10 ${!isLogin ? "flex-row-reverse" : "flex-row"
           }`}
       >
         {/* Form Side */}
@@ -152,7 +152,7 @@ export default function AuthPage() {
                       <input
                         type="text"
                         placeholder="Yara Al-Sayed"
-                        className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
+                        className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
                       />
                     </div>
                   </div>
@@ -165,7 +165,7 @@ export default function AuthPage() {
                     <input
                       type="email"
                       placeholder="yara@example.com"
-                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
+                      className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
                     />
                   </div>
                 </div>
@@ -235,7 +235,7 @@ export default function AuthPage() {
                           value={address}
                           onChange={(e) => setAddress(e.target.value)}
                           placeholder="Building No, Street Name, District, City"
-                          className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
+                          className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
                         />
                       </div>
                     </div>

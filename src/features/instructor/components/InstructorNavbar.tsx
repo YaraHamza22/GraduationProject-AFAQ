@@ -69,8 +69,8 @@ export default function InstructorNavbar() {
   const { theme, setTheme } = useTheme();
 
   return (
-    <nav className={`fixed top-0 h-screen w-20 md:w-64 bg-(--background) flex flex-col z-50 transition-colors duration-300 ${
-      isRTL ? "right-0 border-l border-slate-200 dark:border-white/5" : "left-0 border-r border-slate-200 dark:border-white/5"
+    <nav className={`fixed top-0 h-screen w-20 md:w-64 bg-white dark:bg-(--background) flex flex-col z-50 transition-colors duration-300 ${
+      isRTL ? "right-0 border-l border-slate-300 dark:border-white/5" : "left-0 border-r border-slate-300 dark:border-white/5"
     }`}>
       {/* Logo Section */}
       <div className="p-6 mb-8">
