@@ -53,7 +53,7 @@ export default function AdminLoginScreen() {
         </motion.div>
         
         {/* Geometric Space Grid */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.03)_1px,transparent_1px)] bg-[size:60px_60px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,#000_20%,transparent_100%)] opacity-30 dark:opacity-20" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.03)_1px,transparent_1px)] bg-size-[60px_60px] mask-[radial-gradient(ellipse_80%_50%_at_50%_50%,#000_20%,transparent_100%)] opacity-30 dark:opacity-20" />
         
         {/* Grainy Noise Overlay */}
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] dark:opacity-[0.05] mix-blend-overlay pointer-events-none" />
@@ -78,11 +78,11 @@ export default function AdminLoginScreen() {
             initial={{ opacity: 0, y: 30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ type: "spring", damping: 20, stiffness: 100 }}
-            className={`relative z-10 w-full max-w-[1100px] grid lg:grid-cols-2 gap-0 overflow-hidden rounded-[56px] border border-slate-200 dark:border-white/10 bg-white/40 dark:bg-black/40 backdrop-blur-[40px] shadow-[0_32px_120px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_32px_120px_-15px_rgba(0,0,0,0.5)] ${isRTL ? "flex-row-reverse" : ""}`}
+            className={`relative z-10 w-full max-w-[1100px] grid lg:grid-cols-2 gap-0 overflow-hidden rounded-[56px] border border-slate-200 dark:border-white/10 bg-white/40 dark:bg-black/40 backdrop-blur-2xl shadow-[0_32px_120px_-15px_rgba(0,0,0,0.1)] dark:shadow-[0_32px_120px_-15px_rgba(0,0,0,0.5)] ${isRTL ? "flex-row-reverse" : ""}`}
           >
             
             {/* HOLOGRAPHIC VISUAL PANEL */}
-            <div className="hidden lg:flex relative p-20 flex-col justify-between overflow-hidden bg-indigo-50/20 dark:bg-white/[0.02]">
+            <div className="hidden lg:flex relative p-20 flex-col justify-between overflow-hidden bg-indigo-50/20 dark:bg-white/2">
               <div className="absolute top-0 left-0 w-full h-full bg-linear-to-br from-indigo-500/10 to-transparent pointer-events-none" />
               
               <div className="relative z-10">
@@ -95,7 +95,7 @@ export default function AdminLoginScreen() {
 
                 <div className="space-y-8">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-[24px] bg-linear-to-br from-indigo-600 to-violet-700 p-[1px]">
+                    <div className="w-16 h-16 rounded-[24px] bg-linear-to-br from-indigo-600 to-violet-700 p-px">
                       <div className="w-full h-full rounded-[23px] bg-white dark:bg-indigo-950/50 flex items-center justify-center backdrop-blur-xl">
                         <Shield className="w-8 h-8 text-indigo-600 dark:text-white" />
                       </div>
