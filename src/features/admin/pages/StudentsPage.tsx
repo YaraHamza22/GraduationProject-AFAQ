@@ -20,7 +20,7 @@ const students = [
 export default function StudentsManagement() {
   const { t, isRTL } = useLanguage();
   return (
-    <div className={`p-8 md:p-12 relative min-h-screen selection:bg-indigo-500/30 ${isRTL ? "text-right" : ""}`}>
+    <div className={`p-8 md:p-12 relative min-h-screen bg-slate-50 dark:bg-transparent selection:bg-indigo-500/30 ${isRTL ? "text-right" : ""}`}>
       <header className="mb-12 relative z-10">
         <div className={`flex flex-col md:flex-row md:items-center justify-between gap-6 ${isRTL ? "md:flex-row-reverse" : ""}`}>
           <div>

@@ -27,9 +27,9 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="p-8 md:p-12 relative min-h-screen">
+    <div className="p-8 md:p-12 relative min-h-screen bg-slate-50 dark:bg-transparent transition-colors duration-500">
       {/* Premium Background Effects */}
-      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-600/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+      <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-600/5 dark:bg-indigo-600/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none" />
 
       <header className="mb-12 relative z-10">
         <motion.div
@@ -120,17 +120,17 @@ export default function AdminDashboard() {
 
          {/* Side Widgets */}
          <div className="space-y-8">
-            <div className="p-10 rounded-[48px] bg-linear-to-br from-indigo-600 to-violet-800 relative overflow-hidden group shadow-2xl">
+            <div className="p-10 rounded-[48px] bg-slate-100 dark:bg-linear-to-br dark:from-indigo-600 dark:to-violet-800 border border-slate-200 dark:border-none relative overflow-hidden group shadow-sm dark:shadow-2xl">
                 <motion.div
                     animate={{ rotate: 15 }}
                     className={`absolute -bottom-8 ${isRTL ? '-left-8' : '-right-8'}`}
                 >
-                    <Zap className="w-64 h-64 text-white/5" />
+                    <Zap className="w-64 h-64 text-indigo-500/10 dark:text-white/5" />
                 </motion.div>
                 <div className={`relative z-10 space-y-6 ${isRTL ? 'text-right' : ''}`}>
-                    <h4 className="text-2xl font-black text-white tracking-tight">{t("adm.sys_status")}</h4>
-                    <p className="text-indigo-100/60 font-medium">{t("adm.status_desc")}</p>
-                    <button className="w-full py-4 bg-white text-indigo-900 font-black rounded-2xl shadow-xl transition-all hover:scale-[1.03] active:scale-95 uppercase tracking-widest text-[10px]">
+                    <h4 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{t("adm.sys_status")}</h4>
+                    <p className="text-slate-500 dark:text-indigo-100/60 font-medium">{t("adm.status_desc")}</p>
+                    <button className="w-full py-4 bg-indigo-600 dark:bg-white text-white dark:text-indigo-900 font-black rounded-2xl shadow-xl transition-all hover:scale-[1.03] active:scale-95 uppercase tracking-widest text-[10px]">
                         {t("adm.security_prot")}
                     </button>
                 </div>

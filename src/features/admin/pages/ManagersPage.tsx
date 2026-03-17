@@ -22,7 +22,7 @@ const managers = [
 export default function ManagersManagement() {
   const { t, isRTL } = useLanguage();
   return (
-    <div className={`p-8 md:p-12 relative min-h-screen ${isRTL ? "text-right" : ""}`}>
+    <div className={`p-8 md:p-12 relative min-h-screen bg-slate-50 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
       <header className="mb-12 relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className={isRTL ? "text-right" : "text-left"}>
           <div className={`flex items-center gap-2 text-indigo-500 font-extrabold uppercase tracking-[0.3em] text-[10px] mb-2 ${isRTL ? "flex-row-reverse" : ""}`}>

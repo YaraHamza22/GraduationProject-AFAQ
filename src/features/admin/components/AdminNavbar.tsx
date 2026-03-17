@@ -71,6 +71,21 @@ export default function AdminNavbar() {
   const pathname = usePathname();
   const { language, setLanguage, t, isRTL } = useLanguage();
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <nav className={`fixed top-0 h-screen w-20 md:w-64 bg-white dark:bg-[#020617] flex flex-col z-50 transition-colors duration-300 ${
+        isRTL ? "right-0 border-l border-slate-200 dark:border-white/5" : "left-0 border-r border-slate-200 dark:border-white/5"
+      }`}>
+        <div className="flex-1" />
+      </nav>
+    );
+  }
 
   return (
     <nav className={`fixed top-0 h-screen w-20 md:w-64 bg-white dark:bg-[#020617] flex flex-col z-50 transition-colors duration-300 ${
