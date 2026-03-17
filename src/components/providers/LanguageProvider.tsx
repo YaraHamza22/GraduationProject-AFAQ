@@ -42,7 +42,33 @@ const translations = {
     "std.progress": "Learning Progress",
     "std.active": "Active Courses",
     "std.welcome": "Welcome back,",
-    "std.subtitle": "Continue your learning journey."
+    "std.subtitle": "Continue your learning journey.",
+    "adm.portal": "Admin Portal",
+    "adm.dashboard": "Home Dashboard",
+    "adm.overview": "Overview",
+    "adm.management": "Management",
+    "adm.students": "Students",
+    "adm.instructors": "Instructors",
+    "adm.managers": "Managers",
+    "adm.secure_id": "Secure Identifier",
+    "adm.encrypted_pass": "Encrypted Pass",
+    "adm.init_auth": "Initialize Authorization",
+    "adm.return": "Return to Gateway",
+    "adm.sys_control": "System Control Center",
+    "adm.central_hub": "Central hub for platform analytics and oversight.",
+    "adm.total_students": "Total Students",
+    "adm.active_instructors": "Active Instructors",
+    "adm.pending_approvals": "Pending Approvals",
+    "adm.global_success_rate": "Global Success Rate",
+    "adm.growth": "Platform Growth",
+    "adm.realtime": "Real-time engagement metrics",
+    "adm.sys_status": "System Status",
+    "adm.status_desc": "All core systems are operational. Quantum Encryption layer is active.",
+    "adm.security_prot": "Security Protocols",
+    "adm.recent_events": "Recent Critical Events",
+    "adm.student_registry": "Student Registry",
+    "adm.faculty_admin": "Faculty Administration",
+    "adm.security_gov": "Security Governance"
   },
   ar: {
     "nav.home": "الشاشة الرئيسية",
@@ -74,7 +100,33 @@ const translations = {
     "std.progress": "تقدمي الدراسي",
     "std.active": "الدورات النشطة",
     "std.welcome": "مرحباً بك مجدداً،",
-    "std.subtitle": "لنكمل رحلتك التعليمية."
+    "std.subtitle": "لنكمل رحلتك التعليمية.",
+    "adm.portal": "بوابة المسؤول",
+    "adm.dashboard": "لوحة القيادة الرئيسية",
+    "adm.overview": "نظرة عامة",
+    "adm.management": "الإدارة",
+    "adm.students": "الطلاب",
+    "adm.instructors": "المدربون",
+    "adm.managers": "المدراء",
+    "adm.secure_id": "المعرف الآمن",
+    "adm.encrypted_pass": "كلمة المرور المشفرة",
+    "adm.init_auth": "بدء عملية المصادقة",
+    "adm.return": "العودة إلى البوابة",
+    "adm.sys_control": "مركز التحكم بالصيانة",
+    "adm.central_hub": "المركز الرئيسي لتحليلات المنصة والرقابة.",
+    "adm.total_students": "إجمالي الطلاب",
+    "adm.active_instructors": "المدربون النشطون",
+    "adm.pending_approvals": "الموافقات المعلقة",
+    "adm.global_success_rate": "معدل النجاح العالمي",
+    "adm.growth": "نمو المنصة",
+    "adm.realtime": "مقاييس التفاعل في الوقت الفعلي",
+    "adm.sys_status": "حالة النظام",
+    "adm.status_desc": "جميع الأنظمة الأساسية تعمل. طبقة التشفير الكمي نشطة.",
+    "adm.security_prot": "بروتوكولات الأمان",
+    "adm.recent_events": "الأحداث الهامة الأخيرة",
+    "adm.student_registry": "سجل الطلاب",
+    "adm.faculty_admin": "إدارة الهيئة التدريسية",
+    "adm.security_gov": "حوكمة الأمن"
   },
 };
 
@@ -84,7 +136,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>("en");
 
   const t = (key: string) => {
-    return translations[language][key as keyof typeof translations["en"]] || key;
+    return (translations[language] as any)[key] || key;
   };
 
   const isRTL = language === "ar";
