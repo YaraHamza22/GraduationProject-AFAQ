@@ -67,6 +67,11 @@ export default function InstructorNavbar() {
   const pathname = usePathname();
   const { language, setLanguage, t, isRTL } = useLanguage();
   const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <nav className={`fixed top-0 h-screen w-20 md:w-64 bg-white dark:bg-(--background) flex flex-col z-50 transition-colors duration-300 ${
@@ -143,7 +148,7 @@ export default function InstructorNavbar() {
             className="p-2 rounded-xl hover:bg-white dark:hover:bg-white/10 transition-colors shadow-sm dark:shadow-none"
             title="Toggle Theme"
           >
-            {theme === "dark" ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
+            {mounted && (theme === "dark" ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />)}
           </button>
         </div>
 

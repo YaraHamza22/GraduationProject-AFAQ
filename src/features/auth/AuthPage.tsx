@@ -34,13 +34,26 @@ export default function AuthPage() {
   const [role, setRole] = useState("Student");
   const [address, setAddress] = useState("");
   const [isLocating, setIsLocating] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const { theme, setTheme } = useTheme();
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate login and redirect to instructor dashboard
-    router.push("/instructor");
+    // Simulate login and redirect based on role
+    if (role === "Instructor") {
+      router.push("/instructor");
+    } else if (role === "Manager") {
+      router.push("/manager/dashboard");
+    } else if (role === "Student") {
+      router.push("/student");
+    } else {
+      router.push("/instructor"); // Default fallback
+    }
   };
 
   const handleGetLocation = () => {
@@ -97,7 +110,7 @@ export default function AuthPage() {
            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
            className="p-3 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-lg"
         >
-          {theme === "dark" ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
+          {mounted && (theme === "dark" ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />)}
         </button>
       </div>
 
