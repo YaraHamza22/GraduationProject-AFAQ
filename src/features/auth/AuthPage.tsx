@@ -123,7 +123,7 @@ export default function AuthPage() {
         transition={{
           layout: { duration: 0.8, ease: [0.22, 1, 0.36, 1] }
         }}
-        className={`relative w-full max-w-5xl h-[750px] flex shadow-[0_32px_64px_rgba(0,0,0,0.2)] dark:shadow-[0_32px_64px_rgba(0,0,0,0.5)] rounded-[40px] overflow-hidden glass border border-slate-300 dark:border-white/10 ${!isLogin ? "flex-row-reverse" : "flex-row"
+        className={`relative w-full max-w-5xl h-[750px] flex shadow-[0_32px_64px_rgba(0,0,0,0.2)] dark:shadow-[0_32px_64px_rgba(0,0,0,0.5)] rounded-[60px] overflow-hidden glass border border-slate-300 dark:border-white/10 ${!isLogin ? "flex-row-reverse" : "flex-row"
           }`}
       >
         {/* Form Side */}
@@ -307,71 +307,93 @@ export default function AuthPage() {
           </AnimatePresence>
         </motion.div>
 
-        {/* Gradient Side */}
+        {/* Visual Side */}
         <motion.div
           layout
-          className={`hidden md:block w-1/2 h-full relative overflow-hidden transition-all duration-1000 bg-linear-to-br ${gradients[gradientIdx]}`}
+          className="hidden md:flex w-1/2 h-full flex-col relative overflow-hidden transition-all duration-1000"
         >
-          {/* Decorative Elements */}
-          <div className="absolute inset-0 z-0">
-            <motion.div
-              animate={{
-                scale: [1, 1.2, 1],
-                rotate: [0, 45, 0],
-                x: [0, 20, 0]
-              }}
-              transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-              className="absolute -top-1/4 -right-1/4 w-[120%] h-[120%] bg-white/10 rounded-full blur-[100px]"
+          {/* Top Half - Study Image */}
+          <div className="h-[60%] relative overflow-hidden z-30 rounded-b-[100px] shadow-[0_20px_50px_rgba(0,0,0,0.4)]">
+            <motion.img 
+              initial={{ scale: 1.2 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+              src="https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&q=80&w=1200" 
+              className="absolute inset-0 w-full h-full object-cover blur-[0.2px]"
+              alt="Studying"
             />
-            <motion.div
-              animate={{
-                scale: [1, 1.3, 1],
-                y: [0, -30, 0]
-              }}
-              transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-              className="absolute -bottom-1/4 -left-1/4 w-full h-full bg-black/10 rounded-full blur-[80px]"
-            />
+            <div className="absolute inset-0 bg-indigo-900/30 mix-blend-overlay" />
+            <div className="absolute inset-0 bg-linear-to-b from-black/70 via-black/20 to-transparent" />
+            
+            <div className="relative z-10 h-full flex flex-col justify-center items-center">
+               <motion.h2 
+                 key={isLogin ? "welcome" : "join"}
+                 initial={{ y: 50, opacity: 0 }}
+                 animate={{ y: 0, opacity: 1 }}
+                 transition={{ delay: 0.5, duration: 0.8, ease: "circOut" }}
+                 className="text-7xl lg:text-[110px] font-black text-white leading-none tracking-tighter drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] select-none -translate-y-8"
+               >
+                 {isLogin ? "Welcome" : "Join the"}
+               </motion.h2>
+            </div>
           </div>
 
-          <div className="relative z-20 h-full flex flex-col justify-center items-center text-center p-16">
-            <AnimatePresence mode="wait">
+          {/* Bottom Half - Gradient & Info */}
+          <div className={`h-[50%] -mt-20 relative bg-linear-to-br transition-all duration-1000 z-10 ${gradients[gradientIdx]}`}>
+            {/* Decorative Elements */}
+            <div className="absolute inset-0 z-0">
               <motion.div
-                key={isLogin ? "msg-login" : "msg-register"}
-                initial={{ y: 20, opacity: 0, scale: 0.95 }}
-                animate={{ y: 0, opacity: 1, scale: 1 }}
-                exit={{ y: -20, opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                className="space-y-8"
+                animate={{
+                  scale: [1, 1.2, 1],
+                  rotate: [0, 45, 0],
+                }}
+                transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+                className="absolute -top-1/4 -right-1/4 w-[120%] h-[120%] bg-white/10 rounded-full blur-[100px]"
+              />
+            </div>
+
+            <div className="relative z-10 h-full flex flex-col items-center text-center px-16 pt-24 pb-12">
+              <motion.h2 
+                 initial={{ y: -50, opacity: 0 }}
+                 animate={{ y: 0, opacity: 1 }}
+                 transition={{ delay: 0.7, duration: 0.8, ease: "circOut" }}
+                 className="text-7xl lg:text-[110px] font-black text-white leading-none tracking-tighter drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)] select-none"
               >
-                <div className="inline-block p-4 rounded-3xl bg-white/10 backdrop-blur-md border border-white/20 mb-4">
-                  <User className="w-10 h-10 text-white" />
-                </div>
-                <h2 className="text-6xl font-black text-white leading-tight tracking-tighter">
-                  {isLogin ? "Welcome\nBack!" : "Join the\nFuture."}
-                </h2>
-                <div className="w-16 h-1.5 bg-white rounded-full mx-auto" />
-                <p className="text-white/80 text-xl font-medium max-w-sm mx-auto leading-relaxed">
-                  {isLogin
-                    ? "Enter your details to pick up where you left off. Your journey continues here."
-                    : "Create your account and start exploring a world of knowledge tailored for you."}
-                </p>
+                 {isLogin ? "Back!" : "Future."}
+              </motion.h2>
 
-                <div className="flex gap-3 justify-center mt-10">
-                  {[0, 1, 2].map((i) => (
-                    <motion.div
-                      key={i}
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{ duration: 2, delay: i * 0.4, repeat: Infinity }}
-                      className="w-3 h-3 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)]"
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            </AnimatePresence>
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={isLogin ? "msg-login" : "msg-register"}
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.6 }}
+                  className="mt-6 space-y-6"
+                >
+                  <div className="w-12 h-1 bg-white/40 mx-auto rounded-full" />
+                  <p className="text-white/90 text-lg font-medium max-w-sm mx-auto leading-relaxed drop-shadow-md">
+                    {isLogin
+                      ? "Enter your details to pick up where you left off. Your journey continues here."
+                      : "Create your account and start exploring a world of knowledge tailored for you."}
+                  </p>
+                  
+                  <div className="flex gap-2 justify-center pt-2">
+                    {[0, 1, 2].map((i) => (
+                      <motion.div
+                        key={i}
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{ duration: 2, delay: i * 0.4, repeat: Infinity }}
+                        className="w-1.5 h-1.5 rounded-full bg-white shadow-sm"
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            {/* Grain Effect */}
+            <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-overlay" style={{ backgroundImage: 'url("https://grainy-gradients.vercel.app/noise.svg")' }} />
           </div>
-
-          {/* Grain Effect */}
-          <div className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay" style={{ backgroundImage: 'url("https://grainy-gradients.vercel.app/noise.svg")' }} />
         </motion.div>
       </motion.div>
 
