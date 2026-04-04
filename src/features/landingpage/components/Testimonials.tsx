@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Star, CheckCircle2, Quote } from "lucide-react";
+import Image from "next/image";
 
 const testimonials = [
   {
@@ -82,7 +83,7 @@ export function Testimonials() {
 
               <div className="flex items-center gap-4">
                 <div className="relative">
-                  <img src={item.avatar} className="w-14 h-14 rounded-full border-2 border-indigo-500/30" alt={item.name} />
+                  <Image src={item.avatar} width={56} height={56} className="w-14 h-14 rounded-full border-2 border-indigo-500/30" alt={item.name} />
                   <div className="absolute -bottom-1 -right-1 bg-indigo-500 border-2 border-slate-950 rounded-full p-0.5">
                     <CheckCircle2 className="w-3 h-3 text-white" />
                   </div>

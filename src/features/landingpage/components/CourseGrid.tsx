@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Image from "next/image";
 import { Clock, Star, Users, ArrowUpRight } from "lucide-react";
 
 const courses = [
@@ -91,10 +92,11 @@ export function CourseGrid() {
               <div className="relative h-full bg-slate-900 border border-white/5 rounded-4xl overflow-hidden flex flex-col hover:border-white/10 transition-colors">
                 {/* Image Section */}
                 <div className="relative h-56 overflow-hidden">
-                  <img 
+                  <Image 
                     src={course.image} 
                     alt={course.title}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    fill
+                    className="object-cover transition-transform duration-700 group-hover:scale-110"
                   />
                   <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-2">
                     <Clock className="w-3.5 h-3.5 text-indigo-400" />
@@ -115,7 +117,7 @@ export function CourseGrid() {
 
                   <div className="mt-auto pt-6 border-t border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <img src={course.avatar} className="w-8 h-8 rounded-full border border-white/20" alt={course.instructor} />
+                      <Image src={course.avatar} width={32} height={32} className="w-8 h-8 rounded-full border border-white/20" alt={course.instructor} />
                       <span className="text-sm text-slate-400 font-medium">{course.instructor}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-slate-500">

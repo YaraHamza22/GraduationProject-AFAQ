@@ -4,8 +4,12 @@ import { Canvas } from "@react-three/fiber";
 import { Suspense } from "react";
 import { motion, Variants } from "framer-motion";
 import { ArrowRight, Play, Sparkles, TrendingUp, Users } from "lucide-react";
-import { Book3D } from "./Book3D";
+import dynamic from "next/dynamic";
 
+const Book3D = dynamic(() => import("./Book3D").then((mod) => mod.Book3D), { 
+  ssr: false,
+  loading: () => null
+});
 // Animation Variants
 const fadeUp: Variants = {
   hidden: { opacity: 0, y: 40 },
