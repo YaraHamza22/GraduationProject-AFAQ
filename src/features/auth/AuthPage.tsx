@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, User, MapPin, Phone, ChevronDown, ArrowRight, ArrowLeft, GraduationCap, Briefcase, ShieldCheck, Crosshair, Loader2 } from "lucide-react";
+import { Mail, Lock, User, MapPin, Phone, ChevronDown, ArrowRight, ArrowLeft, Loader2, Crosshair, Calendar, BookOpen, Globe, FileText, Star, AlertCircle, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Sun, Moon } from "lucide-react";
+import axios from "axios";
 
 const SyrianFlag = () => (
   <svg width="24" height="16" viewBox="0 0 3 2" className="rounded-sm shadow-sm">
@@ -31,29 +32,46 @@ const gradients = [
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [gradientIdx, setGradientIdx] = useState(0);
-  const [role, setRole] = useState("Student");
-  const [address, setAddress] = useState("");
   const [isLocating, setIsLocating] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    password_confirmation: "",
+    phone: "",
+    date_of_birth: "",
+    gender: "",
+    education_level: "",
+    address: "",
+    country: "",
+    bio: "",
+    specialization: "",
+  });
+
+  const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [generalError, setGeneralError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Simulate login and redirect based on role
-    if (role === "Instructor") {
-      router.push("/instructor");
-    } else if (role === "Manager") {
-      router.push("/manager/dashboard");
-    } else if (role === "Student") {
-      router.push("/student");
-    } else {
-      router.push("/instructor"); // Default fallback
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    // Clear error for the field being edited
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: [] }));
     }
+    setGeneralError(null);
   };
 
   const handleGetLocation = () => {
@@ -72,9 +90,9 @@ export default function AuthPage() {
           );
           const data = await response.json();
           if (data && data.display_name) {
-            setAddress(data.display_name);
+            setFormData((prev) => ({ ...prev, address: data.display_name }));
           } else {
-            setAddress(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+            setFormData((prev) => ({ ...prev, address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}` }));
           }
         } catch (error) {
           console.error("Error fetching address:", error);
@@ -90,21 +108,129 @@ export default function AuthPage() {
         if (error.code === 1) msg = "Please allow location access in your browser settings.";
         else if (error.code === 2) msg = "Could not determine your location. Please check your signal.";
         else if (error.code === 3) msg = "Location request timed out.";
-
         alert(msg);
       }
     );
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrors({});
+    setGeneralError(null);
+
+    if (isLogin) {
+      setIsLoading(true);
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+        const payload = {
+          email: formData.email,
+          password: formData.password
+        };
+        
+        const response = await axios.post(`${apiUrl}/auth/login`, payload, {
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+        
+        // Save token if provided by backend
+        if (response.data && response.data.data && response.data.data.token) {
+           localStorage.setItem('auth_token', response.data.data.token);
+        }
+
+        setSuccessMessage("Login successful! Redirecting...");
+        
+        setTimeout(() => {
+           router.push("/student");
+        }, 1500); // 1.5 seconds delay for snackbar
+
+      } catch (error) {
+        console.error("Login error:", error);
+        if (axios.isAxiosError(error) && error.response) {
+          if (error.response.status === 422 || error.response.status === 401) {
+             setGeneralError(error.response.data.message || "Invalid credentials. Please try again.");
+          } else {
+             setGeneralError('An unexpected error occurred from the server.');
+          }
+        } else {
+          setGeneralError('Network error. Please check your connection and the API server.');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      setIsLoading(true);
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+        
+        // Ensure the phone number starts with +963 if it doesn't already
+        let formattedPhone = formData.phone;
+        if (formattedPhone && !formattedPhone.startsWith('+')) {
+          // If the user typed 09... remove the leading 0 before prepending +963
+          formattedPhone = '+963' + formattedPhone.replace(/^0/, '');
+        }
+
+        const payload = {
+          ...formData,
+          phone: formattedPhone
+        };
+        
+        await axios.post(`${apiUrl}/auth/register`, payload, {
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+        
+        setIsLogin(true);
+        setSuccessMessage('Registration successful! You can now log in.');
+        setTimeout(() => setSuccessMessage(null), 4000);
+        
+      } catch (error) {
+        console.error("Registration error:", error);
+        if (axios.isAxiosError(error) && error.response) {
+          if (error.response.status === 422) {
+             setErrors(error.response.data.errors || {});
+             setGeneralError("Please fix the validation errors below.");
+          } else {
+             setGeneralError(error.response.data.message || 'An unexpected error occurred from the server.');
+          }
+        } else {
+          setGeneralError('Network error. Please check your connection and the API server.');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
   const toggleAuth = () => {
     setIsLogin(!isLogin);
-    // Truly randomize gradient on flip
+    setErrors({});
+    setGeneralError(null);
     setGradientIdx(Math.floor(Math.random() * gradients.length));
+    setFormData({
+      name: "",
+      email: "",
+      password: "",
+      password_confirmation: "",
+      phone: "",
+      date_of_birth: "",
+      gender: "",
+      education_level: "",
+      address: "",
+      country: "",
+      bio: "",
+      specialization: "",
+    });
+  };
+
+  const ErrorMessage = ({ name }: { name: string }) => {
+    if (!errors[name] || errors[name].length === 0) return null;
+    return <p className="text-red-500 dark:text-red-400 text-xs mt-1 ml-1 font-medium">{errors[name][0]}</p>;
   };
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#020617] flex items-center justify-center p-4 md:p-8 overflow-hidden font-sans transition-colors duration-300">
-      {/* Theme Toggle for Dev/Preview */}
       <div className="absolute top-4 right-4 z-50">
         <button 
            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -114,7 +240,6 @@ export default function AuthPage() {
         </button>
       </div>
 
-      {/* Background blobs */}
       <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-indigo-600/10 blur-[120px] rounded-full" />
       <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-purple-600/10 blur-[120px] rounded-full" />
 
@@ -123,17 +248,16 @@ export default function AuthPage() {
         transition={{
           layout: { duration: 0.8, ease: [0.22, 1, 0.36, 1] }
         }}
-        className={`relative w-full max-w-5xl h-[750px] flex shadow-[0_32px_64px_rgba(0,0,0,0.2)] dark:shadow-[0_32px_64px_rgba(0,0,0,0.5)] rounded-[60px] overflow-hidden glass border border-slate-300 dark:border-white/10 ${!isLogin ? "flex-row-reverse" : "flex-row"
-          }`}
+        className={`relative w-full max-w-5xl h-[750px] flex shadow-[0_32px_64px_rgba(0,0,0,0.2)] dark:shadow-[0_32px_64px_rgba(0,0,0,0.5)] rounded-[60px] overflow-hidden glass border border-slate-300 dark:border-white/10 ${!isLogin ? "flex-row-reverse" : "flex-row"}`}
       >
         {/* Form Side */}
         <motion.div
           layout
           className="w-full md:w-1/2 h-full flex flex-col p-8 md:p-14 z-10 bg-white/80 dark:bg-slate-950/40 backdrop-blur-2xl"
         >
-          <Link href="/" className="flex items-center gap-2 mb-10 group w-fit">
+          <Link href="/" className="flex items-center gap-2 mb-8 group w-fit">
             <div className="p-2 rounded-xl bg-white/5 border border-white/10 group-hover:bg-indigo-500/20 group-hover:border-indigo-500/30 transition-all duration-300">
-              <ArrowLeft className="w-5 h-5 text-white/50 group-hover:text-indigo-400" />
+              <ArrowLeft className="w-5 h-5 text-slate-400 dark:text-white/50 group-hover:text-indigo-500 dark:group-hover:text-indigo-400" />
             </div>
             <span className="text-slate-400 dark:text-white/40 group-hover:text-slate-900 dark:group-hover:text-white transition-colors font-medium">Back to Home</span>
           </Link>
@@ -147,157 +271,267 @@ export default function AuthPage() {
               transition={{ duration: 0.5, ease: "easeOut" }}
               className="flex-1 overflow-y-auto pr-3 custom-scrollbar flex flex-col"
             >
-              <h1 className="text-5xl font-extrabold mb-3 tracking-tight text-slate-900 dark:text-white">
-                {isLogin ? "Hello Again!" : "Get Started"}
+              <h1 className="text-4xl md:text-5xl font-extrabold mb-3 tracking-tight text-slate-900 dark:text-white">
+                {isLogin ? "Hello Again!" : "Student Register"}
               </h1>
-              <p className="text-slate-500 dark:text-white/40 mb-10 text-lg">
+              <p className="text-slate-500 dark:text-white/40 mb-6 text-lg">
                 {isLogin
                   ? "Welcome back, you've been missed!"
-                  : "Start your creative journey with us today."}
+                  : "Start your learning journey with us today."}
               </p>
 
-              <form className="space-y-5" onSubmit={handleLogin}>
+              {generalError && (
+                <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 rounded-2xl p-4 mb-6 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
+                  <p className="text-sm font-medium">{generalError}</p>
+                </div>
+              )}
+
+              <AnimatePresence mode="wait">
+                {successMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-600 dark:text-emerald-400 rounded-2xl p-4 mb-6 flex items-start gap-3 shadow-lg shadow-emerald-500/10"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center mt-0.5 shrink-0">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium">{successMessage}</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <form className="space-y-4 pb-4" onSubmit={handleSubmit}>
                 {!isLogin && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Full Name</label>
-                    <div className="group relative">
-                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
-                      <input
-                        type="text"
-                        placeholder="Yara Al-Sayed"
-                        className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
-                      />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Full Name *</label>
+                      <div className="group relative">
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
+                        <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="First Last" required
+                          className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.name ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white text-sm`}
+                        />
+                      </div>
+                      <ErrorMessage name="name" />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Email Address *</label>
+                      <div className="group relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
+                        <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="you@example.com" required
+                          className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.email ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white text-sm`}
+                        />
+                      </div>
+                      <ErrorMessage name="email" />
                     </div>
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Email Address</label>
-                  <div className="group relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
-                    <input
-                      type="email"
-                      placeholder="yara@example.com"
-                      className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
-                    />
-                  </div>
-                </div>
+                {isLogin && (
+                   <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Email Address</label>
+                      <div className="group relative">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
+                        <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="yara@example.com" required
+                          className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
+                        />
+                      </div>
+                   </div>
+                )}
 
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center ml-1">
-                    <label className="text-sm font-semibold text-slate-500 dark:text-white/60 uppercase tracking-wider">Password</label>
-                    {isLogin && <button className="text-xs text-indigo-500 dark:text-indigo-400 font-bold hover:text-indigo-300 transition-colors">FORGOT PASSWORD?</button>}
+                <div className={!isLogin ? "grid grid-cols-1 sm:grid-cols-2 gap-4" : "space-y-2"}>
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center ml-1">
+                      <label className="text-xs font-semibold text-slate-500 dark:text-white/60 uppercase tracking-wider">Password {isLogin ? '' : '*'}</label>
+                      {isLogin && <button type="button" className="text-xs text-indigo-500 dark:text-indigo-400 font-bold hover:text-indigo-300 transition-colors">FORGOT?</button>}
+                    </div>
+                    <div className="group relative">
+                      <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 ${isLogin ? 'w-5 h-5' : 'w-4 h-4'} text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors`} />
+                      <input type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} placeholder="••••••••" required
+                        className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.password ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} ${isLogin ? 'rounded-2xl py-4 pl-12' : 'rounded-xl py-3 pl-10'} pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white text-sm`}
+                      />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-500 transition-colors focus:outline-none">
+                        {showPassword ? <EyeOff className={isLogin ? 'w-5 h-5' : 'w-4 h-4'} /> : <Eye className={isLogin ? 'w-5 h-5' : 'w-4 h-4'} />}
+                      </button>
+                    </div>
+                    {!isLogin && <ErrorMessage name="password" />}
                   </div>
-                  <div className="group relative">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
-                    <input
-                      type="password"
-                      placeholder="••••••••••••"
-                      className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
-                    />
-                  </div>
+
+                  {!isLogin && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Confirm Password *</label>
+                      <div className="group relative">
+                        <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
+                        <input type={showConfirmPassword ? "text" : "password"} name="password_confirmation" value={formData.password_confirmation} onChange={handleChange} placeholder="••••••••" required
+                          className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.password_confirmation ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white text-sm`}
+                        />
+                        <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-500 transition-colors focus:outline-none">
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      <ErrorMessage name="password_confirmation" />
+                    </div>
+                  )}
                 </div>
 
                 {!isLogin && (
                   <>
-                    <div className="space-y-4 pt-2">
-                      <label className="text-sm font-semibold text-white/60 ml-1 uppercase tracking-wider block">Join as</label>
-                      <div className="flex gap-3">
-                        {[
-                          { id: "Student", icon: GraduationCap },
-                          { id: "Instructor", icon: Briefcase },
-                          { id: "Manager", icon: ShieldCheck },
-                        ].map((r) => {
-                          const Icon = r.icon;
-                          const isActive = role === r.id;
-                          return (
-                            <button
-                              key={r.id}
-                              type="button"
-                              onClick={() => setRole(r.id)}
-                              className={`flex-1 py-3 px-2 rounded-2xl border transition-all duration-500 flex flex-col items-center justify-center gap-2 ${isActive
-                                  ? `bg-indigo-500/10 border-indigo-500/50 text-indigo-600 dark:text-white shadow-[0_0_20px_rgba(99,102,241,0.2)]`
-                                  : "bg-slate-50 dark:bg-white/5 border-slate-100 dark:border-white/5 text-slate-400 dark:text-white/30 hover:bg-slate-100 dark:hover:bg-white/10"
-                                }`}
-                            >
-                              <Icon className={`w-5 h-5 ${isActive ? "text-indigo-500 dark:text-indigo-400" : "text-slate-300 dark:text-white/20"}`} />
-                              <span className={`text-[10px] uppercase font-black tracking-tighter ${isActive ? "text-indigo-600 dark:text-white" : "text-slate-400 dark:text-white/30"}`}>{r.id}</span>
-                            </button>
-                          );
-                        })}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Date of Birth</label>
+                        <div className="group relative">
+                          <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
+                          <input type="date" name="date_of_birth" value={formData.date_of_birth} onChange={handleChange}
+                            className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.date_of_birth ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all text-slate-900 dark:text-white/70 text-sm`}
+                          />
+                        </div>
+                        <ErrorMessage name="date_of_birth" />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Gender</label>
+                         <div className="relative group">
+                          <select name="gender" value={formData.gender} onChange={handleChange} className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.gender ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 px-5 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none text-slate-900 dark:text-white/70 text-sm cursor-pointer`}>
+                            <option value="" className="bg-white dark:bg-slate-900">Select...</option>
+                            <option value="male" className="bg-white dark:bg-slate-900">Male</option>
+                            <option value="female" className="bg-white dark:bg-slate-900">Female</option>
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 pointer-events-none transition-colors" />
+                        </div>
+                        <ErrorMessage name="gender" />
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center ml-1">
-                        <label className="text-sm font-semibold text-white/60 uppercase tracking-wider">Exact Home Address</label>
-                        <button
-                          type="button"
-                          onClick={handleGetLocation}
-                          disabled={isLocating}
-                          className="text-xs text-indigo-400 font-bold hover:text-indigo-300 transition-colors flex items-center gap-1 bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-500/20"
-                        >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Phone</label>
+                        <div className="group relative flex items-center">
+                           <div className="absolute left-4 flex items-center gap-2 pr-2 border-r border-slate-200 dark:border-white/10 z-10">
+                            <SyrianFlag />
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-white/50 group-focus-within:text-indigo-400">+963</span>
+                          </div>
+                          <input type="tel" name="phone" value={formData.phone} onChange={handleChange} placeholder="9XXXXXXXX" maxLength={10}
+                            className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.phone ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-[90px] pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all text-sm placeholder:text-slate-300 dark:placeholder:text-white/10 text-slate-900 dark:text-white`}
+                          />
+                        </div>
+                        <ErrorMessage name="phone" />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Country</label>
+                        <div className="relative group">
+                          <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none z-10 w-4 h-4">
+                            {formData.country === "Syria" ? <SyrianFlag /> : <Globe className="w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />}
+                          </div>
+                          <select name="country" value={formData.country} onChange={handleChange}
+                            className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.country ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 px-5 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none text-slate-900 dark:text-white/70 text-sm cursor-pointer`}
+                          >
+                            <option value="" className="bg-white dark:bg-slate-900">Select...</option>
+                            <option value="Syria" className="bg-white dark:bg-slate-900">Syria</option>
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 pointer-events-none transition-colors" />
+                        </div>
+                        <ErrorMessage name="country" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center ml-1 mb-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-white/60 uppercase tracking-wider">Home Address</label>
+                        <button type="button" onClick={handleGetLocation} disabled={isLocating} className="text-[10px] text-indigo-500 dark:text-indigo-400 font-bold hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors flex items-center gap-1 bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-500/20">
                           {isLocating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crosshair className="w-3 h-3" />}
                           {isLocating ? "LOCATING..." : "LOCATE ME"}
                         </button>
                       </div>
                       <div className="group relative">
-                        <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
-                        <input
-                          type="text"
-                          value={address}
-                          onChange={(e) => setAddress(e.target.value)}
-                          placeholder="Building No, Street Name, District, City"
-                          className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
+                        <MapPin className="absolute left-4 top-5 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
+                        <textarea name="address" value={formData.address} onChange={handleChange} placeholder="Building No, Street, City" rows={2}
+                          className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.address ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white text-sm resize-none custom-scrollbar`}
                         />
+                      </div>
+                      <ErrorMessage name="address" />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Education Level</label>
+                        <div className="relative group">
+                          <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 pointer-events-none transition-colors z-10" />
+                          <select name="education_level" value={formData.education_level} onChange={handleChange}
+                            className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.education_level ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 px-5 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none text-slate-900 dark:text-white/70 text-sm cursor-pointer`}
+                          >
+                            <option value="" className="bg-white dark:bg-slate-900">Select...</option>
+                            <option value="highschool" className="bg-white dark:bg-slate-900">High School</option>
+                            <option value="associate" className="bg-white dark:bg-slate-900">Associate's Degree</option>
+                            <option value="bachelor" className="bg-white dark:bg-slate-900">Bachelor's Degree</option>
+                            <option value="master" className="bg-white dark:bg-slate-900">Master's Degree</option>
+                            <option value="doctorate" className="bg-white dark:bg-slate-900">Doctorate Degree</option>
+                            <option value="other" className="bg-white dark:bg-slate-900">Other</option>
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 pointer-events-none transition-colors" />
+                        </div>
+                        <ErrorMessage name="education_level" />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Specialization</label>
+                        <div className="relative group">
+                          <Star className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 pointer-events-none transition-colors z-10" />
+                          <select name="specialization" value={formData.specialization} onChange={handleChange}
+                            className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.specialization ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 px-5 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none text-slate-900 dark:text-white/70 text-sm cursor-pointer`}
+                          >
+                            <option value="" className="bg-white dark:bg-slate-900">Select...</option>
+                            <option value="Engineering in Information Technology" className="bg-white dark:bg-slate-900">Engineering in Information Technology</option>
+                            <option value="Computer Science" className="bg-white dark:bg-slate-900">Computer Science</option>
+                            <option value="Business Administration" className="bg-white dark:bg-slate-900">Business Administration</option>
+                            <option value="Medicine" className="bg-white dark:bg-slate-900">Medicine</option>
+                            <option value="Law" className="bg-white dark:bg-slate-900">Law</option>
+                            <option value="Arts & Humanities" className="bg-white dark:bg-slate-900">Arts & Humanities</option>
+                            <option value="Other" className="bg-white dark:bg-slate-900">Other</option>
+                          </select>
+                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 pointer-events-none transition-colors" />
+                        </div>
+                        <ErrorMessage name="specialization" />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                      <div className="space-y-2">
-                        <label className="text-sm font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Phone Number</label>
-                        <div className="group relative flex items-center">
-                           <div className="absolute left-4 flex items-center gap-2 pr-3 border-r border-slate-200 dark:border-white/10">
-                            <SyrianFlag />
-                            <span className="text-xs font-bold text-slate-300 dark:text-white/40 tracking-tighter transition-colors group-focus-within:text-indigo-400">+963</span>
-                          </div>
-                          <input
-                            type="tel"
-                            placeholder="09XXXXXXXX"
-                            maxLength={10}
-                            className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-4 pl-[110px] pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all text-sm placeholder:text-slate-300 dark:placeholder:text-white/10 text-slate-900 dark:text-white"
-                          />
-                        </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Bio</label>
+                      <div className="group relative">
+                        <FileText className="absolute left-4 top-5 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
+                        <textarea name="bio" value={formData.bio} onChange={handleChange} placeholder="Tell us about yourself..." rows={2}
+                          className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.bio ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white text-sm resize-none custom-scrollbar`}
+                        />
                       </div>
-
-                      <div className="space-y-2">
-                        <label className="text-sm font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Gender</label>
-                         <div className="relative group">
-                          <select className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl py-4 px-5 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none text-slate-900 dark:text-white/70 text-sm cursor-pointer">
-                            <option value="" className="bg-white dark:bg-slate-900">Select...</option>
-                            <option value="male" className="bg-white dark:bg-slate-900">Male</option>
-                            <option value="female" className="bg-white dark:bg-slate-900">Female</option>
-                            <option value="other" className="bg-white dark:bg-slate-900">Prefer not to say</option>
-                          </select>
-                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 pointer-events-none transition-colors" />
-                        </div>
-                      </div>
+                      <ErrorMessage name="bio" />
                     </div>
                   </>
                 )}
 
-                <button className={`w-full bg-linear-to-r ${gradients[gradientIdx]} hover:brightness-110 shadow-2xl text-white font-bold py-5 rounded-2xl transition-all transform active:scale-[0.98] mt-6 flex items-center justify-center gap-3 text-lg`}>
-                  {isLogin ? "Sign In" : "Register Account"}
-                  <ArrowRight className="w-5 h-5" />
+                <button disabled={isLoading} className={`w-full bg-linear-to-r ${gradients[gradientIdx]} hover:brightness-110 shadow-2xl text-white font-bold py-4 rounded-xl transition-all transform active:scale-[0.98] mt-4 flex items-center justify-center gap-3 text-base disabled:opacity-70 disabled:cursor-not-allowed`}>
+                  {isLoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      {isLogin ? "Sign In" : "Register Account"}
+                      <ArrowRight className="w-5 h-5" />
+                    </>
+                  )}
                 </button>
               </form>
 
-               <div className="mt-auto pt-10 text-center">
-                <p className="text-slate-400 dark:text-white/40 font-medium">
+               <div className="mt-auto pt-6 pb-2 text-center">
+                <p className="text-slate-500 dark:text-white/40 font-medium text-sm">
                   {isLogin ? "Don't have an account yet?" : "Already have an account?"}{" "}
                   <button
                     onClick={toggleAuth}
-                    className="text-indigo-600 dark:text-indigo-400 font-bold hover:text-indigo-500 dark:hover:text-indigo-300 underline underline-offset-8 decoration-indigo-500/30 hover:decoration-indigo-400 transition-all"
+                    type="button"
+                    className="text-indigo-600 dark:text-indigo-400 font-bold hover:text-indigo-500 dark:hover:text-indigo-300 underline underline-offset-4 decoration-indigo-500/30 hover:decoration-indigo-400 transition-all ml-1"
                   >
                     {isLogin ? "Create one now" : "Go to Login"}
                   </button>

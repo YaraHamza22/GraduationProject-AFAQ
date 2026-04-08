@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import axios from "axios";
 import { 
   LayoutDashboard, 
   BookOpen, 
@@ -12,7 +13,10 @@ import {
   LogOut,
   GraduationCap,
   Sun,
-  Moon
+  Moon,
+  Loader2,
+  Menu,
+  X
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useLanguage } from "@/components/providers/LanguageProvider";
@@ -66,13 +70,99 @@ const navItems = [
 
 export default function StudentNavbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { t, language, setLanguage, isRTL } = useLanguage();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  const closeSidebar = () => setIsSidebarOpen(false);
+  const openSidebar = () => setIsSidebarOpen(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(min-width: 768px)");
+    const apply = (matches: boolean) => setIsSidebarOpen(matches);
+    apply(mq.matches);
+
+    const handler = (e: MediaQueryListEvent) => apply(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", handler);
+    else mq.addListener(handler);
+
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", handler);
+      else mq.removeListener(handler);
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    closeSidebar();
+    setIsLoggingOut(true);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      const token = localStorage.getItem('auth_token');
+      
+      await axios.post(`${apiUrl}/auth/logout`, {}, {
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+    } catch (error) {
+      console.error("Logout error:", error);
+    } finally {
+      // Always clear token and redirect, even if the API call fails
+      localStorage.removeItem('auth_token');
+      setIsLoggingOut(false);
+      router.push("/login");
+    }
+  };
 
   return (
-    <nav className={`fixed top-0 h-screen w-20 md:w-64 bg-white dark:bg-(--background) flex flex-col z-50 transition-colors duration-300 ${
-      isRTL ? "right-0 border-l border-slate-300 dark:border-white/5" : "left-0 border-r border-slate-300 dark:border-white/5"
-    }`}>
+    <>
+      {/* Mobile Toggle Button */}
+      <button
+        onClick={openSidebar}
+        className={`fixed top-4 z-50 md:hidden p-3 rounded-2xl bg-white/90 dark:bg-(--background)/90 border border-slate-200 dark:border-white/10 shadow-lg backdrop-blur ${
+          isRTL ? "right-4" : "left-4"
+        }`}
+        aria-label="Open sidebar"
+        aria-expanded={isSidebarOpen}
+      >
+        <Menu className="w-5 h-5 text-slate-700 dark:text-slate-200" />
+      </button>
+
+      {/* Mobile Backdrop */}
+      <motion.button
+        type="button"
+        onClick={closeSidebar}
+        className={`fixed inset-0 z-40 bg-black/50 md:hidden ${isSidebarOpen ? "block" : "hidden"}`}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: isSidebarOpen ? 1 : 0 }}
+        transition={{ duration: 0.2 }}
+        aria-label="Close sidebar"
+      />
+
+      <motion.nav
+        initial={false}
+        animate={{
+          x: isSidebarOpen ? 0 : (isRTL ? 320 : -320),
+        }}
+        transition={{ type: "spring", stiffness: 260, damping: 28 }}
+        className={`fixed top-0 h-screen w-72 md:w-64 bg-white dark:bg-(--background) flex flex-col z-50 transition-colors duration-300 ${
+          isRTL ? "right-0 border-l border-slate-300 dark:border-white/5" : "left-0 border-r border-slate-300 dark:border-white/5"
+        } ${isSidebarOpen ? "pointer-events-auto" : "pointer-events-none md:pointer-events-auto"}`}
+      >
+        {/* Mobile Close Button */}
+        <button
+          onClick={closeSidebar}
+          className={`absolute top-4 md:hidden p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 ${
+            isRTL ? "left-4" : "right-4"
+          }`}
+          aria-label="Close sidebar"
+        >
+          <X className="w-5 h-5 text-slate-700 dark:text-slate-200" />
+        </button>
       {/* Logo Section */}
       <div className="p-6 mb-8">
         <Link href="/student" className="flex items-center gap-3 group">
@@ -91,7 +181,7 @@ export default function StudentNavbar() {
           const isActive = pathname === item.href;
           const Icon = item.icon;
           return (
-            <Link key={item.id} href={item.href}>
+            <Link key={item.id} href={item.href} onClick={closeSidebar}>
               <div className={`relative flex items-center gap-3 p-4 rounded-2xl transition-all duration-300 group ${
                 isActive 
                 ? "bg-indigo-600/10 text-indigo-600 dark:text-white" 
@@ -105,7 +195,7 @@ export default function StudentNavbar() {
                   />
                 )}
                 <Icon className={`w-6 h-6 transition-colors duration-300 ${isActive ? "text-indigo-400" : "group-hover:text-indigo-300"}`} />
-                <span className="hidden md:block font-semibold tracking-tight">
+                <span className="font-semibold tracking-tight">
                   {t(item.label)}
                 </span>
                 
@@ -113,7 +203,7 @@ export default function StudentNavbar() {
                    <motion.div 
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="ml-auto hidden md:block"
+                    className="ml-auto"
                    >
                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
                    </motion.div>
@@ -147,20 +237,25 @@ export default function StudentNavbar() {
           </button>
         </div>
 
-        <Link href="/instructor/profile">
+        <Link href="/instructor/profile" onClick={closeSidebar}>
           <div className="flex items-center gap-3 p-4 rounded-2xl opacity-40 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/5 transition-all">
             <UserCircle className="w-6 h-6" />
-            <span className="hidden md:block font-bold">{t("nav.profile")}</span>
+            <span className="font-bold">{t("nav.profile")}</span>
           </div>
         </Link>
         
-        <Link href="/login">
+        <button onClick={handleLogout} disabled={isLoggingOut} className="w-full">
             <div className="flex items-center gap-3 p-4 rounded-2xl text-rose-500/60 hover:text-rose-500 hover:bg-rose-500/5 transition-all duration-300 cursor-pointer group">
-            <LogOut className={`w-6 h-6 transition-transform ${isRTL ? "group-hover:translate-x-1" : "group-hover:-translate-x-1"}`} />
-            <span className="hidden md:block font-bold">{t("nav.logout")}</span>
+            {isLoggingOut ? (
+              <Loader2 className="w-6 h-6 animate-spin" />
+            ) : (
+              <LogOut className={`w-6 h-6 transition-transform ${isRTL ? "group-hover:translate-x-1" : "group-hover:-translate-x-1"}`} />
+            )}
+            <span className="font-bold">{isLoggingOut ? "Logging out..." : t("nav.logout")}</span>
             </div>
-        </Link>
+        </button>
       </div>
-    </nav>
+      </motion.nav>
+    </>
   );
 }
