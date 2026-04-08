@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { 
   LayoutDashboard, 
@@ -16,6 +16,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
+import { clearAdminSession, getStoredAdminUser } from "@/features/admin/adminSession";
 import { useTheme } from "next-themes";
 
 const SyrianFlag = () => (
@@ -69,13 +70,36 @@ const managementItems = [
 
 export default function AdminNavbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { language, setLanguage, t, isRTL } = useLanguage();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
+  const [adminLabel, setAdminLabel] = React.useState("Super Admin");
+  const [adminMeta, setAdminMeta] = React.useState("Authenticated control");
 
   React.useEffect(() => {
     setMounted(true);
+    const adminUser = getStoredAdminUser();
+    const identity =
+      typeof adminUser?.name === "string" && adminUser.name.trim()
+        ? adminUser.name
+        : typeof adminUser?.email === "string" && adminUser.email.trim()
+          ? adminUser.email
+          : "Super Admin";
+
+    const role =
+      typeof adminUser?.role === "string" && adminUser.role.trim()
+        ? adminUser.role.replace(/_/g, " ")
+        : "Authenticated control";
+
+    setAdminLabel(identity);
+    setAdminMeta(role);
   }, []);
+
+  const handleLogout = () => {
+    clearAdminSession();
+    router.replace("/admin/login");
+  };
 
   if (!mounted) {
     return (
@@ -172,6 +196,18 @@ export default function AdminNavbar() {
 
       {/* Toggles and Actions */}
       <div className="p-4 space-y-2 border-t border-slate-200 dark:border-white/5">
+        <div className="rounded-3xl border border-slate-200 bg-slate-100/70 p-4 shadow-sm dark:border-white/5 dark:bg-white/5 dark:shadow-none">
+          <p className={`text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-white/30 ${isRTL ? "text-right" : ""}`}>
+            Secure Session
+          </p>
+          <p className={`mt-2 truncate text-sm font-black text-slate-900 dark:text-white ${isRTL ? "text-right" : ""}`}>
+            {adminLabel}
+          </p>
+          <p className={`mt-1 truncate text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/35 ${isRTL ? "text-right" : ""}`}>
+            {adminMeta}
+          </p>
+        </div>
+
         <div className="flex items-center justify-around gap-2 p-2 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/5 backdrop-blur-md">
           <button 
             onClick={() => setLanguage(language === "en" ? "ar" : "en")}
@@ -190,12 +226,16 @@ export default function AdminNavbar() {
           </button>
         </div>
 
-        <Link href="/admin/login">
-            <div className="flex items-center gap-3 p-4 rounded-2xl text-rose-500/60 hover:text-rose-500 hover:bg-rose-500/5 transition-all duration-300 cursor-pointer group uppercase font-black text-[10px] tracking-widest">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="w-full"
+        >
+          <div className="flex items-center gap-3 p-4 rounded-2xl text-rose-500/60 hover:text-rose-500 hover:bg-rose-500/5 transition-all duration-300 cursor-pointer group uppercase font-black text-[10px] tracking-widest">
             <LogOut className={`w-5 h-5 transition-transform ${isRTL ? "group-hover:translate-x-1" : "group-hover:-translate-x-1"}`} />
             <span className="hidden md:block">Logout</span>
-            </div>
-        </Link>
+          </div>
+        </button>
       </div>
 
       <style jsx global>{`
