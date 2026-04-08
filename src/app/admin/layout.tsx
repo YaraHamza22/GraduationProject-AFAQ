@@ -5,7 +5,19 @@ import { hasAdminSession } from "@/features/admin/adminSession";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { Shield } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+
+function subscribeToClientRender() {
+  return () => {};
+}
+
+function getClientSnapshot() {
+  return true;
+}
+
+function getServerSnapshot() {
+  return false;
+}
 
 export default function AdminLayout({
   children,
@@ -16,15 +28,11 @@ export default function AdminLayout({
   const pathname = usePathname();
   const router = useRouter();
   const isLoginPage = pathname === "/admin/login";
-  const [isMounted, setIsMounted] = useState(false);
-  const isAuthenticated = isMounted ? hasAdminSession() : false;
+  const isClient = useSyncExternalStore(subscribeToClientRender, getClientSnapshot, getServerSnapshot);
+  const isAuthenticated = isClient ? hasAdminSession() : false;
 
   useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isMounted) {
+    if (!isClient) {
       return;
     }
 
@@ -36,9 +44,9 @@ export default function AdminLayout({
     if (!isLoginPage && !isAuthenticated) {
       router.replace("/admin/login");
     }
-  }, [isAuthenticated, isLoginPage, isMounted, pathname, router]);
+  }, [isAuthenticated, isClient, isLoginPage, pathname, router]);
 
-  if (!isMounted || (isLoginPage && isAuthenticated) || (!isLoginPage && !isAuthenticated)) {
+  if (!isClient || (isLoginPage && isAuthenticated) || (!isLoginPage && !isAuthenticated)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-6 transition-colors duration-300 dark:bg-[#020617]">
         <div className="flex items-center gap-4 rounded-3xl border border-slate-200 bg-white/80 px-6 py-5 shadow-xl shadow-slate-900/5 backdrop-blur-xl dark:border-white/10 dark:bg-white/5 dark:shadow-black/20">
