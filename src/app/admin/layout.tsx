@@ -1,7 +1,7 @@
 "use client";
 
 import AdminNavbar from "@/features/admin/components/AdminNavbar";
-import { hasAdminSession } from "@/features/admin/adminSession";
+import { hasAdminSession, subscribeToAdminSession } from "@/features/admin/adminSession";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { Shield } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -29,7 +29,7 @@ export default function AdminLayout({
   const router = useRouter();
   const isLoginPage = pathname === "/admin/login";
   const isClient = useSyncExternalStore(subscribeToClientRender, getClientSnapshot, getServerSnapshot);
-  const isAuthenticated = isClient ? hasAdminSession() : false;
+  const isAuthenticated = useSyncExternalStore(subscribeToAdminSession, hasAdminSession, getServerSnapshot);
 
   useEffect(() => {
     if (!isClient) {

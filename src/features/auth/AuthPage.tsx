@@ -8,6 +8,12 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { Sun, Moon } from "lucide-react";
 import axios from "axios";
+import { getStudentApiRequestUrl } from "@/features/student/studentApi";
+import {
+  extractStudentToken,
+  extractStudentUser,
+  persistStudentSession,
+} from "@/features/student/studentSession";
 
 const SyrianFlag = () => (
   <svg width="24" height="16" viewBox="0 0 3 2" className="rounded-sm shadow-sm">
@@ -121,21 +127,20 @@ export default function AuthPage() {
     if (isLogin) {
       setIsLoading(true);
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL;
         const payload = {
           email: formData.email,
           password: formData.password
         };
         
-        const response = await axios.post(`${apiUrl}/auth/login`, payload, {
+        const response = await axios.post(getStudentApiRequestUrl("/auth/login"), payload, {
           headers: {
             'Accept': 'application/json'
           }
         });
         
-        // Save token if provided by backend
-        if (response.data && response.data.data && response.data.data.token) {
-           localStorage.setItem('auth_token', response.data.data.token);
+        const token = extractStudentToken(response.data);
+        if (token) {
+          persistStudentSession(token, extractStudentUser(response.data));
         }
 
         setSuccessMessage("Login successful! Redirecting...");
@@ -161,8 +166,6 @@ export default function AuthPage() {
     } else {
       setIsLoading(true);
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-        
         // Ensure the phone number starts with +963 if it doesn't already
         let formattedPhone = formData.phone;
         if (formattedPhone && !formattedPhone.startsWith('+')) {
@@ -175,7 +178,7 @@ export default function AuthPage() {
           phone: formattedPhone
         };
         
-        await axios.post(`${apiUrl}/auth/register`, payload, {
+        await axios.post(getStudentApiRequestUrl("/auth/register"), payload, {
           headers: {
             'Accept': 'application/json'
           }

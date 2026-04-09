@@ -1,6 +1,21 @@
 import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === 'production';
+const defaultBackendOrigin = "http://127.0.0.1:8000";
+
+function normalizeUrl(url: string) {
+  return url.replace(/\/$/, "");
+}
+
+function getBackendApiUrl() {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  if (!apiUrl) {
+    return `${defaultBackendOrigin}/api`;
+  }
+
+  return normalizeUrl(apiUrl);
+}
 
 const nextConfig: NextConfig = {
   // Only use export output for GitHub Pages production build
@@ -14,10 +29,9 @@ const nextConfig: NextConfig = {
     async rewrites() {
       return [
         {
-          source: '/api/:path*',
-          // Make sure Laravel backend is running via `php artisan serve` on this port
-          destination: 'http://127.0.0.1:8000/api/:path*' 
-        }
+          source: "/api/:path*",
+          destination: `${getBackendApiUrl()}/:path*`,
+        },
       ];
     }
   })

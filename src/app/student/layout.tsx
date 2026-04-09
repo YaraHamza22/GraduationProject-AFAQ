@@ -14,7 +14,7 @@ export default function StudentLayout({
   return (
     <div className={`min-h-screen bg-(--background) transition-colors duration-300 ${isRTL ? "rtl" : "ltr"}`}>
       <StudentNavbar />
-      <main className={`transition-all duration-300 ${isRTL ? "md:mr-64 mr-20" : "md:ml-64 ml-20"}`}>
+      <main className={`transition-all duration-300 ${isRTL ? "mr-16 lg:mr-64 2xl:mr-72" : "ml-16 lg:ml-64 2xl:ml-72"}`}>
         {children}
       </main>
     </div>

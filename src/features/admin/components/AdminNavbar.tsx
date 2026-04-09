@@ -9,6 +9,7 @@ import {
   Users, 
   GraduationCap, 
   ShieldCheck, 
+  UserCircle,
   LogOut,
   Shield,
   Sun,
@@ -16,7 +17,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { clearAdminSession, getStoredAdminUser } from "@/features/admin/adminSession";
+import { clearAdminSession, getStoredAdminUser, subscribeToAdminSession } from "@/features/admin/adminSession";
 import { useTheme } from "next-themes";
 
 const SyrianFlag = () => (
@@ -59,7 +60,8 @@ const USAFlag = () => (
 );
 
 const navItems = [
-  { name: "Home Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
+  { name: "dashboard", href: "/admin/dashboard", icon: LayoutDashboard, label: "adm.dashboard" },
+  { name: "profile", href: "/admin/profile", icon: UserCircle, label: "nav.profile" },
 ];
 
 const managementItems = [
@@ -78,22 +80,27 @@ export default function AdminNavbar() {
   const [adminMeta, setAdminMeta] = React.useState("Authenticated control");
 
   React.useEffect(() => {
-    setMounted(true);
-    const adminUser = getStoredAdminUser();
-    const identity =
-      typeof adminUser?.name === "string" && adminUser.name.trim()
-        ? adminUser.name
-        : typeof adminUser?.email === "string" && adminUser.email.trim()
-          ? adminUser.email
-          : "Super Admin";
+    const syncAdminIdentity = () => {
+      const adminUser = getStoredAdminUser();
+      const identity =
+        typeof adminUser?.name === "string" && adminUser.name.trim()
+          ? adminUser.name
+          : typeof adminUser?.email === "string" && adminUser.email.trim()
+            ? adminUser.email
+            : "Super Admin";
 
-    const role =
-      typeof adminUser?.role === "string" && adminUser.role.trim()
-        ? adminUser.role.replace(/_/g, " ")
-        : "Authenticated control";
+      const role =
+        typeof adminUser?.role === "string" && adminUser.role.trim()
+          ? adminUser.role.replace(/_/g, " ")
+          : "Authenticated control";
 
-    setAdminLabel(identity);
-    setAdminMeta(role);
+      setAdminLabel(identity);
+      setAdminMeta(role);
+      setMounted(true);
+    };
+
+    syncAdminIdentity();
+    return subscribeToAdminSession(syncAdminIdentity);
   }, []);
 
   const handleLogout = () => {
@@ -151,7 +158,7 @@ export default function AdminNavbar() {
                     )}
                     <Icon className={`w-5 h-5 transition-colors duration-300 ${isActive ? "text-indigo-500" : "group-hover:text-indigo-400"}`} />
                     <span className="hidden md:block">
-                      {t("adm.dashboard")}
+                      {t(item.label)}
                     </span>
                   </div>
                 </Link>

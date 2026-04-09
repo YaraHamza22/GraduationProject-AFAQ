@@ -2,6 +2,7 @@
 
 const ADMIN_TOKEN_STORAGE_KEY = "admin_auth_token";
 const ADMIN_USER_STORAGE_KEY = "admin_auth_user";
+const ADMIN_SESSION_EVENT = "admin-session-changed";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -29,6 +30,22 @@ function readStorageValue(key: string) {
   }
 
   return localStorage.getItem(key) ?? sessionStorage.getItem(key);
+}
+
+function getStorageWithKey(key: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  if (localStorage.getItem(key) !== null) {
+    return localStorage;
+  }
+
+  if (sessionStorage.getItem(key) !== null) {
+    return sessionStorage;
+  }
+
+  return null;
 }
 
 function writeStorageValue(key: string, value: string, remember = true) {
@@ -80,9 +97,22 @@ export function extractAdminToken(payload: unknown) {
 }
 
 export function extractAdminUser(payload: unknown): AdminSessionUser | null {
+  if (isRecord(payload)) {
+    const possibleUserFields = ["id", "name", "email", "role"];
+    const hasRootUserShape = possibleUserFields.some((field) => field in payload);
+    if (hasRootUserShape) {
+      return payload;
+    }
+  }
+
   const directUser = getNestedRecord(payload, "user");
   if (directUser) {
     return directUser;
+  }
+
+  const profileUser = getNestedRecord(payload, "profile");
+  if (profileUser) {
+    return profileUser;
   }
 
   const data = getNestedRecord(payload, "data");
@@ -115,12 +145,13 @@ export function persistAdminSession({
 
   if (user) {
     writeStorageValue(ADMIN_USER_STORAGE_KEY, JSON.stringify(user), remember);
-    return;
+  } else if (typeof window !== "undefined") {
+    localStorage.removeItem(ADMIN_USER_STORAGE_KEY);
+    sessionStorage.removeItem(ADMIN_USER_STORAGE_KEY);
   }
 
   if (typeof window !== "undefined") {
-    localStorage.removeItem(ADMIN_USER_STORAGE_KEY);
-    sessionStorage.removeItem(ADMIN_USER_STORAGE_KEY);
+    window.dispatchEvent(new Event(ADMIN_SESSION_EVENT));
   }
 }
 
@@ -133,6 +164,7 @@ export function clearAdminSession() {
   localStorage.removeItem(ADMIN_USER_STORAGE_KEY);
   sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
   sessionStorage.removeItem(ADMIN_USER_STORAGE_KEY);
+  window.dispatchEvent(new Event(ADMIN_SESSION_EVENT));
 }
 
 export function getAdminToken() {
@@ -155,4 +187,44 @@ export function getStoredAdminUser(): AdminSessionUser | null {
   } catch {
     return null;
   }
+}
+
+export function updateStoredAdminUser(user: AdminSessionUser | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const storage =
+    getStorageWithKey(ADMIN_USER_STORAGE_KEY) ??
+    getStorageWithKey(ADMIN_TOKEN_STORAGE_KEY) ??
+    localStorage;
+
+  localStorage.removeItem(ADMIN_USER_STORAGE_KEY);
+  sessionStorage.removeItem(ADMIN_USER_STORAGE_KEY);
+
+  if (user) {
+    storage.setItem(ADMIN_USER_STORAGE_KEY, JSON.stringify(user));
+  }
+
+  window.dispatchEvent(new Event(ADMIN_SESSION_EVENT));
+}
+
+export function subscribeToAdminSession(listener: () => void) {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  const handleStorage = (event: StorageEvent) => {
+    if (!event.key || event.key === ADMIN_TOKEN_STORAGE_KEY || event.key === ADMIN_USER_STORAGE_KEY) {
+      listener();
+    }
+  };
+
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener(ADMIN_SESSION_EVENT, listener);
+
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener(ADMIN_SESSION_EVENT, listener);
+  };
 }
