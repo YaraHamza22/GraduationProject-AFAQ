@@ -81,6 +81,10 @@ function hasDetailedStudentProfile(profile: StudentSessionUser | null) {
 }
 
 function getStudentProfileErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message === "missing_api_url") {
+    return "NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.";
+  }
+
   if (error instanceof Error && error.message === "missing_token") {
     return "Student token is missing. Please log in again.";
   }
@@ -119,7 +123,12 @@ export default function StudentProfilePage() {
         throw new Error("missing_token");
       }
 
-      const response = await axios.get(getStudentApiRequestUrl("/auth/profile"), {
+      const profileUrl = getStudentApiRequestUrl("/auth/profile");
+      if (!profileUrl) {
+        throw new Error("missing_api_url");
+      }
+
+      const response = await axios.get(profileUrl, {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,

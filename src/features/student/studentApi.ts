@@ -28,5 +28,6 @@ export function getStudentApiRequestUrl(path: string) {
     return `/api${normalizedPath}`;
   }
 
-  return getStudentApiEndpoint(normalizedPath);
+  const baseUrl = getStudentApiBaseUrl();
+  return baseUrl ? `${baseUrl}${normalizedPath}` : "";
 }

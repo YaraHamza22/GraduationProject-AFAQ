@@ -85,13 +85,16 @@ export default function StudentNavbar() {
     setIsLoggingOut(true);
     try {
       const token = getStudentToken();
+      const logoutUrl = getStudentApiRequestUrl("/auth/logout");
 
-      await axios.post(getStudentApiRequestUrl("/auth/logout"), {}, {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      if (logoutUrl) {
+        await axios.post(logoutUrl, {}, {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
     } catch (error) {
       console.error("Logout error:", error);
     } finally {

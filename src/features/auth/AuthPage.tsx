@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, User, MapPin, Phone, ChevronDown, ArrowRight, ArrowLeft, Loader2, Crosshair, Calendar, BookOpen, Globe, FileText, Star, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, User, MapPin, ChevronDown, ArrowRight, ArrowLeft, Loader2, Crosshair, Calendar, BookOpen, Globe, FileText, Star, AlertCircle, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -127,12 +127,18 @@ export default function AuthPage() {
     if (isLogin) {
       setIsLoading(true);
       try {
+        const loginUrl = getStudentApiRequestUrl("/auth/login");
+        if (!loginUrl) {
+          setGeneralError("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.");
+          return;
+        }
+
         const payload = {
           email: formData.email,
           password: formData.password
         };
         
-        const response = await axios.post(getStudentApiRequestUrl("/auth/login"), payload, {
+        const response = await axios.post(loginUrl, payload, {
           headers: {
             'Accept': 'application/json'
           }
@@ -152,7 +158,11 @@ export default function AuthPage() {
       } catch (error) {
         console.error("Login error:", error);
         if (axios.isAxiosError(error) && error.response) {
-          if (error.response.status === 422 || error.response.status === 401) {
+          const isHtmlResponse = String(error.response.headers?.["content-type"] ?? "").includes("text/html");
+
+          if (error.response.status === 405 || isHtmlResponse) {
+             setGeneralError("The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy.");
+          } else if (error.response.status === 422 || error.response.status === 401) {
              setGeneralError(error.response.data.message || "Invalid credentials. Please try again.");
           } else {
              setGeneralError('An unexpected error occurred from the server.');
@@ -166,6 +176,12 @@ export default function AuthPage() {
     } else {
       setIsLoading(true);
       try {
+        const registerUrl = getStudentApiRequestUrl("/auth/register");
+        if (!registerUrl) {
+          setGeneralError("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.");
+          return;
+        }
+
         // Ensure the phone number starts with +963 if it doesn't already
         let formattedPhone = formData.phone;
         if (formattedPhone && !formattedPhone.startsWith('+')) {
@@ -178,7 +194,7 @@ export default function AuthPage() {
           phone: formattedPhone
         };
         
-        await axios.post(getStudentApiRequestUrl("/auth/register"), payload, {
+        await axios.post(registerUrl, payload, {
           headers: {
             'Accept': 'application/json'
           }
@@ -191,7 +207,11 @@ export default function AuthPage() {
       } catch (error) {
         console.error("Registration error:", error);
         if (axios.isAxiosError(error) && error.response) {
-          if (error.response.status === 422) {
+          const isHtmlResponse = String(error.response.headers?.["content-type"] ?? "").includes("text/html");
+
+          if (error.response.status === 405 || isHtmlResponse) {
+             setGeneralError("The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy.");
+          } else if (error.response.status === 422) {
              setErrors(error.response.data.errors || {});
              setGeneralError("Please fix the validation errors below.");
           } else {
@@ -470,9 +490,9 @@ export default function AuthPage() {
                           >
                             <option value="" className="bg-white dark:bg-slate-900">Select...</option>
                             <option value="highschool" className="bg-white dark:bg-slate-900">High School</option>
-                            <option value="associate" className="bg-white dark:bg-slate-900">Associate's Degree</option>
-                            <option value="bachelor" className="bg-white dark:bg-slate-900">Bachelor's Degree</option>
-                            <option value="master" className="bg-white dark:bg-slate-900">Master's Degree</option>
+                            <option value="associate" className="bg-white dark:bg-slate-900">Associate&apos;s Degree</option>
+                            <option value="bachelor" className="bg-white dark:bg-slate-900">Bachelor&apos;s Degree</option>
+                            <option value="master" className="bg-white dark:bg-slate-900">Master&apos;s Degree</option>
                             <option value="doctorate" className="bg-white dark:bg-slate-900">Doctorate Degree</option>
                             <option value="other" className="bg-white dark:bg-slate-900">Other</option>
                           </select>
