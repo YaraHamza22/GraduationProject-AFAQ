@@ -11,7 +11,7 @@ interface LanguageContextType {
   isRTL: boolean;
 }
 
-const translations = {
+const translations: Record<Language, Record<string, string>> = {
   en: {
     "nav.home": "Homescreen",
     "nav.courses": "View My Courses",
@@ -49,6 +49,8 @@ const translations = {
     "adm.management": "Management",
     "adm.students": "Students",
     "adm.instructors": "Instructors",
+    "adm.all_instructors": "All Instructors",
+    "adm.course_category": "Course Category",
     "adm.managers": "Managers",
     "adm.secure_id": "Secure Identifier",
     "adm.encrypted_pass": "Encrypted Pass",
@@ -131,6 +133,8 @@ const translations = {
     "adm.management": "الإدارة",
     "adm.students": "الطلاب",
     "adm.instructors": "المدربون",
+    "adm.all_instructors": "جميع المدربين",
+    "adm.course_category": "تصنيف الدورة",
     "adm.managers": "المدراء",
     "adm.secure_id": "المعرف الآمن",
     "adm.encrypted_pass": "كلمة المرور المشفرة",
@@ -184,7 +188,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>("en");
 
   const t = (key: string) => {
-    return (translations[language] as any)[key] || key;
+    return translations[language][key] || key;
   };
 
   const isRTL = language === "ar";

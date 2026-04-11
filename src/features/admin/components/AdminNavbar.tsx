@@ -14,7 +14,8 @@ import {
   Shield,
   Sun,
   Moon,
-  ChevronRight
+  ChevronRight,
+  Tags
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { clearAdminSession, getStoredAdminUser, subscribeToAdminSession } from "@/features/admin/adminSession";
@@ -66,7 +67,15 @@ const navItems = [
 
 const managementItems = [
   { name: "Students", href: "/admin/students", icon: GraduationCap },
-  { name: "Instructors", href: "/admin/instructors", icon: Users },
+  {
+    name: "Instructors",
+    href: "/admin/instructors",
+    icon: Users,
+    children: [
+      { name: "All Instructors", href: "/admin/instructors", label: "adm.all_instructors" },
+      { name: "Course Category", href: "/admin/course-categories", icon: Tags, label: "adm.course_category" },
+    ],
+  },
   { name: "Managers", href: "/admin/managers", icon: ShieldCheck },
 ];
 
@@ -171,30 +180,65 @@ export default function AdminNavbar() {
           <p className={`px-4 mb-4 text-slate-400 dark:text-white/20 ${isRTL ? 'text-right' : ''}`}>{t("adm.management")}</p>
           <div className="space-y-1">
             {managementItems.map((item) => {
-              const isActive = pathname === item.href;
+              const isDirectActive = pathname === item.href;
+              const activeChild = item.children?.find((child) => pathname === child.href);
+              const isActive = isDirectActive || Boolean(activeChild);
               const Icon = item.icon;
               const translationKey = `adm.${item.name.toLowerCase()}`;
               return (
-                <Link key={item.name} href={item.href}>
-                  <div className={`relative flex items-center gap-3 p-4 rounded-2xl transition-all duration-300 group ${isRTL ? "flex-row-reverse" : "flex-row"} ${
-                    isActive 
-                    ? "bg-indigo-600/10 text-indigo-600 dark:text-white" 
-                    : "text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/5"
-                  }`}>
-                    {isActive && (
-                      <motion.div 
-                        layoutId="activeNavAdmin"
-                        className={`absolute ${isRTL ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'} w-1.5 h-8 bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]`}
-                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                      />
-                    )}
-                    <Icon className={`w-5 h-5 transition-colors duration-300 ${isActive ? "text-indigo-500" : "group-hover:text-indigo-400"}`} />
-                    <span className="hidden md:block">
-                      {t(translationKey)}
-                    </span>
-                    <ChevronRight className={`ml-auto w-3 h-3 opacity-20 group-hover:opacity-100 transition-all ${isRTL ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'} ${isActive ? 'hidden' : 'hidden md:block'}`} />
-                  </div>
-                </Link>
+                <div key={item.name}>
+                  <Link href={item.href}>
+                    <div className={`relative flex items-center gap-3 p-4 rounded-2xl transition-all duration-300 group ${isRTL ? "flex-row-reverse" : "flex-row"} ${
+                      isActive
+                      ? "bg-indigo-600/10 text-indigo-600 dark:text-white"
+                      : "text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/5"
+                    }`}>
+                      {isDirectActive && (
+                        <motion.div
+                          layoutId="activeNavAdmin"
+                          className={`absolute ${isRTL ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'} w-1.5 h-8 bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]`}
+                          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                        />
+                      )}
+                      <Icon className={`w-5 h-5 transition-colors duration-300 ${isActive ? "text-indigo-500" : "group-hover:text-indigo-400"}`} />
+                      <span className="hidden md:block">
+                        {t(translationKey)}
+                      </span>
+                      <ChevronRight className={`ml-auto w-3 h-3 opacity-20 group-hover:opacity-100 transition-all ${isRTL ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'} ${item.children && isActive ? 'rotate-90 opacity-100' : ''} hidden md:block`} />
+                    </div>
+                  </Link>
+
+                  {item.children && isActive ? (
+                    <div className={`mt-1 hidden space-y-1 md:block ${isRTL ? "mr-4 border-r pr-3" : "ml-4 border-l pl-3"} border-indigo-500/10`}>
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon;
+                        const isChildActive = pathname === child.href;
+
+                        return (
+                          <Link key={child.href} href={child.href}>
+                            <div className={`relative flex items-center gap-3 rounded-xl px-4 py-3 text-[9px] transition-all ${
+                              isRTL ? "flex-row-reverse" : "flex-row"
+                            } ${
+                              isChildActive
+                                ? "bg-indigo-600/10 text-indigo-600 dark:text-white"
+                                : "text-slate-500 dark:text-white/35 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-indigo-500"
+                            }`}>
+                              {isChildActive ? (
+                                <motion.div
+                                  layoutId="activeNavAdmin"
+                                  className={`absolute ${isRTL ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'} h-6 w-1 bg-indigo-500`}
+                                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                                />
+                              ) : null}
+                              {ChildIcon ? <ChildIcon className="h-3.5 w-3.5" /> : <span className="h-1.5 w-1.5 rounded-full bg-current opacity-40" />}
+                              <span>{t(child.label)}</span>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
           </div>
