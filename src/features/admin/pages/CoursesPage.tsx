@@ -66,6 +66,11 @@ type Course = {
   created_at?: string;
   updated_at?: string;
   cover_url?: string;
+  instructors?: Array<{
+    id: number | string;
+    name: string;
+    is_primary: boolean;
+  }>;
 };
 
 type FormState = {
@@ -409,7 +414,7 @@ export default function CoursesPage() {
     setIsLoadingInstructors(true);
     try {
       const res = await axios.get(
-        getAdminApiRequestUrl(`${API_PATH}/${course.id}/instructors`),
+        getAdminApiRequestUrl("/super-admin/instructors"),
         { headers: getHeaders(currentLocale) }
       );
       const data = extractInstructorsFromPayload(res);
@@ -585,6 +590,26 @@ export default function CoursesPage() {
                   <p className={`text-sm text-slate-600 dark:text-slate-300 line-clamp-2 mb-5 leading-relaxed min-h-[2.75rem] ${isRTL ? "text-right" : ""}`}>
                     {getLocalizedValue(course.description, currentLocale) || "No description provided for this course."}
                   </p>
+
+                  {/* Instructor Section */}
+                  <div className="mb-6 p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/5">
+                    <div className={`flex items-center gap-3 ${isRTL ? "flex-row-reverse text-right" : ""}`}>
+                      <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0 border border-indigo-500/20">
+                        <GraduationCap className="w-5 h-5 text-indigo-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-500/60 mb-0.5">Assigned Faculty</p>
+                        <p className="text-sm font-black text-slate-900 dark:text-white truncate">
+                          {course.instructors && course.instructors.length > 0
+                            ? course.instructors.find((i) => i.is_primary)?.name ?? course.instructors[0].name
+                            : "Awaiting Assignment"}
+                          {course.instructors && course.instructors.length > 1 && (
+                            <span className="text-indigo-500 ml-1.5 font-bold">+{course.instructors.length - 1}</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className={`flex flex-wrap gap-2 mb-6 mt-auto ${isRTL ? "flex-row-reverse" : ""}`}>
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-white/[0.04] border border-slate-200/50 dark:border-white/5">
@@ -976,6 +1001,112 @@ export default function CoursesPage() {
                   </button>
                 </footer>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isAssignModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-10">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAssignModalOpen(false)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-xl"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 40 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 40 }}
+              className="relative w-full max-w-2xl bg-white dark:bg-[#0A0F1D] rounded-[36px] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden"
+            >
+              <header className={`p-6 md:p-8 border-b border-slate-100 dark:border-white/10 flex items-center justify-between ${isRTL ? "flex-row-reverse" : ""}`}>
+                <div>
+                  <div className={`flex items-center gap-2 text-indigo-500 font-black uppercase tracking-[0.25em] text-[10px] mb-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Assign Instructor
+                  </div>
+                  <h3 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                    {assignCourse ? getLocalizedValue(assignCourse.title, currentLocale) : "Course"}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAssignModalOpen(false)}
+                  className="p-2.5 rounded-xl text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </header>
+
+              <div className="p-6 md:p-8 space-y-5">
+                <div className="relative group">
+                  <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors w-4 h-4 ${isRTL ? "right-4" : "left-4"}`} />
+                  <input
+                    type="text"
+                    value={instructorSearchQuery}
+                    onChange={(e) => setInstructorSearchQuery(e.target.value)}
+                    placeholder="Search instructors..."
+                    className={`w-full py-3 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500/50 transition-all text-slate-900 dark:text-white font-semibold text-sm ${isRTL ? "pr-11 pl-4 text-right" : "pl-11 pr-4"}`}
+                  />
+                </div>
+
+                <div className="max-h-[320px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
+                  {isLoadingInstructors ? (
+                    <div className="p-5 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-white/60 font-semibold text-sm">
+                      Loading instructors...
+                    </div>
+                  ) : filteredInstructors.length === 0 ? (
+                    <div className="p-5 rounded-2xl border border-dashed border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-white/60 font-semibold text-sm text-center">
+                      No instructors found.
+                    </div>
+                  ) : (
+                    filteredInstructors.map((inst) => {
+                      const rawId = getInstructorIdValue(inst);
+                      const instId = rawId !== undefined && rawId !== null ? String(rawId) : "";
+                      const isSelected = instId !== "" && selectedInstructorId === instId;
+                      return (
+                        <button
+                          key={instId || `${getInstructorDisplayName(inst)}-${inst.email || "unknown"}`}
+                          type="button"
+                          disabled={!instId}
+                          onClick={() => setSelectedInstructorId(instId)}
+                          className={`w-full p-4 rounded-2xl border text-left transition-all ${
+                            isSelected
+                              ? "border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
+                              : "border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-slate-700 dark:text-white hover:border-indigo-400/60"
+                          } ${isRTL ? "text-right" : ""} disabled:opacity-50`}
+                        >
+                          <div className="font-black text-sm leading-tight">{getInstructorDisplayName(inst)}</div>
+                          <div className="text-xs mt-1 text-slate-500 dark:text-white/50">{inst.email || `Instructor ID: ${instId || "N/A"}`}</div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <footer className={`p-6 md:p-8 border-t border-slate-100 dark:border-white/10 flex flex-col sm:flex-row gap-3 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
+                <button
+                  type="button"
+                  onClick={() => setIsAssignModalOpen(false)}
+                  className="px-6 py-3 rounded-2xl border border-slate-200 dark:border-white/10 text-slate-600 dark:text-white/70 font-bold text-sm hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleAssignInstructor()}
+                  disabled={isAssigning || !selectedInstructorId}
+                  className="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                  Assign Instructor
+                </button>
+              </footer>
             </motion.div>
           </div>
         )}
