@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Globe,
   MonitorPlay,
+  UserPlus,
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getAdminApiBaseUrl, getAdminApiRequestUrl } from "@/features/admin/adminApi";
@@ -91,13 +92,22 @@ type Category = {
   name: string | LocalizedText;
 };
 
+type Instructor = {
+  id: number | string;
+  instructor_id?: number | string;
+  user_id?: number | string;
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+};
+
 type FieldName = keyof FormState | "title" | "description" | "objectives" | "prerequisites";
 type FieldErrors = Partial<Record<FieldName, string>>;
 type ModalMode = "create" | "edit" | "view";
 
 const API_PATH = "/super-admin/courses";
 const CATEGORIES_API_PATH = "/super-admin/course-categories";
-
 const initialForm: FormState = {
   course_category_id: "",
   title_en: "",
@@ -148,6 +158,44 @@ function getErrorMessage(error: unknown, fallback: string) {
   return typeof msg === "string" ? msg : fallback;
 }
 
+function getLocalizedInputPair(
+  value: unknown,
+  translations: unknown,
+  activeLocale: "en" | "ar"
+) {
+  const translatedEn = getLocalizedValue(translations, "en");
+  const translatedAr = getLocalizedValue(translations, "ar");
+  if (translatedEn || translatedAr) {
+    return { en: translatedEn, ar: translatedAr };
+  }
+
+  const objectEn = getLocalizedValue(value, "en");
+  const objectAr = getLocalizedValue(value, "ar");
+  if (objectEn || objectAr) {
+    return { en: objectEn, ar: objectAr };
+  }
+
+  const single = getStringValue(value).trim();
+  if (!single) return { en: "", ar: "" };
+  return activeLocale === "ar" ? { en: "", ar: single } : { en: single, ar: "" };
+}
+
+function getInstructorIdValue(inst: Instructor) {
+  return inst.id ?? inst.instructor_id ?? inst.user_id;
+}
+
+function extractInstructorsFromPayload(payload: any): Instructor[] {
+  const direct = payload?.data?.data ?? payload?.data ?? payload ?? [];
+  if (Array.isArray(direct)) return direct;
+  if (Array.isArray(direct?.instructors)) return direct.instructors;
+  if (Array.isArray(direct?.items)) return direct.items;
+  if (direct && typeof direct === "object") {
+    const single = direct.instructor ?? direct.user ?? direct;
+    if (single && typeof single === "object") return [single as Instructor];
+  }
+  return [];
+}
+
 // --- Component ---
 
 export default function CoursesPage() {
@@ -174,6 +222,15 @@ export default function CoursesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
 
+  // Assign Instructor State
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [assignCourse, setAssignCourse] = useState<Course | null>(null);
+  const [instructors, setInstructors] = useState<Instructor[]>([]);
+  const [selectedInstructorId, setSelectedInstructorId] = useState("");
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [instructorSearchQuery, setInstructorSearchQuery] = useState("");
+  const [isLoadingInstructors, setIsLoadingInstructors] = useState(false);
+
   const apiBaseUrl = getAdminApiBaseUrl();
 
   const getHeaders = useCallback((locale?: string) => {
@@ -190,8 +247,8 @@ export default function CoursesPage() {
     setListError(null);
     try {
       const [coursesRes, catsRes] = await Promise.all([
-        axios.get(getAdminApiRequestUrl("/super-admin/courses/all"), { headers: getHeaders() }),
-        axios.get(getAdminApiRequestUrl(CATEGORIES_API_PATH), { headers: getHeaders() }),
+        axios.get(getAdminApiRequestUrl("/super-admin/courses/all"), { headers: getHeaders(currentLocale) }),
+        axios.get(getAdminApiRequestUrl(CATEGORIES_API_PATH), { headers: getHeaders(currentLocale) }),
       ]);
 
       // Extracting data based on common Laravel API patterns seen in previous files
@@ -204,7 +261,7 @@ export default function CoursesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [getHeaders]);
+  }, [currentLocale, getHeaders]);
 
   useEffect(() => {
     void loadData();
@@ -230,22 +287,22 @@ export default function CoursesPage() {
   const openEditModal = (course: Course) => {
     setEditingCourse(course);
     
-    // Safely get translations from the provided objects or fallback to the single string if that's all we have
-    const title = course.title_translations || { en: "", ar: "" };
-    const desc = course.description_translations || { en: "", ar: "" };
-    const obj = course.objectives_translations || { en: "", ar: "" };
-    const pre = course.prerequisites_translations || { en: "", ar: "" };
+    const titlePair = getLocalizedInputPair(course.title, course.title_translations, currentLocale);
+    const descPair = getLocalizedInputPair(course.description, course.description_translations, currentLocale);
+    const objPair = getLocalizedInputPair(course.objectives, course.objectives_translations, currentLocale);
+    const prePair = getLocalizedInputPair(course.prerequisites, course.prerequisites_translations, currentLocale);
+    const categoryId = course.course_category_id || course.category?.id || "";
 
     setForm({
-      course_category_id: String(course.course_category_id),
-      title_en: typeof course.title === 'string' ? (title.en || course.title) : (course.title.en || ""),
-      title_ar: typeof course.title === 'string' ? (title.ar || "") : (course.title.ar || ""),
-      description_en: typeof course.description === 'string' ? (desc.en || course.description) : (course.description.en || ""),
-      description_ar: typeof course.description === 'string' ? (desc.ar || "") : (course.description.ar || ""),
-      objectives_en: typeof course.objectives === 'string' ? (obj.en || course.objectives) : (course.objectives.en || ""),
-      objectives_ar: typeof course.objectives === 'string' ? (obj.ar || "") : (course.objectives.ar || ""),
-      prerequisites_en: typeof course.prerequisites === 'string' ? (pre.en || course.prerequisites) : (course.prerequisites.en || ""),
-      prerequisites_ar: typeof course.prerequisites === 'string' ? (pre.ar || "") : (course.prerequisites.ar || ""),
+      course_category_id: String(categoryId),
+      title_en: titlePair.en,
+      title_ar: titlePair.ar,
+      description_en: descPair.en,
+      description_ar: descPair.ar,
+      objectives_en: objPair.en,
+      objectives_ar: objPair.ar,
+      prerequisites_en: prePair.en,
+      prerequisites_ar: prePair.ar,
       actual_duration_hours: String(course.actual_duration_hours),
       language: course.language,
       status: course.status,
@@ -273,8 +330,15 @@ export default function CoursesPage() {
     setFieldErrors({});
     
     try {
+      const resolvedCategoryId = Number(form.course_category_id || editingCourse?.course_category_id || editingCourse?.category?.id || 0);
+      if (!resolvedCategoryId) {
+        setFieldErrors(prev => ({ ...prev, course_category_id: "Category is required." }));
+        setActiveTab("basic");
+        return;
+      }
+
       const payload = {
-        course_category_id: Number(form.course_category_id),
+        course_category_id: resolvedCategoryId,
         title: { en: form.title_en, ar: form.title_ar },
         description: { en: form.description_en, ar: form.description_ar },
         objectives: { en: form.objectives_en, ar: form.objectives_ar },
@@ -289,10 +353,10 @@ export default function CoursesPage() {
       };
 
       if (modalMode === "create") {
-        await axios.post(getAdminApiRequestUrl(API_PATH), payload, { headers: getHeaders() });
+        await axios.post(getAdminApiRequestUrl(API_PATH), payload, { headers: getHeaders(currentLocale) });
         setSuccessMessage("Course created successfully!");
       } else if (editingCourse) {
-        await axios.put(getAdminApiRequestUrl(`${API_PATH}/${editingCourse.id}`), payload, { headers: getHeaders() });
+        await axios.put(getAdminApiRequestUrl(`${API_PATH}/${editingCourse.id}`), payload, { headers: getHeaders(currentLocale) });
         setSuccessMessage("Course updated successfully!");
       }
 
@@ -333,6 +397,64 @@ export default function CoursesPage() {
       case "archived": return "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20";
       case "draft": return "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20";
       default: return "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20";
+    }
+  };
+
+  // --- Assign Instructor ---
+  const openAssignModal = async (course: Course) => {
+    setAssignCourse(course);
+    setSelectedInstructorId("");
+    setInstructorSearchQuery("");
+    setIsAssignModalOpen(true);
+    setIsLoadingInstructors(true);
+    try {
+      const res = await axios.get(
+        getAdminApiRequestUrl(`${API_PATH}/${course.id}/instructors`),
+        { headers: getHeaders(currentLocale) }
+      );
+      const data = extractInstructorsFromPayload(res);
+      setInstructors(Array.isArray(data) ? data : []);
+    } catch {
+      setInstructors([]);
+    } finally {
+      setIsLoadingInstructors(false);
+    }
+  };
+
+  const getInstructorDisplayName = (inst: Instructor) => {
+    if (inst.name) return inst.name;
+    if (inst.first_name || inst.last_name) return `${inst.first_name || ""} ${inst.last_name || ""}`.trim();
+    return inst.email || `Instructor #${getInstructorIdValue(inst)}`;
+  };
+
+  const filteredInstructors = useMemo(() => {
+    const q = instructorSearchQuery.trim().toLowerCase();
+    if (!q) return instructors;
+    return instructors.filter(inst => {
+      const name = getInstructorDisplayName(inst).toLowerCase();
+      const email = (inst.email || "").toLowerCase();
+      return name.includes(q) || email.includes(q);
+    });
+  }, [instructors, instructorSearchQuery]);
+
+  const handleAssignInstructor = async () => {
+    if (!assignCourse || !selectedInstructorId) return;
+    setIsAssigning(true);
+    try {
+      await axios.post(
+        getAdminApiRequestUrl(`${API_PATH}/${assignCourse.id}/instructors/assign`),
+        { instructor_id: Number(selectedInstructorId) },
+        { headers: getHeaders(currentLocale) }
+      );
+      setSuccessMessage("Instructor assigned successfully!");
+      setIsAssignModalOpen(false);
+      await loadData();
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (error) {
+      setListError(getErrorMessage(error, "Failed to assign instructor."));
+      setIsAssignModalOpen(false);
+    } finally {
+      setIsAssigning(false);
     }
   };
 
@@ -433,10 +555,10 @@ export default function CoursesPage() {
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ delay: idx * 0.02 }}
-                className="group relative flex flex-col overflow-hidden rounded-2xl bg-white dark:bg-[#151722] border border-slate-200 dark:border-white/5 hover:border-indigo-500/50 dark:hover:border-indigo-500/40 transition-all shadow-sm hover:shadow-md"
+                className="group relative flex flex-col overflow-hidden rounded-3xl bg-white dark:bg-[#151722] border border-slate-200 dark:border-white/10 hover:border-indigo-500/50 dark:hover:border-indigo-500/40 transition-all shadow-sm hover:shadow-lg hover:-translate-y-0.5"
               >
                 {/* Image / Banner Area */}
-                <div className="relative h-36 w-full overflow-hidden shrink-0 bg-slate-50 dark:bg-white/[0.02]">
+                <div className="relative h-40 w-full overflow-hidden shrink-0 bg-slate-50 dark:bg-white/[0.02]">
                   {course.cover_url ? (
                     <img src={course.cover_url} alt={getLocalizedValue(course.title, currentLocale)} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                   ) : (
@@ -455,12 +577,12 @@ export default function CoursesPage() {
                 </div>
 
                 {/* Content Area */}
-                <div className="p-5 flex flex-col grow">
+                <div className="p-6 flex flex-col grow">
                   <h3 className={`text-lg font-bold text-slate-900 dark:text-white mb-1.5 line-clamp-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors ${isRTL ? "text-right" : ""}`}>
                     {getLocalizedValue(course.title, currentLocale)}
                   </h3>
                   
-                  <p className={`text-sm text-slate-500 dark:text-slate-400 line-clamp-2 mb-5 leading-relaxed min-h-[2.5rem] ${isRTL ? "text-right" : ""}`}>
+                  <p className={`text-sm text-slate-600 dark:text-slate-300 line-clamp-2 mb-5 leading-relaxed min-h-[2.75rem] ${isRTL ? "text-right" : ""}`}>
                     {getLocalizedValue(course.description, currentLocale) || "No description provided for this course."}
                   </p>
 
@@ -480,19 +602,29 @@ export default function CoursesPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className={`flex gap-2 pt-4 border-t border-slate-100 dark:border-white/5 ${isRTL ? "flex-row-reverse" : ""}`}>
+                  <div className={`grid grid-cols-2 gap-2.5 pt-4 border-t border-slate-100 dark:border-white/10 ${isRTL ? "text-right" : ""}`}>
                     <button 
+                      type="button"
                       onClick={() => openEditModal(course)}
-                      className="flex-1 py-2.5 bg-white dark:bg-transparent text-slate-700 dark:text-slate-300 font-semibold rounded-xl text-xs hover:bg-slate-50 dark:hover:bg-white/[0.03] border border-slate-200 dark:border-white/10 transition-colors flex items-center justify-center gap-2"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-900 bg-slate-900 px-3 py-2.5 text-[12px] font-bold text-white shadow-sm transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#151722]"
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
+                      <Edit3 className="w-3.5 h-3.5 shrink-0" />
                       Manage
                     </button>
                     <button 
-                      onClick={() => router.push(`/admin/courses/${course.id}/units`)}
-                      className="flex-1 py-2.5 bg-indigo-600 text-white font-semibold rounded-xl text-xs hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-sm shadow-indigo-500/20"
+                      type="button"
+                      onClick={() => openAssignModal(course)}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-[12px] font-bold text-slate-800 shadow-sm transition-colors hover:bg-slate-50 dark:border-white/15 dark:bg-white/[0.04] dark:text-white dark:hover:bg-white/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#151722]"
                     >
-                      <Layers className="w-3.5 h-3.5" />
+                      <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                      Assign
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => router.push(`/admin/courses/${course.id}/units`)}
+                      className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-600 bg-indigo-600 px-3 py-2.5 text-[12px] font-bold text-white shadow-md shadow-indigo-500/25 transition-colors hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#151722]"
+                    >
+                      <Layers className="w-3.5 h-3.5 shrink-0" />
                       Units
                     </button>
                   </div>

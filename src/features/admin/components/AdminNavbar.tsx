@@ -67,18 +67,19 @@ const navItems = [
 ];
 
 const managementItems = [
-  { name: "Students", href: "/admin/students", icon: GraduationCap },
+  { name: "Students", href: "/admin/students", icon: GraduationCap, label: "adm.students" },
   { name: "Courses", href: "/admin/courses", icon: BookOpen, label: "adm.courses" },
   {
     name: "Instructors",
     href: "/admin/instructors",
     icon: Users,
+    label: "adm.instructors",
     children: [
       { name: "All Instructors", href: "/admin/instructors", label: "adm.all_instructors" },
       { name: "Course Category", href: "/admin/course-categories", icon: Tags, label: "adm.course_category" },
     ],
   },
-  { name: "Managers", href: "/admin/managers", icon: ShieldCheck },
+  { name: "Managers", href: "/admin/managers", icon: ShieldCheck, label: "adm.managers" },
 ];
 
 export default function AdminNavbar() {
@@ -140,7 +141,7 @@ export default function AdminNavbar() {
             <Shield className="w-6 h-6 text-white" />
           </div>
           <span className="hidden md:block text-2xl font-black text-slate-900 dark:text-white tracking-tighter">
-            Afaq <span className="text-indigo-500 italic">Admin</span>
+            {t("adm.afaq")} <span className="text-indigo-500 italic">{t("adm.admin")}</span>
           </span>
         </Link>
       </div>
@@ -186,7 +187,7 @@ export default function AdminNavbar() {
               const activeChild = item.children?.find((child) => pathname === child.href);
               const isActive = isDirectActive || Boolean(activeChild);
               const Icon = item.icon;
-              const translationKey = `adm.${item.name.toLowerCase()}`;
+              const translationKey = item.label;
               return (
                 <div key={item.name}>
                   <Link href={item.href}>
@@ -251,7 +252,7 @@ export default function AdminNavbar() {
       <div className="p-4 space-y-2 border-t border-slate-200 dark:border-white/5">
         <div className="rounded-3xl border border-slate-200 bg-slate-100/70 p-4 shadow-sm dark:border-white/5 dark:bg-white/5 dark:shadow-none">
           <p className={`text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-white/30 ${isRTL ? "text-right" : ""}`}>
-            Secure Session
+            {t("adm.secure_session")}
           </p>
           <p className={`mt-2 truncate text-sm font-black text-slate-900 dark:text-white ${isRTL ? "text-right" : ""}`}>
             {adminLabel}
@@ -286,7 +287,7 @@ export default function AdminNavbar() {
         >
           <div className="flex items-center gap-3 p-4 rounded-2xl text-rose-500/60 hover:text-rose-500 hover:bg-rose-500/5 transition-all duration-300 cursor-pointer group uppercase font-black text-[10px] tracking-widest">
             <LogOut className={`w-5 h-5 transition-transform ${isRTL ? "group-hover:translate-x-1" : "group-hover:-translate-x-1"}`} />
-            <span className="hidden md:block">Logout</span>
+            <span className="hidden md:block">{t("adm.logout")}</span>
           </div>
         </button>
       </div>

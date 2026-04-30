@@ -40,8 +40,10 @@ type Unit = {
   id: number | string;
   unit_id?: number | string; // Backend might use unit_id
   course_id: number | string;
-  title: LocalizedText;
-  description: LocalizedText;
+  title: LocalizedText | string;
+  description: LocalizedText | string;
+  title_translations?: LocalizedText;
+  description_translations?: LocalizedText;
   unit_order: number;
   actual_duration_minutes: number;
   created_at?: string;
@@ -130,11 +132,12 @@ export default function CourseUnitsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormState | "title" | "description", string>>>({});
 
-  const getHeaders = useCallback(() => {
+  const getHeaders = useCallback((locale?: string) => {
     const token = getAdminToken();
     return {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
+      ...(locale ? { "Accept-Language": locale, "X-Locale": locale } : {}),
     };
   }, []);
 
@@ -142,32 +145,38 @@ export default function CourseUnitsPage() {
     setIsLoading(true);
     setListError(null);
     try {
-      // First, fetch course details to verify it exists and get title
-      const courseRes = await axios.get(getAdminApiRequestUrl(`${COURSES_API_PATH}/${courseId}`), { headers: getHeaders() });
-      setCourse(courseRes.data?.data || courseRes.data);
-
-      // Fetch units. Note: Backend might need a filter by course_id
-      // For now, based on Postman, we fetch all and filter or the endpoint itself might be course-specific
-      // If /super-admin/units returns all, we filter. If there's a course-specific one, we'd use that.
-      // Based on common patterns, let's try fetching and filtering if needed, 
-      // or assume the course model returned units (common in Laravel with-relations)
+      // Fetch course details to verify it exists and get title
+      const courseRes = await axios.get(getAdminApiRequestUrl(`${COURSES_API_PATH}/${courseId}`), { headers: getHeaders(currentLocale) });
       const fetchedCourse = courseRes.data?.data || courseRes.data;
-      if (fetchedCourse.units) {
-        setUnits(fetchedCourse.units);
-      } else {
-        const unitsRes = await axios.get(getAdminApiRequestUrl(UNITS_API_PATH), { 
-          headers: getHeaders(),
-          params: { course_id: courseId }
+      setCourse(fetchedCourse);
+
+      // Use the dedicated by-course endpoint for fetching units
+      try {
+        const unitsRes = await axios.get(getAdminApiRequestUrl(`${UNITS_API_PATH}/course/${courseId}`), {
+          headers: getHeaders(currentLocale),
         });
-        const allUnits = unitsRes.data?.data?.data || unitsRes.data?.data || unitsRes.data || [];
-        setUnits(Array.isArray(allUnits) ? allUnits.filter((u: any) => String(u.course_id) === String(courseId)) : []);
+        const extractData = (r: any) => r.data?.data?.data || r.data?.data || r.data || [];
+        const unitsData = extractData(unitsRes);
+        setUnits(Array.isArray(unitsData) ? unitsData : []);
+      } catch {
+        // Fallback: try units from course response or fetch all and filter
+        if (fetchedCourse.units && Array.isArray(fetchedCourse.units)) {
+          setUnits(fetchedCourse.units);
+        } else {
+          const unitsRes = await axios.get(getAdminApiRequestUrl(UNITS_API_PATH), { 
+            headers: getHeaders(currentLocale),
+            params: { course_id: courseId, locale: currentLocale },
+          });
+          const allUnits = unitsRes.data?.data?.data || unitsRes.data?.data || unitsRes.data || [];
+          setUnits(Array.isArray(allUnits) ? allUnits.filter((u: any) => String(u.course_id) === String(courseId)) : []);
+        }
       }
     } catch (error) {
       setListError(getErrorMessage(error, "Failed to load units."));
     } finally {
       setIsLoading(false);
     }
-  }, [courseId, getHeaders]);
+  }, [courseId, currentLocale, getHeaders]);
 
   useEffect(() => {
     if (courseId) void loadData();
@@ -182,11 +191,14 @@ export default function CourseUnitsPage() {
 
   const openEditModal = (unit: Unit) => {
     setEditingUnit(unit);
+    // API returns title as a translated string, and title_translations as {en, ar}
+    const titleTrans = unit.title_translations || (typeof unit.title === 'object' ? unit.title : { en: String(unit.title), ar: '' });
+    const descTrans = unit.description_translations || (typeof unit.description === 'object' ? unit.description : { en: String(unit.description), ar: '' });
     setForm({
-      title_en: unit.title.en,
-      title_ar: unit.title.ar,
-      description_en: unit.description.en,
-      description_ar: unit.description.ar,
+      title_en: titleTrans.en || '',
+      title_ar: titleTrans.ar || '',
+      description_en: descTrans.en || '',
+      description_ar: descTrans.ar || '',
       actual_duration_minutes: String(unit.actual_duration_minutes),
       unit_order: String(unit.unit_order),
     });
@@ -210,11 +222,11 @@ export default function CourseUnitsPage() {
       };
 
       if (modalMode === "create") {
-        await axios.post(getAdminApiRequestUrl(UNITS_API_PATH), payload, { headers: getHeaders() });
+        await axios.post(getAdminApiRequestUrl(UNITS_API_PATH), payload, { headers: getHeaders(currentLocale) });
         setSuccessMessage("Unit created successfully!");
       } else if (editingUnit) {
-        const id = editingUnit.unit_id || editingUnit.id;
-        await axios.put(getAdminApiRequestUrl(`${UNITS_API_PATH}/${id}`), payload, { headers: getHeaders() });
+        const unitId = editingUnit.unit_id || editingUnit.id;
+        await axios.put(getAdminApiRequestUrl(`${UNITS_API_PATH}/${unitId}`), payload, { headers: getHeaders(currentLocale) });
         setSuccessMessage("Unit updated successfully!");
       }
 
@@ -241,7 +253,7 @@ export default function CourseUnitsPage() {
   const deleteUnit = async (id: number | string) => {
     if (!confirm("Are you sure you want to delete this unit?")) return;
     try {
-      await axios.delete(getAdminApiRequestUrl(`${UNITS_API_PATH}/${id}`), { headers: getHeaders() });
+      await axios.delete(getAdminApiRequestUrl(`${UNITS_API_PATH}/${id}`), { headers: getHeaders(currentLocale) });
       setSuccessMessage("Unit deleted successfully!");
       await loadData();
       setTimeout(() => setSuccessMessage(null), 5000);
@@ -424,6 +436,8 @@ export default function CourseUnitsPage() {
                       <Trash2 className="w-6 h-6" />
                     </button>
                     <button 
+                      type="button"
+                      onClick={() => router.push(`/admin/courses/${courseId}/units/${unit.unit_id || unit.id}/lessons`)}
                       className="flex items-center gap-3 px-8 py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-[24px] font-black uppercase tracking-[0.2em] text-[11px] hover:scale-[1.05] active:scale-95 transition-all shadow-xl shadow-slate-900/20"
                     >
                       Explore Lessons
