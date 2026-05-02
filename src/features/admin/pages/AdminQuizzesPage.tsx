@@ -55,6 +55,7 @@ type QuestionFormState = {
 const QUIZZES_API_PATH = "/super-admin/quizzes";
 const QUESTIONS_API_PATH = "/super-admin/questions";
 const QUESTION_OPTIONS_API_PATH = "/super-admin/question-options";
+const QUIZ_INSTRUCTOR_ID = 1;
 
 const initialQuizForm: QuizFormState = {
   title: "",
@@ -153,7 +154,7 @@ export default function AdminQuizzesPage() {
   const listQuizzes = useCallback(async () => {
     const res = await axios.get(getAdminApiRequestUrl(QUIZZES_API_PATH), {
       headers: getHeaders(currentLocale),
-      params: { quizable_type: "course", type: "quiz", instructor_id: 5 },
+      params: { quizable_type: "course", type: "quiz", instructor_id: QUIZ_INSTRUCTOR_ID },
     });
     return extractList(res.data) as Quiz[];
   }, [currentLocale, getHeaders]);
@@ -205,7 +206,7 @@ export default function AdminQuizzesPage() {
         passing_score: 60,
         type: "quiz",
         status: "draft",
-        instructor_id: 5,
+        instructor_id: QUIZ_INSTRUCTOR_ID,
         quizable_type: "course",
         quizable_id: 1,
         auto_grade_enabled: true,
