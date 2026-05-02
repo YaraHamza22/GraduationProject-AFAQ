@@ -18,6 +18,7 @@ import {
   Save,
   Search,
   Settings,
+  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -43,6 +44,22 @@ type Lesson = {
   lesson_order?: number;
 };
 
+type Quiz = {
+  id: number | string;
+  quiz_id?: number | string;
+  title?: string | LocalizedText;
+  description?: string | LocalizedText;
+  max_score?: number;
+  passing_score?: number;
+  type?: string;
+  status?: string;
+  instructor_id?: number | string;
+  quizable_type?: string;
+  quizable_id?: number | string;
+  auto_grade_enabled?: boolean;
+  duration_minutes?: number;
+};
+
 type FormState = {
   title: string;
   description: string;
@@ -55,6 +72,8 @@ type FormState = {
 const LESSONS_API_PATH = "/super-admin/lessons";
 const UNITS_API_PATH = "/super-admin/units";
 const COURSES_API_PATH = "/super-admin/courses";
+const QUIZZES_API_PATH = "/super-admin/quizzes";
+const QUIZ_INSTRUCTOR_ID = 1;
 
 const initialForm: FormState = {
   title: "",
@@ -123,6 +142,10 @@ function getLessonUnitId(lesson: Lesson) {
   return lesson.unit_id || lesson.unitId;
 }
 
+function getQuizId(quiz: Quiz) {
+  return quiz.quiz_id || quiz.id;
+}
+
 export default function UnitLessonsPage() {
   const params = useParams();
   const router = useRouter();
@@ -150,6 +173,7 @@ export default function UnitLessonsPage() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [lessonQuizMap, setLessonQuizMap] = useState<Record<string, Quiz[]>>({});
 
   const getHeaders = useCallback((locale?: string) => {
     const token = getAdminToken();
@@ -210,9 +234,135 @@ export default function UnitLessonsPage() {
     }
   }, [courseId, currentLocale, getHeaders, loadLessons, unitId]);
 
+  const createQuiz = useCallback(async (options?: { lessonId?: string | number; title?: string; description?: string; durationMinutes?: number }) => {
+    const resolvedTitle = options?.title ?? form.title.trim();
+    const resolvedDescription = options?.description ?? form.description.trim();
+    const resolvedDuration = options?.durationMinutes ?? Number(form.actual_duration_minutes || 30);
+    const payload = {
+      title: {
+        en: resolvedTitle,
+        ar: resolvedTitle,
+      },
+      description: {
+        en: resolvedDescription,
+        ar: resolvedDescription,
+      },
+      max_score: 100,
+      passing_score: 60,
+      type: "quiz",
+      status: "draft",
+      instructor_id: QUIZ_INSTRUCTOR_ID,
+      quizable_type: "course",
+      quizable_id: Number(courseId),
+      auto_grade_enabled: true,
+      duration_minutes: resolvedDuration,
+    };
+
+    const res = await axios.post(getAdminApiRequestUrl(QUIZZES_API_PATH), payload, {
+      headers: getHeaders(currentLocale),
+    });
+    return extractItem(res.data) as Quiz | null;
+  }, [courseId, currentLocale, form.actual_duration_minutes, form.description, form.title, getHeaders]);
+
+  const updateQuiz = useCallback(async (quizId: string | number) => {
+    const payload = {
+      title: {
+        en: form.title.trim(),
+        ar: form.title.trim(),
+      },
+      description: {
+        en: form.description.trim(),
+        ar: form.description.trim(),
+      },
+      max_score: 100,
+      passing_score: 60,
+      type: "quiz",
+      status: "draft",
+      instructor_id: QUIZ_INSTRUCTOR_ID,
+      quizable_type: "course",
+      quizable_id: Number(courseId),
+      auto_grade_enabled: true,
+      duration_minutes: Number(form.actual_duration_minutes || 30),
+    };
+
+    const res = await axios.put(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}`), payload, {
+      headers: getHeaders(currentLocale),
+    });
+    return extractItem(res.data) as Quiz | null;
+  }, [courseId, currentLocale, form.actual_duration_minutes, form.description, form.title, getHeaders]);
+
+  const getQuizById = useCallback(async (quizId: string | number) => {
+    const res = await axios.get(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}`), {
+      headers: getHeaders(currentLocale),
+    });
+    return extractItem(res.data) as Quiz | null;
+  }, [currentLocale, getHeaders]);
+
+  const getAllQuizzes = useCallback(async () => {
+    const res = await axios.get(getAdminApiRequestUrl(QUIZZES_API_PATH), {
+      headers: getHeaders(currentLocale),
+    });
+    return extractList(res.data) as Quiz[];
+  }, [currentLocale, getHeaders]);
+
+  const deleteQuiz = useCallback(async (quizId: string | number) => {
+    await axios.delete(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}`), {
+      headers: getHeaders(currentLocale),
+    });
+  }, [currentLocale, getHeaders]);
+
+  const publishQuiz = useCallback(async (quizId: string | number) => {
+    await axios.post(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}/publish`), {}, {
+      headers: getHeaders(currentLocale),
+    });
+  }, [currentLocale, getHeaders]);
+
+  const unpublishQuiz = useCallback(async (quizId: string | number) => {
+    await axios.post(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}/unpublish`), {}, {
+      headers: getHeaders(currentLocale),
+    });
+  }, [currentLocale, getHeaders]);
+
+  const listQuizzes = useCallback(async () => {
+    const res = await axios.get(getAdminApiRequestUrl(QUIZZES_API_PATH), {
+      headers: getHeaders(currentLocale),
+      params: {
+        quizable_type: "course",
+        type: "quiz",
+        instructor_id: QUIZ_INSTRUCTOR_ID,
+      },
+    });
+    return extractList(res.data) as Quiz[];
+  }, [currentLocale, getHeaders]);
+
   useEffect(() => {
     if (courseId && unitId) void loadData();
   }, [courseId, loadData, unitId]);
+
+  useEffect(() => {
+    const loadQuizLinks = async () => {
+      try {
+        const [filteredQuizzes, allQuizzes] = await Promise.all([listQuizzes(), getAllQuizzes()]);
+        const merged = [...filteredQuizzes, ...allQuizzes];
+        const nextMap: Record<string, Quiz[]> = {};
+        merged.forEach((quiz) => {
+          const raw = quiz as Record<string, unknown>;
+          const key = raw.lesson_id ? String(raw.lesson_id) : "unlinked";
+          if (!nextMap[key]) nextMap[key] = [];
+          if (!nextMap[key].some((item) => String(getQuizId(item)) === String(getQuizId(quiz)))) {
+            nextMap[key].push(quiz);
+          }
+        });
+        setLessonQuizMap(nextMap);
+      } catch {
+        // Quiz linking is optional for rendering lessons.
+      }
+    };
+
+    if (courseId && unitId) {
+      void loadQuizLinks();
+    }
+  }, [courseId, getAllQuizzes, listQuizzes, unitId]);
 
   const filteredLessons = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -316,11 +466,38 @@ export default function UnitLessonsPage() {
           await axios.post(getAdminApiRequestUrl(LESSONS_API_PATH), payload, { headers: getHeaders(currentLocale) });
         }
         setSuccessMessage("Lesson created successfully.");
+        if (form.lesson_type === "quiz") {
+          const createdQuiz = await createQuiz();
+          if (createdQuiz) {
+            const createdQuizId = getQuizId(createdQuiz);
+            const freshQuiz = await getQuizById(createdQuizId);
+            const lessonKey = "unlinked";
+            setLessonQuizMap((prev) => ({
+              ...prev,
+              [lessonKey]: [...(prev[lessonKey] || []), freshQuiz || createdQuiz],
+            }));
+          }
+        }
       } else if (editingLesson) {
         await axios.put(getAdminApiRequestUrl(`${LESSONS_API_PATH}/${getLessonId(editingLesson)}`), payload, {
           headers: getHeaders(currentLocale),
         });
         setSuccessMessage("Lesson updated successfully.");
+        if (form.lesson_type === "quiz") {
+          const lessonKey = String(getLessonId(editingLesson));
+          const existing = lessonQuizMap[lessonKey]?.[0];
+          if (existing) {
+            await updateQuiz(getQuizId(existing));
+          } else {
+            const createdQuiz = await createQuiz({ lessonId: getLessonId(editingLesson) });
+            if (createdQuiz) {
+              setLessonQuizMap((prev) => ({
+                ...prev,
+                [lessonKey]: [...(prev[lessonKey] || []), createdQuiz],
+              }));
+            }
+          }
+        }
       }
 
       setIsModalOpen(false);
@@ -331,6 +508,91 @@ export default function UnitLessonsPage() {
       setListError(getErrorMessage(error, "Failed to save lesson."));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handlePublishQuiz = async (lesson: Lesson) => {
+    try {
+      const lessonKey = String(getLessonId(lesson));
+      const lessonQuizzes = lessonQuizMap[lessonKey] || [];
+      const linkedQuiz = lessonQuizzes[lessonQuizzes.length - 1] || lessonQuizMap.unlinked?.[0];
+      if (!linkedQuiz) {
+        setListError("No linked quiz found for this lesson.");
+        return;
+      }
+      await publishQuiz(getQuizId(linkedQuiz));
+      setSuccessMessage("Quiz published successfully.");
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (error) {
+      setListError(getErrorMessage(error, "Failed to publish quiz."));
+    }
+  };
+
+  const handleUnpublishQuiz = async (lesson: Lesson) => {
+    try {
+      const lessonKey = String(getLessonId(lesson));
+      const lessonQuizzes = lessonQuizMap[lessonKey] || [];
+      const linkedQuiz = lessonQuizzes[lessonQuizzes.length - 1] || lessonQuizMap.unlinked?.[0];
+      if (!linkedQuiz) {
+        setListError("No linked quiz found for this lesson.");
+        return;
+      }
+      await unpublishQuiz(getQuizId(linkedQuiz));
+      setSuccessMessage("Quiz unpublished successfully.");
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (error) {
+      setListError(getErrorMessage(error, "Failed to unpublish quiz."));
+    }
+  };
+
+  const handleDeleteQuiz = async (lesson: Lesson) => {
+    try {
+      const lessonKey = String(getLessonId(lesson));
+      const lessonQuizzes = lessonQuizMap[lessonKey] || [];
+      const linkedQuiz = lessonQuizzes[lessonQuizzes.length - 1] || lessonQuizMap.unlinked?.[0];
+      if (!linkedQuiz) {
+        setListError("No linked quiz found for this lesson.");
+        return;
+      }
+      await deleteQuiz(getQuizId(linkedQuiz));
+      setLessonQuizMap((prev) => ({
+        ...prev,
+        [lessonKey]: (prev[lessonKey] || []).filter((quiz) => String(getQuizId(quiz)) !== String(getQuizId(linkedQuiz))),
+      }));
+      setSuccessMessage("Quiz deleted successfully.");
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (error) {
+      setListError(getErrorMessage(error, "Failed to delete quiz."));
+    }
+  };
+
+  const handleCreateQuizForLesson = async (lesson: Lesson) => {
+    try {
+      const lessonId = getLessonId(lesson);
+      const lessonTitle = getLocalizedValue(lesson.title, currentLocale) || `Lesson ${lessonId}`;
+      const lessonDescription = getLocalizedValue(lesson.description, currentLocale) || lessonTitle;
+
+      const createdQuiz = await createQuiz({
+        lessonId,
+        title: lessonTitle,
+        description: lessonDescription,
+        durationMinutes: Number(lesson.actual_duration_minutes ?? 30),
+      });
+
+      if (!createdQuiz) {
+        setListError("Quiz was not created. Empty response from server.");
+        return;
+      }
+
+      const lessonKey = String(lessonId);
+      setLessonQuizMap((prev) => ({
+        ...prev,
+        [lessonKey]: [...(prev[lessonKey] || []), createdQuiz],
+      }));
+      setSuccessMessage("Quiz created for this lesson.");
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (error) {
+      setListError(getErrorMessage(error, "Failed to create quiz for this lesson."));
     }
   };
 
@@ -475,6 +737,39 @@ export default function UnitLessonsPage() {
                         <Edit3 className="w-3.5 h-3.5" />
                         Edit
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleCreateQuizForLesson(lesson)}
+                        className="group relative inline-flex items-center gap-2.5 rounded-2xl border border-indigo-300/80 dark:border-indigo-400/40 bg-gradient-to-r from-indigo-600 to-blue-600 px-4.5 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-indigo-500/25 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-500/35 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-500/35 active:translate-y-0"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-white/95 group-hover:rotate-12 transition-transform" />
+                        <span>Create Quiz</span>
+                      </button>
+                      {((lesson.lesson_type || "").toLowerCase() === "quiz" || (lessonQuizMap[String(getLessonId(lesson))] || []).length > 0) && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handlePublishQuiz(lesson)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
+                          >
+                            Publish
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleUnpublishQuiz(lesson)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-4 py-2 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20"
+                          >
+                            Unpublish
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteQuiz(lesson)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-rose-300 dark:border-rose-500/40 bg-rose-50 dark:bg-rose-500/10 px-4 py-2 text-xs font-bold text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-500/20"
+                          >
+                            Delete Quiz
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
