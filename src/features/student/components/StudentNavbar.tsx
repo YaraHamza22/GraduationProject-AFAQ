@@ -7,9 +7,12 @@ import axios from "axios";
 import {
   Award,
   BookOpen,
+  ChevronDown,
+  ChevronRight,
   FileText,
   GraduationCap,
   LayoutDashboard,
+  Library,
   Loader2,
   LogOut,
   Moon,
@@ -18,7 +21,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { getStudentApiRequestUrl } from "@/features/student/studentApi";
 import { clearStudentSession, getStudentToken } from "@/features/student/studentSession";
 
@@ -69,6 +72,25 @@ const navItems = [
   { id: "profile", icon: UserCircle, href: "/student/profile", label: "nav.profile" },
 ];
 
+type Lesson = {
+  id: number;
+  title: string;
+  lesson_order: number;
+};
+
+type Unit = {
+  id: number;
+  title: string;
+  lessons?: Lesson[];
+  lessons_count?: number;
+};
+
+type Course = {
+  id: number;
+  title: string;
+  slug: string;
+};
+
 export default function StudentNavbar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -77,9 +99,76 @@ export default function StudentNavbar() {
   const [mounted, setMounted] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
+  // My Learning State
+  const [courses, setCourses] = React.useState<Course[]>([]);
+  const [unitsByCourse, setUnitsByCourse] = React.useState<Record<number, Unit[]>>({});
+  const [lessonsByUnit, setLessonsByUnit] = React.useState<Record<number, Lesson[]>>({});
+  const [expandedCourses, setExpandedCourses] = React.useState<Set<number>>(new Set());
+  const [expandedUnits, setExpandedUnits] = React.useState<Set<number>>(new Set());
+  const [isLoadingLearning, setIsLoadingLearning] = React.useState(false);
+
   React.useEffect(() => {
     setMounted(true);
+    fetchEnrolledCourses();
   }, []);
+
+  const fetchEnrolledCourses = async () => {
+    try {
+      const token = getStudentToken();
+      const response = await axios.get(getStudentApiRequestUrl("/my-learning"), {
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      });
+      const data = response.data.data;
+      setCourses(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to fetch courses:", error);
+    }
+  };
+
+  const toggleCourse = async (course: Course) => {
+    const courseId = course.id;
+    const courseSlug = course.slug;
+    const next = new Set(expandedCourses);
+    if (next.has(courseId)) {
+      next.delete(courseId);
+    } else {
+      next.add(courseId);
+      if (!unitsByCourse[courseId]) {
+        try {
+          const token = getStudentToken();
+          const response = await axios.get(getStudentApiRequestUrl(`/my-learning/${courseSlug}/units`), {
+            headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+          });
+          setUnitsByCourse(prev => ({ ...prev, [courseId]: response.data.data }));
+        } catch (error) {
+          console.error("Failed to fetch units:", error);
+        }
+      }
+    }
+    setExpandedCourses(next);
+  };
+
+  const toggleUnit = async (course: Course, unitId: number) => {
+    const courseSlug = course.slug;
+    const next = new Set(expandedUnits);
+    if (next.has(unitId)) {
+      next.delete(unitId);
+    } else {
+      next.add(unitId);
+      if (!lessonsByUnit[unitId]) {
+        try {
+          const token = getStudentToken();
+          const response = await axios.get(getStudentApiRequestUrl(`/my-learning/${courseSlug}/units/${unitId}/lessons`), {
+            headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+          });
+          setLessonsByUnit(prev => ({ ...prev, [unitId]: response.data.data }));
+        } catch (error) {
+          console.error("Failed to fetch lessons:", error);
+        }
+      }
+    }
+    setExpandedUnits(next);
+  };
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -158,6 +247,91 @@ export default function StudentNavbar() {
             </Link>
           );
         })}
+
+        {/* My Learning Section */}
+        <div className="pt-4 mt-4 border-t border-slate-200 dark:border-white/5">
+          <div className={`px-4 mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/20 flex items-center gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+            <Library className="w-3.5 h-3.5" />
+            <span className="hidden lg:block">{t("std.my_learning")}</span>
+          </div>
+
+          <div className="space-y-1 max-h-[40vh] overflow-y-auto custom-scrollbar pr-1">
+            {courses.map((course) => {
+              const isExpanded = expandedCourses.has(course.id);
+              const units = unitsByCourse[course.id] || [];
+
+              return (
+                <div key={course.id} className="space-y-1">
+                  <button
+                    onClick={() => toggleCourse(course)}
+                    className={`w-full flex items-center gap-3 rounded-xl px-3 py-2 transition-all duration-300 group ${
+                      isRTL ? "flex-row-reverse" : "flex-row"
+                    } hover:bg-indigo-600/5 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-white`}
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/40 group-hover:bg-indigo-500" />
+                    <span className="hidden lg:block text-xs font-bold truncate flex-1 text-left">
+                      {course.title}
+                    </span>
+                    <ChevronRight className={`w-3 h-3 transition-transform duration-300 hidden lg:block ${isExpanded ? "rotate-90" : ""}`} />
+                  </button>
+
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className={`overflow-hidden ${isRTL ? "mr-4 border-r pr-2" : "ml-4 border-l pl-2"} border-slate-200 dark:border-white/5 space-y-1`}
+                      >
+                        {units.map((unit) => {
+                          const isUnitExpanded = expandedUnits.has(unit.id);
+                          const lessons = lessonsByUnit[unit.id] || [];
+
+                          return (
+                            <div key={unit.id} className="space-y-1">
+                              <button
+                                onClick={() => toggleUnit(course, unit.id)}
+                                className={`w-full flex items-center gap-2 rounded-lg px-2 py-1.5 transition-all text-[11px] font-medium ${
+                                  isRTL ? "flex-row-reverse text-right" : "flex-row text-left"
+                                } text-slate-500 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400`}
+                              >
+                                <ChevronRight className={`w-2.5 h-2.5 shrink-0 transition-transform ${isUnitExpanded ? "rotate-90" : ""}`} />
+                                <span className="truncate">{unit.title}</span>
+                              </button>
+
+                              <AnimatePresence>
+                                {isUnitExpanded && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className={`overflow-hidden ${isRTL ? "mr-3" : "ml-3"} space-y-1`}
+                                  >
+                                    {lessons.map((lesson) => (
+                                      <Link key={lesson.id} href={`/student/course/${course.id}/lesson/${lesson.id}`}>
+                                        <div className={`px-3 py-1 text-[10px] opacity-60 hover:opacity-100 hover:text-indigo-500 transition-all ${
+                                          isRTL ? "text-right" : "text-left"
+                                        }`}>
+                                          • {lesson.title}
+                                        </div>
+                                      </Link>
+                                    ))}
+                                    {lessons.length === 0 && <div className="text-[9px] opacity-30 px-3 py-1 italic">No lessons</div>}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })}
+                        {units.length === 0 && <div className="text-[10px] opacity-30 px-2 py-1 italic">Loading units...</div>}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="p-2 sm:p-3 lg:p-4 space-y-2 border-t border-slate-200 dark:border-white/5">
