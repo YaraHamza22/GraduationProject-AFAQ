@@ -44,18 +44,22 @@ type LocalizedText = {
 type Course = {
   id: number | string;
   course_category_id: number;
-  title: LocalizedText;
-  description: LocalizedText;
-  objectives: LocalizedText;
-  prerequisites: LocalizedText;
+  title: LocalizedText | string;
+  description: LocalizedText | string;
+  objectives: LocalizedText | string;
+  prerequisites: LocalizedText | string;
   actual_duration_hours: number;
   language: string;
   status: "published" | "archived" | "draft" | string;
-  min_score_to_pass: number;
+  min_score_to_pass: number | string;
   is_offline_available: boolean;
   course_delivery_type: "self_paced" | "instructor_led" | string;
   difficulty_level: "beginner" | "intermediate" | "advanced" | string;
   category?: {
+    id: number;
+    name: LocalizedText | string;
+  };
+  course_category?: {
     id: number;
     name: LocalizedText | string;
   };
@@ -69,7 +73,8 @@ type Course = {
   instructors?: Array<{
     id: number | string;
     name: string;
-    is_primary: boolean;
+    is_primary?: boolean;
+    email?: string;
   }>;
 };
 
@@ -252,7 +257,7 @@ export default function CoursesPage() {
     setListError(null);
     try {
       const [coursesRes, catsRes] = await Promise.all([
-        axios.get(getAdminApiRequestUrl("/super-admin/courses/all"), { headers: getHeaders(currentLocale) }),
+        axios.get(getAdminApiRequestUrl(API_PATH), { headers: getHeaders(currentLocale) }),
         axios.get(getAdminApiRequestUrl(CATEGORIES_API_PATH), { headers: getHeaders(currentLocale) }),
       ]);
 
@@ -296,7 +301,7 @@ export default function CoursesPage() {
     const descPair = getLocalizedInputPair(course.description, course.description_translations, currentLocale);
     const objPair = getLocalizedInputPair(course.objectives, course.objectives_translations, currentLocale);
     const prePair = getLocalizedInputPair(course.prerequisites, course.prerequisites_translations, currentLocale);
-    const categoryId = course.course_category_id || course.category?.id || "";
+    const categoryId = course.course_category_id || course.course_category?.id || course.category?.id || "";
 
     setForm({
       course_category_id: String(categoryId),
@@ -335,7 +340,7 @@ export default function CoursesPage() {
     setFieldErrors({});
     
     try {
-      const resolvedCategoryId = Number(form.course_category_id || editingCourse?.course_category_id || editingCourse?.category?.id || 0);
+      const resolvedCategoryId = Number(form.course_category_id || editingCourse?.course_category_id || editingCourse?.course_category?.id || editingCourse?.category?.id || 0);
       if (!resolvedCategoryId) {
         setFieldErrors(prev => ({ ...prev, course_category_id: "Category is required." }));
         setActiveTab("basic");

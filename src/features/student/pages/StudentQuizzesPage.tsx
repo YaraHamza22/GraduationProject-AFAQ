@@ -67,12 +67,28 @@ export default function StudentQuizzesPage() {
 
       setData(parseQuizzes(response.data));
     } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? typeof error.response?.data?.message === "string"
-          ? error.response.data.message
-          : "Failed to load quizzes."
-        : "Failed to load quizzes.";
+      let message = "Failed to load quizzes.";
+      if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
+        const serverMsg = error.response.data.message;
+        // Hide raw database errors from the UI
+        if (!serverMsg.includes("SQLSTATE") && !serverMsg.includes("Base table or view not found")) {
+          message = serverMsg;
+        }
+      }
       setErrorMessage(message);
+
+      // Fallback: Try to at least load the student profile if the quizzes table is broken in the backend
+      try {
+        const token = getStudentToken();
+        const fallbackResponse = await axios.get(getStudentApiRequestUrl("/me/with-courses"), {
+          headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+        });
+        const fallbackData = parseQuizzes(fallbackResponse.data);
+        // Keep the quizzes array empty since we are using the courses endpoint just for the student profile
+        setData({ student: fallbackData.student, quizzes: [] });
+      } catch (_) {
+        // If the fallback also fails, silently ignore and rely on the original error message
+      }
     } finally {
       setIsLoading(false);
     }

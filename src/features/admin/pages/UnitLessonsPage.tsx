@@ -473,20 +473,8 @@ export default function UnitLessonsPage() {
     return extractList(res.data) as Quiz[];
   }, [currentLocale, getHeaders]);
 
-  const deleteQuiz = useCallback(async (quizId: string | number) => {
-    await axios.delete(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}`), {
-      headers: getHeaders(currentLocale),
-    });
-  }, [currentLocale, getHeaders]);
-
-  const publishQuiz = useCallback(async (quizId: string | number) => {
-    await axios.post(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}/publish`), {}, {
-      headers: getHeaders(currentLocale),
-    });
-  }, [currentLocale, getHeaders]);
-
-  const unpublishQuiz = useCallback(async (quizId: string | number) => {
-    await axios.post(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}/unpublish`), {}, {
+  const deleteQuiz = useCallback(async (quiz_id: string | number) => {
+    await axios.delete(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quiz_id}`), {
       headers: getHeaders(currentLocale),
     });
   }, [currentLocale, getHeaders]);
@@ -689,40 +677,6 @@ export default function UnitLessonsPage() {
     }
   };
 
-  const handlePublishQuiz = async (lesson: Lesson) => {
-    try {
-      const lessonKey = String(getLessonId(lesson));
-      const lessonQuizzes = lessonQuizMap[lessonKey] || [];
-      const linkedQuiz = lessonQuizzes[lessonQuizzes.length - 1] || lessonQuizMap.unlinked?.[0];
-      if (!linkedQuiz) {
-        setListError("No linked quiz found for this lesson.");
-        return;
-      }
-      await publishQuiz(getQuizId(linkedQuiz));
-      setSuccessMessage("Quiz published successfully.");
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (error) {
-      setListError(getErrorMessage(error, "Failed to publish quiz."));
-    }
-  };
-
-  const handleUnpublishQuiz = async (lesson: Lesson) => {
-    try {
-      const lessonKey = String(getLessonId(lesson));
-      const lessonQuizzes = lessonQuizMap[lessonKey] || [];
-      const linkedQuiz = lessonQuizzes[lessonQuizzes.length - 1] || lessonQuizMap.unlinked?.[0];
-      if (!linkedQuiz) {
-        setListError("No linked quiz found for this lesson.");
-        return;
-      }
-      await unpublishQuiz(getQuizId(linkedQuiz));
-      setSuccessMessage("Quiz unpublished successfully.");
-      setTimeout(() => setSuccessMessage(null), 4000);
-    } catch (error) {
-      setListError(getErrorMessage(error, "Failed to unpublish quiz."));
-    }
-  };
-
   const handleDeleteQuiz = async (lesson: Lesson) => {
     try {
       const lessonKey = String(getLessonId(lesson));
@@ -914,124 +868,125 @@ export default function UnitLessonsPage() {
 
   const handleAddQuestionToQuiz = async () => {
     if (!activeQuizForQuestion) return;
+    setIsSubmitting(true);
     try {
       const quizId = Number(getQuizId(activeQuizForQuestion));
-      const typeCandidates: Record<QuestionFormState["questionType"], string[]> = {
-        text: ["short_answer", "text"],
-        mcq: ["multiple_choice", "mcq"],
-        true_false: ["true_false"],
+      const isEditing = !!selectedQuestionForEdit;
+      
+      const typeMapping: Record<string, string> = {
+        text: "short_answer",
+        mcq: "multiple_choice",
+        true_false: "multiple_choice", // Bypasses backend limitation: "Options are allowed only for MCQ"
       };
+      
+      const mappedType = typeMapping[questionForm.questionType] || questionForm.questionType;
 
-      const options: any[] = [];
-      if (questionForm.questionType === "mcq") {
-        const validOptions = questionForm.mcqOptions.filter((opt) => opt.text.trim());
-        if (validOptions.length < 2) throw new Error("Add at least 2 options.");
-        if (!validOptions.some((opt) => opt.isCorrect)) throw new Error("Select one correct option.");
-        
-        validOptions.forEach((opt) => {
-          options.push({
-            option_text: { en: opt.text.trim(), ar: opt.text.trim() },
-            is_correct: opt.isCorrect,
-          });
-        });
-      } else if (questionForm.questionType === "true_false") {
-        options.push({
-          option_text: {
-            en: questionForm.trueOptionTextEn.trim() || "True",
-            ar: questionForm.trueOptionTextAr.trim() || "صح",
-          },
-          is_correct: questionForm.trueFalseCorrect === "true",
-        });
-        options.push({
-          option_text: {
-            en: questionForm.falseOptionTextEn.trim() || "False",
-            ar: questionForm.falseOptionTextAr.trim() || "خطأ",
-          },
-          is_correct: questionForm.trueFalseCorrect === "false",
-        });
-      }
-
-      if (selectedQuestionForEdit) {
-        // UPDATE MODE
-        const url = getAdminApiRequestUrl(`${QUESTIONS_API_PATH}/${selectedQuestionForEdit.id}`);
-        const questionPayload = {
-          quiz_id: quizId,
-          question_text: {
-            en: questionForm.questionTextEn.trim() || "Question",
-            ar: questionForm.questionTextAr.trim() || questionForm.questionTextEn.trim() || "Question",
-          },
-          type: questionForm.questionType,
-          point: Number(questionForm.point || 5),
-          order_index: Number(questionForm.orderIndex || 1),
-          is_required: questionForm.isRequired,
-          options: options.length > 0 ? options : undefined,
-        };
-        
-        const updateRes = await axios.put(url, questionPayload, {
-          headers: getHeaders(currentLocale),
-        });
-        
-        if (updateRes.status !== 200) throw new Error("Update failed.");
-        
-        setSuccessMessage("Question updated successfully.");
-        setTimeout(() => setSuccessMessage(null), 3000);
-        setSelectedQuestionForEdit(null);
-        setIsCreateQuizModalOpen(false);
-        // Refresh questions list
-        if (selectedQuizForView) {
-          handleShowQuestionsForLesson(selectedLessonForQuiz!);
-        }
-        return;
-      }
-
-      // CREATE MODE (existing logic below but simplified)
-      let questionRes: any = null;
       const questionPayload = {
         quiz_id: quizId,
         question_text: {
           en: questionForm.questionTextEn.trim() || "Question",
           ar: questionForm.questionTextAr.trim() || questionForm.questionTextEn.trim() || "Question",
         },
-        type: questionForm.questionType,
+        type: mappedType,
         point: Number(questionForm.point || 5),
         order_index: Number(questionForm.orderIndex || 1),
         is_required: questionForm.isRequired,
-        options: options.length > 0 ? options : undefined,
       };
 
-      const res = await axios.post(getAdminApiRequestUrl(QUESTIONS_API_PATH), questionPayload, {
-        headers: getHeaders(currentLocale),
-      });
-      questionRes = res;
+      let questionId: string | number;
+      let questionData: Question;
 
-      if (!questionRes) throw new Error("Question creation failed.");
-      const createdQuestion = extractItem((questionRes as any).data) as Question;
-      if (!createdQuestion?.id) throw new Error("Question was not created.");
+      if (isEditing) {
+        const url = getAdminApiRequestUrl(`${QUESTIONS_API_PATH}/${selectedQuestionForEdit.id}`);
+        const res = await axios.put(url, questionPayload, { headers: getHeaders(currentLocale) });
+        questionData = extractItem(res.data) as Question;
+        questionId = selectedQuestionForEdit.id;
+      } else {
+        const res = await axios.post(getAdminApiRequestUrl(QUESTIONS_API_PATH), questionPayload, { headers: getHeaders(currentLocale) });
+        questionData = extractItem(res.data) as Question;
+        questionId = questionData.id;
+      }
 
-      if (selectedLessonForQuiz) {
-        const selectedLessonId = getLessonId(selectedLessonForQuiz);
-        if (!lessonQuizOverrides[String(selectedLessonId)]) {
-          saveLessonQuizOverride(selectedLessonId, quizId);
+      if (!questionId) throw new Error("Question operation failed.");
+
+      // Handle Options
+      const optionsToProcess: any[] = [];
+      if (questionForm.questionType === "mcq") {
+        optionsToProcess.push(...questionForm.mcqOptions.filter(opt => opt.text.trim()));
+      } else if (questionForm.questionType === "true_false") {
+        optionsToProcess.push(
+          { text: questionForm.trueOptionTextEn || "True", isCorrect: questionForm.trueFalseCorrect === "true", isTF: true, tfType: 'true' },
+          { text: questionForm.falseOptionTextEn || "False", isCorrect: questionForm.trueFalseCorrect === "false", isTF: true, tfType: 'false' }
+        );
+      }
+
+      // 1. Delete removed options (only in edit mode)
+      if (isEditing) {
+        const originalOptions = optionsByQuestion[String(questionId)] || [];
+        const currentOptionIds = new Set(optionsToProcess.map(o => String(o.id)).filter(id => !id.includes("-"))); // Filter out UUIDs
+        for (const oldOpt of originalOptions) {
+          if (!currentOptionIds.has(String(oldOpt.id))) {
+            await axios.delete(getAdminApiRequestUrl(`${QUESTION_OPTIONS_API_PATH}/${oldOpt.id}`), { headers: getHeaders(currentLocale) });
+          }
         }
       }
 
-      // Update questions list state
-      const existing = questionsByQuiz[String(quizId)] || [];
-      const updatedQuestions = [createdQuestion as Question, ...existing];
-      setQuestionsByQuiz((prev: Record<string, Question[]>) => ({ ...prev, [String(quizId)]: updatedQuestions }));
+      // 2. Create or Update current options
+      const processedOptions: QuestionOption[] = [];
+      for (const opt of optionsToProcess) {
+        const optionPayload = {
+          question_id: Number(questionId),
+          option_text: {
+            en: opt.text.trim(),
+            ar: opt.tfType === 'true' ? (questionForm.trueOptionTextAr || "صح") : 
+                opt.tfType === 'false' ? (questionForm.falseOptionTextAr || "خطأ") : 
+                opt.text.trim(),
+          },
+          is_correct: opt.isCorrect,
+        };
 
-      // Prepare for next question
-      const nextOrder = updatedQuestions.reduce((max, q) => Math.max(max, Number(q.order_index || 0)), 0) + 1;
+        const isNewOption = !opt.id || String(opt.id).includes("-"); // UUID detection
+        
+        if (!isNewOption && isEditing) {
+          const res = await axios.put(getAdminApiRequestUrl(`${QUESTION_OPTIONS_API_PATH}/${opt.id}`), optionPayload, { headers: getHeaders(currentLocale) });
+          processedOptions.push(extractItem(res.data) as QuestionOption);
+        } else {
+          const res = await axios.post(getAdminApiRequestUrl(QUESTION_OPTIONS_API_PATH), optionPayload, { headers: getHeaders(currentLocale) });
+          processedOptions.push(extractItem(res.data) as QuestionOption);
+        }
+      }
+
+      setSuccessMessage(isEditing ? "Question updated successfully." : "Question and options added.");
       
-      setQuestionForm({
-        ...initialQuestionForm,
-        orderIndex: String(nextOrder),
-        mcqOptions: getInitialOptions(),
-      });
-      setSuccessMessage("Question and options added.");
+      // Update local state
+      const questionWithLatestOptions = { ...questionData, id: questionId, options: processedOptions };
+      setOptionsByQuestion(prev => ({ ...prev, [String(questionId)]: processedOptions }));
+      
+      if (isEditing) {
+        setQuestionsForSelectedQuiz(prev => prev.map(q => String(q.id) === String(questionId) ? questionWithLatestOptions : q));
+        setSelectedQuestionForEdit(null);
+        setIsCreateQuizModalOpen(false);
+        if (selectedQuizForView) {
+          handleShowQuestionsForLesson(selectedLessonForQuiz!);
+        }
+      } else {
+        const existing = questionsByQuiz[String(quizId)] || [];
+        const updatedQuestions = [questionWithLatestOptions, ...existing];
+        setQuestionsByQuiz(prev => ({ ...prev, [String(quizId)]: updatedQuestions }));
+        
+        const nextOrder = updatedQuestions.reduce((max, q) => Math.max(max, Number(q.order_index || 0)), 0) + 1;
+        setQuestionForm({
+          ...initialQuestionForm,
+          orderIndex: String(nextOrder),
+          mcqOptions: getInitialOptions(),
+        });
+      }
+
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
-      setListError(getErrorMessage(error, "Failed to add question/options."));
+      setListError(getErrorMessage(error, "Failed to save question/options."));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1074,13 +1029,21 @@ export default function UnitLessonsPage() {
       const sortedQuestions = [...questions].sort((a, b) => Number(a.order_index ?? 0) - Number(b.order_index ?? 0));
 
       const optionsMap: Record<string, QuestionOption[]> = {};
-      sortedQuestions.forEach((q) => {
-        if (q.options && Array.isArray(q.options)) {
+      for (const q of sortedQuestions) {
+        if (q.options && Array.isArray(q.options) && q.options.length > 0) {
           optionsMap[String(q.id)] = q.options;
         } else {
-          optionsMap[String(q.id)] = [];
+          try {
+            const optRes = await axios.get(getAdminApiRequestUrl(QUESTION_OPTIONS_API_PATH), {
+              params: { question_id: q.id },
+              headers: getHeaders(currentLocale),
+            });
+            optionsMap[String(q.id)] = extractList(optRes.data) as QuestionOption[];
+          } catch (e) {
+            optionsMap[String(q.id)] = [];
+          }
         }
-      });
+      }
 
       setSelectedLessonForQuiz(lesson);
       setSelectedQuizForView(linkedQuiz);
@@ -1153,8 +1116,19 @@ export default function UnitLessonsPage() {
     const qTextEn = typeof qText === 'string' ? qText : qText?.en || "";
     const qTextAr = typeof qText === 'string' ? qText : qText?.ar || "";
 
+    // Reverse map the backend type to the frontend type
+    const reverseTypeMapping: Record<string, "text" | "mcq" | "true_false"> = {
+      short_answer: "text",
+      text: "text",
+      multiple_choice: "mcq",
+      mcq: "mcq",
+      true_false: "true_false",
+    };
+    
+    const mappedType = reverseTypeMapping[question.type as string] || "mcq";
+
     setQuestionForm({
-      questionType: (question.type as any) || "mcq",
+      questionType: mappedType,
       questionTextEn: qTextEn,
       questionTextAr: qTextAr,
       point: String(question.point || "1"),
@@ -1400,20 +1374,7 @@ export default function UnitLessonsPage() {
                             <Eye className="w-3.5 h-3.5" />
                             Show Questions
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => void handlePublishQuiz(lesson)}
-                            className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 px-4 py-2 text-xs font-bold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
-                          >
-                            Publish
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleUnpublishQuiz(lesson)}
-                            className="inline-flex items-center gap-2 rounded-xl border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 px-4 py-2 text-xs font-bold text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20"
-                          >
-                            Unpublish
-                          </button>
+
                           <button
                             type="button"
                             onClick={() => void handleDeleteQuiz(lesson)}

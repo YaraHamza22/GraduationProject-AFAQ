@@ -86,7 +86,7 @@ export default function StudentDashboard() {
       const token = getStudentToken();
       if (!token) throw new Error("missing_token");
 
-      const response = await axios.get(getStudentApiRequestUrl("/dashboard"), {
+      const response = await axios.get(getStudentApiRequestUrl("/student/dashboard"), {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
