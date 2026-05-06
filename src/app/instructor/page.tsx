@@ -1,4 +1,4 @@
-import InstructorDashboard from "@/features/instructor/pages/InstructorDashboard";
+import InstructorDashboardApi from "@/features/instructor/pages/InstructorDashboardApi";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function InstructorHomePage() {
-  return <InstructorDashboard />;
+  return <InstructorDashboardApi />;
 }

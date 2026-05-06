@@ -2,8 +2,9 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import axios from "axios";
 import { 
   LayoutDashboard, 
   BookOpen, 
@@ -16,6 +17,8 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { useTheme } from "next-themes";
+import { getStudentApiRequestUrl } from "@/features/student/studentApi";
+import { clearStudentSession, getStudentToken } from "@/features/student/studentSession";
 
 const SyrianFlag = () => (
   <svg width="20" height="14" viewBox="0 0 3 2" className="rounded-sm shadow-sm">
@@ -65,13 +68,42 @@ const navItems = [
 
 export default function InstructorNavbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { language, setLanguage, t, isRTL } = useLanguage();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      const token = getStudentToken();
+      const logoutUrl = getStudentApiRequestUrl("/auth/logout");
+
+      if (logoutUrl) {
+        await axios.post(
+          logoutUrl,
+          {},
+          {
+            headers: {
+              Accept: "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+      }
+    } catch (error) {
+      console.error("Instructor logout failed:", error);
+    } finally {
+      clearStudentSession();
+      setIsLoggingOut(false);
+      router.replace("/instructor/login");
+    }
+  };
 
   return (
     <nav className={`fixed top-0 h-screen w-20 md:w-64 bg-white dark:bg-(--background) flex flex-col z-50 transition-colors duration-300 ${
@@ -152,12 +184,17 @@ export default function InstructorNavbar() {
           </button>
         </div>
 
-        <Link href="/login">
-            <div className="flex items-center gap-3 p-4 rounded-2xl text-rose-500/60 hover:text-rose-500 hover:bg-rose-500/5 transition-all duration-300 cursor-pointer group">
+        <button
+          type="button"
+          onClick={() => void handleLogout()}
+          disabled={isLoggingOut}
+          className="w-full"
+        >
+          <div className="flex items-center gap-3 p-4 rounded-2xl text-rose-500/60 hover:text-rose-500 hover:bg-rose-500/5 transition-all duration-300 cursor-pointer group">
             <LogOut className={`w-6 h-6 transition-transform ${isRTL ? "group-hover:translate-x-1" : "group-hover:-translate-x-1"}`} />
-            <span className="hidden md:block font-bold">{t("nav.logout")}</span>
-            </div>
-        </Link>
+            <span className="hidden md:block font-bold">{isLoggingOut ? "Logging out..." : t("nav.logout")}</span>
+          </div>
+        </button>
       </div>
     </nav>
   );
