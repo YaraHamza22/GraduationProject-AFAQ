@@ -447,6 +447,13 @@ export default function CoursesPage() {
     });
   }, [instructors, instructorSearchQuery]);
 
+  const selectedInstructor = useMemo(() => {
+    return instructors.find((inst) => {
+      const rawId = getInstructorIdValue(inst);
+      return rawId !== undefined && rawId !== null && String(rawId) === selectedInstructorId;
+    }) ?? null;
+  }, [instructors, selectedInstructorId]);
+
   const handleAssignInstructor = async () => {
     if (!assignCourse || !selectedInstructorId) return;
     setIsAssigning(true);
@@ -1013,30 +1020,41 @@ export default function CoursesPage() {
 
       <AnimatePresence>
         {isAssignModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-10">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsAssignModalOpen(false)}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-xl"
+              className="absolute inset-0 bg-[#020617]/80 backdrop-blur-md"
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 40 }}
+              initial={{ opacity: 0, scale: 0.96, y: 28 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 40 }}
-              className="relative w-full max-w-2xl bg-white dark:bg-[#0A0F1D] rounded-[36px] border border-slate-200 dark:border-white/10 shadow-2xl overflow-hidden"
+              exit={{ opacity: 0, scale: 0.96, y: 28 }}
+              className="relative w-full max-w-3xl bg-white/95 dark:bg-[#070d1a]/95 rounded-[32px] border border-slate-200/80 dark:border-white/10 shadow-[0_40px_120px_rgba(15,23,42,0.65)] overflow-hidden"
             >
-              <header className={`p-6 md:p-8 border-b border-slate-100 dark:border-white/10 flex items-center justify-between ${isRTL ? "flex-row-reverse" : ""}`}>
-                <div>
-                  <div className={`flex items-center gap-2 text-indigo-500 font-black uppercase tracking-[0.25em] text-[10px] mb-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+              <div className="pointer-events-none absolute -top-24 -right-24 h-60 w-60 rounded-full bg-indigo-500/20 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-24 -left-24 h-60 w-60 rounded-full bg-cyan-500/15 blur-3xl" />
+
+              <header className={`relative p-6 md:p-8 border-b border-slate-100 dark:border-white/10 flex items-start justify-between ${isRTL ? "flex-row-reverse" : ""}`}>
+                <div className="space-y-2">
+                  <div className={`inline-flex items-center gap-2 text-indigo-500 font-black uppercase tracking-[0.25em] text-[10px] ${isRTL ? "flex-row-reverse" : ""}`}>
                     <UserPlus className="w-3.5 h-3.5" />
                     Assign Instructor
                   </div>
-                  <h3 className="text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                  <h3 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
                     {assignCourse ? getLocalizedValue(assignCourse.title, currentLocale) : "Course"}
                   </h3>
+                  <div className={`flex items-center gap-2 text-xs ${isRTL ? "flex-row-reverse" : ""}`}>
+                    <span className="rounded-full border border-slate-200 dark:border-white/10 bg-slate-100/80 dark:bg-white/5 px-2.5 py-1 font-bold text-slate-600 dark:text-white/70">
+                      {filteredInstructors.length} instructors
+                    </span>
+                    <span className="rounded-full border border-indigo-400/30 bg-indigo-500/10 px-2.5 py-1 font-bold text-indigo-500 dark:text-indigo-300">
+                      {selectedInstructor ? "1 selected" : "None selected"}
+                    </span>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -1047,7 +1065,7 @@ export default function CoursesPage() {
                 </button>
               </header>
 
-              <div className="p-6 md:p-8 space-y-5">
+              <div className="relative p-6 md:p-8 space-y-5">
                 <div className="relative group">
                   <Search className={`absolute top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors w-4 h-4 ${isRTL ? "right-4" : "left-4"}`} />
                   <input
@@ -1055,11 +1073,11 @@ export default function CoursesPage() {
                     value={instructorSearchQuery}
                     onChange={(e) => setInstructorSearchQuery(e.target.value)}
                     placeholder="Search instructors..."
-                    className={`w-full py-3 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500/50 transition-all text-slate-900 dark:text-white font-semibold text-sm ${isRTL ? "pr-11 pl-4 text-right" : "pl-11 pr-4"}`}
+                    className={`w-full py-3.5 rounded-2xl bg-slate-100/90 dark:bg-white/5 border border-slate-200 dark:border-white/10 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500/50 transition-all text-slate-900 dark:text-white font-semibold text-sm ${isRTL ? "pr-11 pl-4 text-right" : "pl-11 pr-4"}`}
                   />
                 </div>
 
-                <div className="max-h-[320px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
+                <div className="max-h-[360px] overflow-y-auto custom-scrollbar space-y-2 pr-1">
                   {isLoadingInstructors ? (
                     <div className="p-5 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-white/60 font-semibold text-sm">
                       Loading instructors...
@@ -1079,14 +1097,31 @@ export default function CoursesPage() {
                           type="button"
                           disabled={!instId}
                           onClick={() => setSelectedInstructorId(instId)}
-                          className={`w-full p-4 rounded-2xl border text-left transition-all ${
+                          className={`w-full p-4 rounded-2xl border text-left transition-all duration-300 ${
                             isSelected
-                              ? "border-indigo-500 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
-                              : "border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-slate-700 dark:text-white hover:border-indigo-400/60"
+                              ? "border-indigo-500/70 bg-linear-to-r from-indigo-500/15 to-cyan-500/10 text-indigo-700 dark:text-indigo-300 shadow-[0_8px_24px_rgba(99,102,241,0.2)]"
+                              : "border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/[0.02] text-slate-700 dark:text-white hover:border-indigo-400/60 hover:bg-slate-50 dark:hover:bg-white/[0.05]"
                           } ${isRTL ? "text-right" : ""} disabled:opacity-50`}
                         >
-                          <div className="font-black text-sm leading-tight">{getInstructorDisplayName(inst)}</div>
-                          <div className="text-xs mt-1 text-slate-500 dark:text-white/50">{inst.email || `Instructor ID: ${instId || "N/A"}`}</div>
+                          <div className={`flex items-center justify-between gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
+                            <div className="min-w-0">
+                              <div className="font-black text-sm leading-tight truncate">{getInstructorDisplayName(inst)}</div>
+                              <div className="text-xs mt-1 text-slate-500 dark:text-white/50 truncate">
+                                {inst.email || `Instructor ID: ${instId || "N/A"}`}
+                              </div>
+                            </div>
+                            <div
+                              className={`h-5 w-5 rounded-full border-2 transition-all shrink-0 ${
+                                isSelected
+                                  ? "border-indigo-500 bg-indigo-500 shadow-[0_0_0_4px_rgba(99,102,241,0.2)]"
+                                  : "border-slate-300 dark:border-white/20"
+                              }`}
+                            >
+                              {isSelected ? (
+                                <BadgeCheck className="h-4 w-4 text-white -translate-y-[1px] -translate-x-[1px]" />
+                              ) : null}
+                            </div>
+                          </div>
                         </button>
                       );
                     })
@@ -1094,7 +1129,7 @@ export default function CoursesPage() {
                 </div>
               </div>
 
-              <footer className={`p-6 md:p-8 border-t border-slate-100 dark:border-white/10 flex flex-col sm:flex-row gap-3 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
+              <footer className={`p-6 md:p-8 border-t border-slate-100 dark:border-white/10 flex flex-col sm:flex-row gap-3 bg-slate-50/80 dark:bg-white/[0.02] ${isRTL ? "sm:flex-row-reverse" : ""}`}>
                 <button
                   type="button"
                   onClick={() => setIsAssignModalOpen(false)}
@@ -1106,7 +1141,7 @@ export default function CoursesPage() {
                   type="button"
                   onClick={() => void handleAssignInstructor()}
                   disabled={isAssigning || !selectedInstructorId}
-                  className="flex-1 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="flex-1 py-3 rounded-2xl bg-linear-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-[0_12px_30px_rgba(99,102,241,0.35)]"
                 >
                   {isAssigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                   Assign Instructor
