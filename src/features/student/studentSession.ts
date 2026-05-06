@@ -35,6 +35,59 @@ function getNestedString(source: unknown, key: string) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function normalizeRole(role: string) {
+  return role.trim().toLowerCase().replace(/[_\s]+/g, "-");
+}
+
+function extractRoleFromRecord(source: UnknownRecord) {
+  const directKeys = ["role", "user_role", "account_type", "type"];
+  for (const key of directKeys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  const roles = source.roles;
+  if (Array.isArray(roles)) {
+    for (const roleEntry of roles) {
+      if (typeof roleEntry === "string" && roleEntry.trim()) {
+        return roleEntry;
+      }
+
+      if (isRecord(roleEntry)) {
+        const roleValue = roleEntry.name ?? roleEntry.slug ?? roleEntry.role ?? roleEntry.type;
+        if (typeof roleValue === "string" && roleValue.trim()) {
+          return roleValue;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function decodeJwtPayload(token: string): UnknownRecord | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const parts = token.split(".");
+  if (parts.length < 2) {
+    return null;
+  }
+
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const json = atob(padded);
+    const parsed = JSON.parse(json) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function readStorageValue(key: string) {
   if (typeof window === "undefined") {
     return null;
@@ -95,6 +148,50 @@ export function extractStudentUser(payload: unknown): StudentSessionUser | null 
   return null;
 }
 
+export function extractStudentRole(payload: unknown): string | null {
+  if (isRecord(payload)) {
+    const directRole = extractRoleFromRecord(payload);
+    if (directRole) {
+      return directRole;
+    }
+  }
+
+  const directUser = getNestedRecord(payload, "user");
+  if (directUser) {
+    const role = extractRoleFromRecord(directUser);
+    if (role) {
+      return role;
+    }
+  }
+
+  const data = getNestedRecord(payload, "data");
+  if (data) {
+    const role = extractRoleFromRecord(data);
+    if (role) {
+      return role;
+    }
+
+    const nestedUser = getNestedRecord(data, "user");
+    if (nestedUser) {
+      const nestedRole = extractRoleFromRecord(nestedUser);
+      if (nestedRole) {
+        return nestedRole;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function extractStudentRoleFromToken(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) {
+    return null;
+  }
+
+  return extractStudentRole(payload);
+}
+
 export function getStudentToken() {
   return readStorageValue(STUDENT_TOKEN_STORAGE_KEY);
 }
@@ -134,6 +231,22 @@ export function getStoredStudentUser(): StudentSessionUser | null {
   } catch {
     return null;
   }
+}
+
+export function getStoredStudentRole() {
+  const user = getStoredStudentUser();
+  const roleFromUser = extractStudentRole(user);
+  if (roleFromUser) {
+    return normalizeRole(roleFromUser);
+  }
+
+  const token = getStudentToken();
+  if (!token) {
+    return null;
+  }
+
+  const roleFromToken = extractStudentRoleFromToken(token);
+  return roleFromToken ? normalizeRole(roleFromToken) : null;
 }
 
 export function updateStoredStudentUser(user: StudentSessionUser | null) {

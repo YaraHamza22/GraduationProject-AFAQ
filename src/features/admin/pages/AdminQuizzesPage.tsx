@@ -29,6 +29,7 @@ type QuizFormState = {
   title: string;
   description: string;
   duration_minutes: string;
+  course_id: string;
 };
 
 type McqOption = {
@@ -56,6 +57,7 @@ const initialQuizForm: QuizFormState = {
   title: "",
   description: "",
   duration_minutes: "30",
+  course_id: "",
 };
 
 const getInitialOptions = (): McqOption[] => [
@@ -117,6 +119,10 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function getQuizId(quiz: Quiz) {
   return quiz.quiz_id || quiz.id;
+}
+
+function isSuccessfulStatus(status: number) {
+  return status >= 200 && status < 300;
 }
 
 export default function AdminQuizzesPage() {
@@ -194,6 +200,11 @@ export default function AdminQuizzesPage() {
     setIsSubmitting(true);
     setListError(null);
     try {
+      const resolvedCourseId = Number(quizForm.course_id);
+      if (!Number.isFinite(resolvedCourseId) || resolvedCourseId <= 0) {
+        throw new Error("Please enter a valid course id.");
+      }
+
       const payload = {
         title: { en: quizForm.title.trim(), ar: quizForm.title.trim() },
         description: { en: quizForm.description.trim(), ar: quizForm.description.trim() },
@@ -202,8 +213,10 @@ export default function AdminQuizzesPage() {
         type: "quiz",
         status: "draft",
         instructor_id: QUIZ_INSTRUCTOR_ID,
+        course_id: resolvedCourseId,
+        courseId: resolvedCourseId,
         quizable_type: "course",
-        quizable_id: 1,
+        quizable_id: resolvedCourseId,
         auto_grade_enabled: true,
         duration_minutes: Number(quizForm.duration_minutes || 30),
       };
@@ -212,8 +225,8 @@ export default function AdminQuizzesPage() {
         headers: getHeaders(currentLocale),
       });
 
-      if (res.status !== 200) {
-        throw new Error("Quiz creation did not return 200.");
+      if (!isSuccessfulStatus(res.status)) {
+        throw new Error(`Quiz creation failed with status ${res.status}.`);
       }
 
       const createdQuiz = extractItem(res.data) as Quiz | null;
@@ -225,7 +238,11 @@ export default function AdminQuizzesPage() {
       setSuccessMessage("Step 1 complete: Quiz created.");
       setTimeout(() => setSuccessMessage(null), 2500);
     } catch (error) {
-      setListError(getErrorMessage(error, "Failed to create quiz."));
+      if (error instanceof Error && error.message === "Please enter a valid course id.") {
+        setListError(error.message);
+      } else {
+        setListError(getErrorMessage(error, "Failed to create quiz."));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -287,8 +304,8 @@ export default function AdminQuizzesPage() {
         headers: getHeaders(currentLocale),
       });
 
-      if (questionRes.status !== 200) {
-        throw new Error("Question creation did not return 200.");
+      if (!isSuccessfulStatus(questionRes.status)) {
+        throw new Error(`Question creation failed with status ${questionRes.status}.`);
       }
 
       const createdQuestion = extractItem(questionRes.data) as Question | null;
@@ -316,8 +333,8 @@ export default function AdminQuizzesPage() {
             { headers: getHeaders(currentLocale) },
           );
 
-          if (optionRes.status !== 200) {
-            throw new Error("Question option creation did not return 200.");
+          if (!isSuccessfulStatus(optionRes.status)) {
+            throw new Error(`Question option creation failed with status ${optionRes.status}.`);
           }
         }
       } else {
@@ -330,7 +347,7 @@ export default function AdminQuizzesPage() {
           },
           { headers: getHeaders(currentLocale) },
         );
-        if (trueRes.status !== 200) throw new Error("True option did not return 200.");
+        if (!isSuccessfulStatus(trueRes.status)) throw new Error(`True option creation failed with status ${trueRes.status}.`);
 
         const falseRes = await axios.post(
           getAdminApiRequestUrl(QUESTION_OPTIONS_API_PATH),
@@ -341,7 +358,7 @@ export default function AdminQuizzesPage() {
           },
           { headers: getHeaders(currentLocale) },
         );
-        if (falseRes.status !== 200) throw new Error("False option did not return 200.");
+        if (!isSuccessfulStatus(falseRes.status)) throw new Error(`False option creation failed with status ${falseRes.status}.`);
       }
 
       setQuestionsByQuiz((prev) => {
@@ -437,6 +454,15 @@ export default function AdminQuizzesPage() {
               {wizardStep === 1 ? (
                 <form onSubmit={handleStep1CreateQuiz} className="space-y-4">
                   <p className="text-sm text-slate-500 dark:text-white/50">Step 1: POST /super-admin/quizzes</p>
+                  <input
+                    required
+                    type="number"
+                    min={1}
+                    value={quizForm.course_id}
+                    onChange={(e) => setQuizForm((p) => ({ ...p, course_id: e.target.value }))}
+                    placeholder="Course ID (e.g. 2)"
+                    className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3"
+                  />
                   <input required value={quizForm.title} onChange={(e) => setQuizForm((p) => ({ ...p, title: e.target.value }))} placeholder="Quiz title" className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3" />
                   <textarea required rows={4} value={quizForm.description} onChange={(e) => setQuizForm((p) => ({ ...p, description: e.target.value }))} placeholder="Quiz description" className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3" />
                   <input type="number" min={1} value={quizForm.duration_minutes} onChange={(e) => setQuizForm((p) => ({ ...p, duration_minutes: e.target.value }))} className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3" />

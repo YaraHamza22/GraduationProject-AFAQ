@@ -296,6 +296,7 @@ export default function UnitLessonsPage() {
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [selectedQuestionForEdit, setSelectedQuestionForEdit] = useState<Question | null>(null);
   const [lessonQuizOverrides, setLessonQuizOverrides] = useState<Record<string, string>>({});
+  const [quizStatusUpdatingByLesson, setQuizStatusUpdatingByLesson] = useState<Record<string, boolean>>({});
   const [quizCreateForm, setQuizCreateForm] = useState<QuizCreateFormState>(() => ({
     ...initialQuizCreateForm,
   }));
@@ -416,6 +417,8 @@ export default function UnitLessonsPage() {
       type: "quiz",
       status: "published",
       instructor_id: QUIZ_INSTRUCTOR_ID,
+      course_id: Number(courseId),
+      courseId: Number(courseId),
       quizable_type: "course",
       quizable_id: Number(courseId),
       auto_grade_enabled: true,
@@ -447,6 +450,8 @@ export default function UnitLessonsPage() {
       type: "quiz",
       status: "draft",
       instructor_id: QUIZ_INSTRUCTOR_ID,
+      course_id: Number(courseId),
+      courseId: Number(courseId),
       quizable_type: "course",
       quizable_id: Number(courseId),
       auto_grade_enabled: true,
@@ -698,6 +703,45 @@ export default function UnitLessonsPage() {
     }
   };
 
+  const handleToggleQuizPublishStatus = async (lesson: Lesson) => {
+    const lessonKey = String(getLessonId(lesson));
+    const lessonQuizzes = lessonQuizMap[lessonKey] || [];
+    const linkedQuiz = lessonQuizzes[lessonQuizzes.length - 1] || lessonQuizMap.unlinked?.[0];
+
+    if (!linkedQuiz) {
+      setListError("No linked quiz found for this lesson.");
+      return;
+    }
+
+    const currentStatus = String(linkedQuiz.status || "").toLowerCase();
+    const nextStatus: "draft" | "published" = currentStatus === "published" ? "draft" : "published";
+
+    try {
+      setListError(null);
+      setQuizStatusUpdatingByLesson((prev) => ({ ...prev, [lessonKey]: true }));
+
+      const res = await axios.put(
+        getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${getQuizId(linkedQuiz)}`),
+        { status: nextStatus },
+        { headers: getHeaders(currentLocale) }
+      );
+
+      const updatedQuiz = (extractItem(res.data) as Quiz | null) || { ...linkedQuiz, status: nextStatus };
+      setLessonQuizMap((prev) => ({
+        ...prev,
+        [lessonKey]: (prev[lessonKey] || []).map((quiz) =>
+          String(getQuizId(quiz)) === String(getQuizId(linkedQuiz)) ? updatedQuiz : quiz
+        ),
+      }));
+
+      setSuccessMessage(nextStatus === "published" ? "Quiz published successfully." : "Quiz moved to draft successfully.");
+    } catch (error) {
+      setListError(getErrorMessage(error, "Failed to update quiz status."));
+    } finally {
+      setQuizStatusUpdatingByLesson((prev) => ({ ...prev, [lessonKey]: false }));
+    }
+  };
+
   const handleCreateQuizForLesson = (lesson: Lesson) => {
     const lessonId = getLessonId(lesson);
     const lessonKey = String(lessonId);
@@ -763,6 +807,8 @@ export default function UnitLessonsPage() {
         type: "quiz",
         status: quizCreateForm.status,
         instructor_id: QUIZ_INSTRUCTOR_ID,
+        course_id: Number(courseId),
+        courseId: Number(courseId),
         quizable_type: quizCreateForm.quizableType,
         quizable_id: Number(courseId),
         auto_grade_enabled: quizCreateForm.autoGradeEnabled,
@@ -1309,7 +1355,11 @@ export default function UnitLessonsPage() {
                 <div key={String(getLessonId(lesson))} className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#11182B] p-6 md:p-7 hover:border-indigo-500/30 transition-all">
                   {(() => {
                     const lessonKey = String(getLessonId(lesson));
+                    const lessonQuizzes = lessonQuizMap[lessonKey] || [];
+                    const linkedQuiz = lessonQuizzes[lessonQuizzes.length - 1] || lessonQuizMap.unlinked?.[0] || null;
                     const hasQuizForLesson = (lessonQuizMap[lessonKey] || []).length > 0;
+                    const isQuizPublished = String(linkedQuiz?.status || "").toLowerCase() === "published";
+                    const isQuizStatusUpdating = Boolean(quizStatusUpdatingByLesson[lessonKey]);
                     return (
                   <div className={`flex flex-col md:flex-row md:items-start justify-between gap-4 ${isRTL ? "md:flex-row-reverse" : ""}`}>
                     <div className="min-w-0">
@@ -1358,6 +1408,31 @@ export default function UnitLessonsPage() {
                         </button>
                       ) : (
                         <>
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleQuizPublishStatus(lesson)}
+                            disabled={!linkedQuiz || isQuizStatusUpdating}
+                            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-bold transition-colors disabled:opacity-60 ${
+                              isQuizPublished
+                                ? "border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-500/20"
+                                : "border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
+                            }`}
+                          >
+                            {isQuizStatusUpdating ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : isQuizPublished ? (
+                              <Clock className="w-3.5 h-3.5" />
+                            ) : (
+                              <BadgeCheck className="w-3.5 h-3.5" />
+                            )}
+                            {isQuizStatusUpdating
+                              ? isQuizPublished
+                                ? "Unpublishing..."
+                                : "Publishing..."
+                              : isQuizPublished
+                                ? "Unpublish Quiz"
+                                : "Publish Quiz"}
+                          </button>
                           <button
                             type="button"
                             onClick={() => void handleOpenQuestionModalForLesson(lesson)}

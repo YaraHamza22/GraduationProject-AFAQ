@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Facebook, Twitter, Instagram, Linkedin, Mail, MapPin, Phone, Github, ShieldCheck } from "lucide-react";
+import { Facebook, Twitter, Instagram, Linkedin, Mail, MapPin, Phone, Github, ShieldCheck, GraduationCap } from "lucide-react";
 import Link from "next/link";
 
 export function Footer() {
@@ -101,6 +101,11 @@ export function Footer() {
             © {currentYear} Afaq Platform. All Rights Reserved. Built for the future of learning.
           </p>
           <div className="flex items-center gap-10">
+            <Link href="/instructor/login" className="text-sky-400 hover:text-sky-300 text-xs font-black uppercase tracking-widest transition-colors flex items-center gap-2 group">
+              <GraduationCap className="w-3 h-3" />
+              Instructor Portal
+              <span className="w-0 group-hover:w-4 h-0.5 bg-sky-400 transition-all duration-300" />
+            </Link>
             <Link href="/admin/login" className="text-indigo-400 hover:text-indigo-300 text-xs font-black uppercase tracking-widest transition-colors flex items-center gap-2 group">
               <ShieldCheck className="w-3 h-3" />
               Admin Portal

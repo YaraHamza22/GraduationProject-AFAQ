@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import axios from "axios";
 import { motion } from "framer-motion";
 import { 
   Users, 
@@ -13,13 +14,15 @@ import {
   Zap
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
+import { getStudentApiRequestUrl } from "@/features/student/studentApi";
+import { getStudentToken } from "@/features/student/studentSession";
 
-const stats = [
-  { label: "stats.students", value: "1,284", icon: Users, color: "text-blue-500 dark:text-blue-400", bg: "bg-blue-500/10" },
-  { label: "stats.courses", value: "12", icon: BookOpen, color: "text-purple-500 dark:text-purple-400", bg: "bg-purple-500/10" },
-  { label: "stats.hours", value: "482", icon: Clock, color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500/10" },
-  { label: "stats.rating", value: "4.9", icon: Star, color: "text-amber-500 dark:text-amber-400", bg: "bg-amber-500/10" },
-];
+const statCards = [
+  { key: "students", label: "stats.students", icon: Users, color: "text-blue-500 dark:text-blue-400", bg: "bg-blue-500/10" },
+  { key: "courses", label: "stats.courses", icon: BookOpen, color: "text-purple-500 dark:text-purple-400", bg: "bg-purple-500/10" },
+  { key: "pending", label: "Pending Assignments", icon: Clock, color: "text-emerald-500 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+  { key: "top", label: "Top Courses", icon: Star, color: "text-amber-500 dark:text-amber-400", bg: "bg-amber-500/10" },
+] as const;
 
 const recentCourses = [
   { name: "Advanced React Patterns", students: 124, progress: 85, image: "https://images.unsplash.com/photo-1633356122544-f134324a6cee?w=800&q=80" },
@@ -29,12 +32,68 @@ const recentCourses = [
 
 export default function InstructorDashboard() {
   const { t, isRTL } = useLanguage();
+  const [summary, setSummary] = useState({
+    total_courses: 0,
+    total_students: 0,
+    pending_assignments: 0,
+  });
+  const [topCourseCount, setTopCourseCount] = useState(0);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadDashboard = async () => {
+      setErrorMessage(null);
+      try {
+        const token = getStudentToken();
+        if (!token) throw new Error("missing_token");
+
+        const response = await axios.get(getStudentApiRequestUrl("/instructor/dashboard"), {
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = response.data?.data ?? {};
+        const nextSummary = data?.summary ?? {};
+        setSummary({
+          total_courses: Number(nextSummary.total_courses ?? 0),
+          total_students: Number(nextSummary.total_students ?? 0),
+          pending_assignments: Number(nextSummary.pending_assignments ?? 0),
+        });
+        setTopCourseCount(Array.isArray(data?.top_performing_courses) ? data.top_performing_courses.length : 0);
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          setErrorMessage(error.response?.data?.message || "Failed to load instructor dashboard.");
+        } else if (error instanceof Error && error.message === "missing_token") {
+          setErrorMessage("Session token is missing. Please log in again.");
+        } else {
+          setErrorMessage("Failed to load instructor dashboard.");
+        }
+      }
+    };
+
+    void loadDashboard();
+  }, []);
+
+  const getStatValue = (key: (typeof statCards)[number]["key"]) => {
+    if (key === "students") return summary.total_students.toLocaleString();
+    if (key === "courses") return summary.total_courses.toLocaleString();
+    if (key === "pending") return summary.pending_assignments.toLocaleString();
+    return topCourseCount.toLocaleString();
+  };
 
   return (
     <div className="flex-1 p-8 md:p-12 bg-(--background) min-h-screen text-(--foreground) overflow-hidden relative transition-colors duration-300">
       {/* Abstract Background Blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-600/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2" />
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-purple-600/5 blur-[100px] rounded-full translate-y-1/2 -translate-x-1/2" />
+
+      {errorMessage ? (
+        <div className="relative z-20 mb-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-500 text-sm font-semibold">
+          {errorMessage}
+        </div>
+      ) : null}
 
       {/* Header */}
       <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
@@ -61,7 +120,7 @@ export default function InstructorDashboard() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12 relative z-10">
-        {stats.map((stat, idx) => (
+        {statCards.map((stat, idx) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, y: 20 }}
@@ -76,8 +135,10 @@ export default function InstructorDashboard() {
             <div className={`w-12 h-12 rounded-2xl ${stat.bg} flex items-center justify-center mb-6`}>
               <stat.icon className={`w-6 h-6 ${stat.color}`} />
             </div>
-            <p className="opacity-40 font-semibold text-sm mb-1 uppercase tracking-wider">{t(stat.label)}</p>
-            <h3 className="text-3xl font-black">{stat.value}</h3>
+            <p className="opacity-40 font-semibold text-sm mb-1 uppercase tracking-wider">
+              {stat.label.startsWith("stats.") ? t(stat.label) : stat.label}
+            </p>
+            <h3 className="text-3xl font-black">{getStatValue(stat.key)}</h3>
           </motion.div>
         ))}
       </div>

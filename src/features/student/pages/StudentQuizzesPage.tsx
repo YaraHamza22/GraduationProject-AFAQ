@@ -2,54 +2,70 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertCircle, Clock, Loader2, PlayCircle, RefreshCw } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiRequestUrl } from "@/features/student/studentApi";
 import { getStudentToken } from "@/features/student/studentSession";
 
-type StudentQuizzesData = {
-  student: {
-    name: string;
-    email: string;
-    phone: string;
-    country: string;
-    education_level: string;
-    specialization: string;
+type LocalizedText = {
+  en?: string;
+  ar?: string;
+  [key: string]: string | undefined;
+};
+
+type EnrollmentRow = {
+  course_id?: number;
+  course?: {
+    id: number;
+    title?: string;
+    title_translations?: LocalizedText;
   };
-  quizzes: Array<Record<string, unknown>>;
+};
+
+type StudentQuiz = {
+  id: number;
+  courseId: number;
+  courseTitle: string;
+  title: string | LocalizedText;
+  description?: string | LocalizedText;
+  status?: string;
+  is_published?: boolean;
+  duration_minutes?: number;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readString(value: unknown, fallback = "N/A") {
+function readString(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
-function parseQuizzes(payload: unknown): StudentQuizzesData {
-  const root = isRecord(payload) && isRecord(payload.data) ? payload.data : {};
-  const student = isRecord(root.student) ? root.student : {};
-  const profile = isRecord(student.student_profile) ? student.student_profile : {};
+function getLocalizedValue(value: unknown, locale: "en" | "ar", fallbackLocale: "en" | "ar" = "en") {
+  if (typeof value === "string") return value;
+  if (!isRecord(value)) return "";
+  const direct = readString(value[locale], "");
+  if (direct) return direct;
+  return readString(value[fallbackLocale], "");
+}
 
-  return {
-    student: {
-      name: readString(student.name),
-      email: readString(student.email),
-      phone: readString(student.phone),
-      country: readString(profile.country),
-      education_level: readString(profile.education_level),
-      specialization: readString(profile.specialization),
-    },
-    quizzes: Array.isArray(root.quizzes) ? root.quizzes.map((q) => (isRecord(q) ? q : {})) : [],
-  };
+function parseList(payload: unknown) {
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return [];
+  if (Array.isArray(payload.data)) return payload.data;
+  if (isRecord(payload.data) && Array.isArray(payload.data.data)) return payload.data.data;
+  return [];
 }
 
 export default function StudentQuizzesPage() {
-  const { t, isRTL } = useLanguage();
-  const [data, setData] = useState<StudentQuizzesData | null>(null);
+  const { t, isRTL, language } = useLanguage();
+  const router = useRouter();
+  const [quizzes, setQuizzes] = useState<StudentQuiz[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const locale = language === "ar" ? "ar" : "en";
+  const fallbackLocale = locale === "ar" ? "en" : "ar";
 
   const loadQuizzes = useCallback(async () => {
     setIsLoading(true);
@@ -58,54 +74,99 @@ export default function StudentQuizzesPage() {
       const token = getStudentToken();
       if (!token) throw new Error("missing_token");
 
-      const response = await axios.get(getStudentApiRequestUrl("/me/with-quizzes"), {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const headers = {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      };
 
-      setData(parseQuizzes(response.data));
+      const enrollmentsResponse = await axios.get(getStudentApiRequestUrl("/enrollments"), {
+        headers,
+        params: { per_page: 100 },
+      });
+      const enrollments = parseList(enrollmentsResponse.data) as EnrollmentRow[];
+
+      const enrolledCourses = enrollments
+        .map((enrollment) => {
+          const courseId = enrollment.course?.id ?? enrollment.course_id;
+          if (typeof courseId !== "number") return null;
+          const courseTitle =
+            getLocalizedValue(enrollment.course?.title_translations, locale, fallbackLocale) ||
+            readString(enrollment.course?.title, `Course #${courseId}`);
+
+          return { id: courseId, title: courseTitle };
+        })
+        .filter((item): item is { id: number; title: string } => item !== null);
+
+      const uniqueCourses = Array.from(new Map(enrolledCourses.map((course) => [course.id, course])).values());
+
+      const quizResults = await Promise.all(
+        uniqueCourses.map(async (course) => {
+          try {
+            const response = await axios.get(getStudentApiRequestUrl("/quizzes"), {
+              headers,
+              params: { course_id: course.id, per_page: 100 },
+            });
+            const rows = parseList(response.data);
+            return rows
+              .filter(isRecord)
+              .filter((quiz) => {
+                const status = readString(quiz.status, "").toLowerCase();
+                const isPublished = Boolean(quiz.is_published);
+                return status === "published" || isPublished;
+              })
+              .map((quiz): StudentQuiz => ({
+                id: Number(quiz.id),
+                courseId: course.id,
+                courseTitle: course.title,
+                title: (quiz.title as string | LocalizedText) ?? `Quiz #${quiz.id}`,
+                description: quiz.description as string | LocalizedText | undefined,
+                status: readString(quiz.status, ""),
+                is_published: Boolean(quiz.is_published),
+                duration_minutes: typeof quiz.duration_minutes === "number" ? quiz.duration_minutes : undefined,
+              }));
+          } catch {
+            return [];
+          }
+        })
+      );
+
+      const merged = quizResults.flat();
+      // Keep one card per course/title to avoid duplicate rows from repeated quiz records.
+      const dedupeKey = (quiz: StudentQuiz) =>
+        `${quiz.courseId}:${getLocalizedValue(quiz.title, locale, fallbackLocale).trim().toLowerCase()}`;
+      const dedupedByCourseTitle = Array.from(
+        new Map(
+          [...merged]
+            .sort((a, b) => b.id - a.id)
+            .map((quiz) => [dedupeKey(quiz), quiz])
+        ).values()
+      );
+
+      const deduped = Array.from(new Map(dedupedByCourseTitle.map((quiz) => [quiz.id, quiz])).values());
+      setQuizzes(deduped);
     } catch (error) {
       let message = "Failed to load quizzes.";
       if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
-        const serverMsg = error.response.data.message;
-        // Hide raw database errors from the UI
-        if (!serverMsg.includes("SQLSTATE") && !serverMsg.includes("Base table or view not found")) {
-          message = serverMsg;
-        }
+        message = error.response.data.message;
       }
       setErrorMessage(message);
-
-      // Fallback: Try to at least load the student profile if the quizzes table is broken in the backend
-      try {
-        const token = getStudentToken();
-        const fallbackResponse = await axios.get(getStudentApiRequestUrl("/me/with-courses"), {
-          headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-        });
-        const fallbackData = parseQuizzes(fallbackResponse.data);
-        // Keep the quizzes array empty since we are using the courses endpoint just for the student profile
-        setData({ student: fallbackData.student, quizzes: [] });
-      } catch (_) {
-        // If the fallback also fails, silently ignore and rely on the original error message
-      }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fallbackLocale, locale]);
 
   useEffect(() => {
     void loadQuizzes();
   }, [loadQuizzes]);
 
-  const quizRows = useMemo(() => data?.quizzes ?? [], [data]);
+  const quizRows = useMemo(() => quizzes, [quizzes]);
 
   return (
     <div className="p-8 md:p-12 min-h-screen bg-(--background) text-(--foreground)">
       <div className={`mb-8 flex items-center justify-between ${isRTL ? "flex-row-reverse" : ""}`}>
         <div className={isRTL ? "text-right" : ""}>
           <h1 className="text-4xl font-black tracking-tighter">{t("std.quizzes")}</h1>
-          <p className="opacity-50 mt-2">All quiz access from API.</p>
+          <p className="opacity-50 mt-2">Published quizzes from your enrolled courses.</p>
         </div>
         <button
           onClick={() => void loadQuizzes()}
@@ -124,40 +185,39 @@ export default function StudentQuizzesPage() {
         </div>
       ) : null}
 
-      <section className="grid gap-6 lg:grid-cols-3 mb-8">
-        <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-6">
-          <p className="text-xs uppercase tracking-widest opacity-50 mb-2">Student</p>
-          <p className="text-xl font-black">{data?.student.name ?? "N/A"}</p>
-          <p className="text-sm opacity-60 mt-1">{data?.student.email ?? "N/A"}</p>
-        </div>
-        <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-6">
-          <p className="text-xs uppercase tracking-widest opacity-50 mb-2">Education Level</p>
-          <p className="text-xl font-black capitalize">{data?.student.education_level ?? "N/A"}</p>
-          <p className="text-sm opacity-60 mt-1">{data?.student.specialization ?? "N/A"}</p>
-        </div>
-        <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-6">
-          <p className="text-xs uppercase tracking-widest opacity-50 mb-2">Country / Phone</p>
-          <p className="text-xl font-black">{data?.student.country ?? "N/A"}</p>
-          <p className="text-sm opacity-60 mt-1">{data?.student.phone ?? "N/A"}</p>
-        </div>
-      </section>
-
       <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-6">
         <h2 className="text-2xl font-black tracking-tight mb-4">Quizzes</h2>
         {quizRows.length ? (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {quizRows.map((quiz, i) => (
-              <div key={i} className="rounded-2xl border border-slate-200 dark:border-white/10 px-4 py-3">
-                <p className="font-bold">{readString(quiz.title, `Quiz #${i + 1}`)}</p>
-                <p className="text-xs opacity-60 mt-1">ID: {readString(quiz.id, "--")}</p>
+              <div key={quiz.id} className="rounded-2xl border border-slate-200 dark:border-white/10 px-4 py-4 bg-slate-50 dark:bg-white/[0.02]">
+                <p className="text-xs uppercase tracking-widest opacity-50 mb-2">{quiz.courseTitle}</p>
+                <p className="font-black text-lg">
+                  {getLocalizedValue(quiz.title, locale, fallbackLocale) || `Quiz #${i + 1}`}
+                </p>
+                <p className="text-sm opacity-70 mt-1 line-clamp-2">
+                  {getLocalizedValue(quiz.description, locale, fallbackLocale) || "No description"}
+                </p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="text-xs opacity-60 inline-flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    {quiz.duration_minutes ?? 0} min
+                  </div>
+                  <button
+                    onClick={() => router.push(`/student/quizzes/${quiz.id}?course_id=${quiz.courseId}`)}
+                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white hover:bg-indigo-500 transition-colors"
+                  >
+                    <PlayCircle className="w-4 h-4" />
+                    {language === "ar" ? "ابدأ الاختبار" : "Take Quiz"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="opacity-50">No quizzes assigned yet.</p>
+          <p className="opacity-50">No quizzes available for your enrolled courses yet.</p>
         )}
       </section>
     </div>
   );
 }
-

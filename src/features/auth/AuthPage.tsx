@@ -10,8 +10,12 @@ import { Sun, Moon } from "lucide-react";
 import axios from "axios";
 import { getStudentApiRequestUrl } from "@/features/student/studentApi";
 import {
+  extractStudentRole,
+  extractStudentRoleFromToken,
   extractStudentToken,
   extractStudentUser,
+  getStudentToken,
+  getStoredStudentRole,
   persistStudentSession,
 } from "@/features/student/studentSession";
 
@@ -34,6 +38,54 @@ const gradients = [
   "from-violet-600 via-fuchsia-600 to-indigo-600",
   "from-cyan-500 via-blue-600 to-indigo-700",
 ];
+
+function normalizeRole(role: string) {
+  return role.trim().toLowerCase().replace(/[_\s]+/g, "-");
+}
+
+function getRedirectPathByRole(rawRole: string | null) {
+  const role = rawRole ? normalizeRole(rawRole) : "";
+
+  if (role.includes("instructor") || role.includes("teacher")) {
+    return "/instructor";
+  }
+
+  if (role === "admin" || role.includes("super-admin") || role.includes("superadmin")) {
+    return "/admin/dashboard";
+  }
+
+  if (role.includes("manager")) {
+    return "/manager/dashboard";
+  }
+
+  return "/student";
+}
+
+async function resolveRedirectPath(token: string, rawRole: string | null) {
+  const rolePath = getRedirectPathByRole(rawRole);
+  if (rawRole) {
+    return rolePath;
+  }
+
+  const authHeaders = {
+    Accept: "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+
+  try {
+    await axios.get(getStudentApiRequestUrl("/instructor/dashboard"), { headers: authHeaders });
+    return "/instructor";
+  } catch {
+    // Continue fallback checks.
+  }
+
+  try {
+    await axios.get(getStudentApiRequestUrl("/student/dashboard"), { headers: authHeaders });
+    return "/student";
+  } catch {
+    return "/student";
+  }
+}
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -69,6 +121,31 @@ export default function AuthPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!mounted || !isLogin) {
+      return;
+    }
+
+    const token = getStudentToken();
+    if (!token) {
+      return;
+    }
+
+    const role = getStoredStudentRole();
+    let isMounted = true;
+
+    void (async () => {
+      const redirectPath = await resolveRedirectPath(token, role);
+      if (isMounted) {
+        router.replace(redirectPath);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isLogin, mounted, router]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -127,36 +204,76 @@ export default function AuthPage() {
     if (isLogin) {
       setIsLoading(true);
       try {
-        const loginUrl = getStudentApiRequestUrl("/auth/login");
-        if (!loginUrl) {
-          setGeneralError("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.");
-          return;
-        }
-
         const payload = {
           email: formData.email,
           password: formData.password
         };
-        
-        const response = await axios.post(loginUrl, payload, {
-          headers: {
-            'Accept': 'application/json'
-          }
-        });
-        
-        const token = extractStudentToken(response.data);
-        if (token) {
-          persistStudentSession(token, extractStudentUser(response.data));
+
+        const loginCandidates = [
+          getStudentApiRequestUrl("/login"),
+          getStudentApiRequestUrl("/auth/login"),
+        ].filter(Boolean);
+
+        if (loginCandidates.length === 0) {
+          setGeneralError("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.");
+          return;
         }
 
+        let response = null;
+        for (const loginUrl of loginCandidates) {
+          try {
+            response = await axios.post(loginUrl, payload, {
+              headers: {
+                Accept: "application/json",
+              },
+            });
+            break;
+          } catch (candidateError) {
+            if (!axios.isAxiosError(candidateError)) {
+              throw candidateError;
+            }
+            if (candidateError.response?.status === 404 || candidateError.response?.status === 405) {
+              continue;
+            }
+            throw candidateError;
+          }
+        }
+
+        if (!response) {
+          throw new Error("login_endpoint_not_found");
+        }
+        
+        const user = extractStudentUser(response.data);
+        const token = extractStudentToken(response.data);
+        
+        if (!token) {
+          throw new Error("missing_token");
+        }
+
+        persistStudentSession(token, user);
         setSuccessMessage("Login successful! Redirecting...");
+
+        const role =
+          extractStudentRole(user) ??
+          extractStudentRole(response.data) ??
+          extractStudentRoleFromToken(token);
+
+        const redirectPath = await resolveRedirectPath(token, role);
         
         setTimeout(() => {
-           router.push("/student");
-        }, 1500); // 1.5 seconds delay for snackbar
+          router.replace(redirectPath);
+        }, 1500);
 
       } catch (error) {
         console.error("Login error:", error);
+        if (error instanceof Error && error.message === "missing_token") {
+          setGeneralError("Login response did not include an auth token.");
+          return;
+        }
+        if (error instanceof Error && error.message === "login_endpoint_not_found") {
+          setGeneralError("Login endpoint is not available. Verify backend routes for /login or /auth/login.");
+          return;
+        }
         if (axios.isAxiosError(error) && error.response) {
           const isHtmlResponse = String(error.response.headers?.["content-type"] ?? "").includes("text/html");
 
@@ -295,11 +412,11 @@ export default function AuthPage() {
               className="flex-1 overflow-y-auto pr-3 custom-scrollbar flex flex-col"
             >
               <h1 className="text-4xl md:text-5xl font-extrabold mb-3 tracking-tight text-slate-900 dark:text-white">
-                {isLogin ? "Hello Again!" : "Student Register"}
+                {isLogin ? "Student Login" : "Student Register"}
               </h1>
               <p className="text-slate-500 dark:text-white/40 mb-6 text-lg">
                 {isLogin
-                  ? "Welcome back, you've been missed!"
+                  ? "Login to continue your learning journey."
                   : "Start your learning journey with us today."}
               </p>
 
@@ -541,7 +658,7 @@ export default function AuthPage() {
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
                     <>
-                      {isLogin ? "Sign In" : "Register Account"}
+                      {isLogin ? "Sign In as Student" : "Register Account"}
                       <ArrowRight className="w-5 h-5" />
                     </>
                   )}
@@ -590,7 +707,7 @@ export default function AuthPage() {
                  transition={{ delay: 0.5, duration: 0.8, ease: "circOut" }}
                  className="text-7xl lg:text-[110px] font-black text-white leading-none tracking-tighter drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] select-none -translate-y-8"
                >
-                 {isLogin ? "Welcome" : "Join the"}
+                 {isLogin ? "Student" : "Join the"}
                </motion.h2>
             </div>
           </div>
@@ -630,7 +747,7 @@ export default function AuthPage() {
                   <div className="w-12 h-1 bg-white/40 mx-auto rounded-full" />
                   <p className="text-white/90 text-lg font-medium max-w-sm mx-auto leading-relaxed drop-shadow-md">
                     {isLogin
-                      ? "Enter your details to pick up where you left off. Your journey continues here."
+                      ? "Access your courses, quizzes, and progress from one dashboard."
                       : "Create your account and start exploring a world of knowledge tailored for you."}
                   </p>
                   
