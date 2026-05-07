@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Clock, Loader2, PlayCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, Clock, Loader2, PlayCircle, RefreshCw, Trophy } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiEndpoint, getStudentApiRequestUrl } from "@/features/student/studentApi";
 import { getStoredStudentUser, getStudentToken } from "@/features/student/studentSession";
@@ -120,7 +120,15 @@ function isPublishedQuiz(quiz: Record<string, unknown>) {
 
 function isTakenStatus(status: string) {
   const normalized = status.toLowerCase();
-  return normalized === "submitted" || normalized === "graded" || normalized === "passed" || normalized === "completed";
+  return (
+    normalized === "submitted" ||
+    normalized === "graded" ||
+    normalized === "passed" ||
+    normalized === "completed" ||
+    normalized === "pending_review" ||
+    normalized === "under_review" ||
+    normalized === "awaiting_grading"
+  );
 }
 
 export default function StudentQuizzesPage() {
@@ -309,7 +317,7 @@ export default function StudentQuizzesPage() {
 
       const deduped = Array.from(new Map(merged.map((quiz) => [quiz.id, quiz])).values());
 
-      // Final safety check: mark quizzes as taken from attempts list (covers fallback quiz-loading flows).
+      // Final safety check: mark quizzes as taken and backfill attempt ids from attempts list.
       try {
         const studentId = readNumber(getStoredStudentUser()?.id);
         const attemptsResponse = await requestWithProxyFallback("/attempts", {
@@ -321,17 +329,35 @@ export default function StudentQuizzesPage() {
           },
         });
         const attempts = parseList(attemptsResponse.data).filter(isRecord);
-        const takenQuizIds = new Set(
-          attempts
-            .map((item) => ({
-              quizId: readNumber(item.quiz_id),
-              status: readString(item.status, ""),
-            }))
-            .filter((item) => item.quizId && isTakenStatus(item.status))
-            .map((item) => item.quizId as number)
-        );
+        const latestAttemptByQuiz = new Map<number, { id: number; status: string }>();
+        const normalizedAttempts = attempts
+          .map((item) => ({
+            id: readNumber(item.id) ?? 0,
+            quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
+            status:
+              readString(item.status, "") ||
+              readString(item.attempt_status, "") ||
+              readString(item.grading_status, ""),
+          }))
+          .filter((item) => item.id > 0 && item.quizId > 0)
+          .sort((a, b) => b.id - a.id);
 
-        setQuizzes(deduped.map((quiz) => ({ ...quiz, isTaken: quiz.isTaken || takenQuizIds.has(quiz.id) })));
+        for (const row of normalizedAttempts) {
+          if (!latestAttemptByQuiz.has(row.quizId)) {
+            latestAttemptByQuiz.set(row.quizId, { id: row.id, status: row.status });
+          }
+        }
+
+        setQuizzes(
+          deduped.map((quiz) => {
+            const latestAttempt = latestAttemptByQuiz.get(quiz.id);
+            return {
+              ...quiz,
+              attemptId: quiz.attemptId ?? latestAttempt?.id ?? null,
+              isTaken: quiz.isTaken || Boolean(latestAttempt && isTakenStatus(latestAttempt.status)),
+            };
+          })
+        );
       } catch {
         setQuizzes(deduped);
       }
@@ -440,7 +466,7 @@ export default function StudentQuizzesPage() {
             const openAttempt = attempts
               .map((item) => ({
                 id: readNumber(item.id) ?? 0,
-                quizId: readNumber(item.quiz_id) ?? 0,
+                quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
                 status: readString(item.status, ""),
               }))
               .filter((item) => item.id > 0 && item.quizId === quiz.id)
@@ -479,6 +505,22 @@ export default function StudentQuizzesPage() {
       }
     },
     [headers, router]
+  );
+
+  const openGrade = useCallback(
+    (quiz: StudentQuiz) => {
+      if (!quiz.attemptId) {
+        setErrorMessage("No attempt was found for this quiz grade.");
+        return;
+      }
+
+      const query = new URLSearchParams({
+        attempt_id: String(quiz.attemptId),
+        ...(quiz.courseId ? { course_id: String(quiz.courseId) } : {}),
+      });
+      router.push(`/student/quizzes/${quiz.id}/grade?${query.toString()}`);
+    },
+    [router]
   );
 
   return (
@@ -528,12 +570,26 @@ export default function StudentQuizzesPage() {
                     <span>Left: {quiz.attemptsLeft ?? "--"}</span>
                   </div>
                   <button
-                    onClick={() => void startQuiz(quiz)}
-                    disabled={startingQuizId === quiz.id || Boolean(quiz.isTaken)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                    onClick={() => {
+                      if (quiz.isTaken) {
+                        openGrade(quiz);
+                        return;
+                      }
+                      void startQuiz(quiz);
+                    }}
+                    disabled={startingQuizId === quiz.id || Boolean(quiz.isTaken && !quiz.attemptId)}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+                      quiz.isTaken ? "bg-emerald-600 hover:bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500"
+                    }`}
                   >
-                    {startingQuizId === quiz.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-                    {quiz.isTaken ? (language === "ar" ? "تم الحل" : "Taken") : language === "ar" ? "ابدأ الاختبار" : "Start Quiz"}
+                    {startingQuizId === quiz.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : quiz.isTaken ? (
+                      <Trophy className="h-4 w-4" />
+                    ) : (
+                      <PlayCircle className="h-4 w-4" />
+                    )}
+                    {quiz.isTaken ? "Taken" : "Start Quiz"}
                   </button>
                 </div>
               </div>
@@ -546,3 +602,4 @@ export default function StudentQuizzesPage() {
     </div>
   );
 }
+

@@ -571,7 +571,11 @@ export default function StudentQuizAttemptPage() {
         data: submitPayload,
         headers,
       });
-      router.replace("/student");
+      const nextQuery = new URLSearchParams({
+        attempt_id: String(attempt.id),
+        ...(courseId ? { course_id: courseId } : {}),
+      });
+      router.replace(`/student/quizzes/${quizId}/grade?${nextQuery.toString()}`);
     } catch (error) {
       if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
         setErrorMessage(error.response.data.message);
