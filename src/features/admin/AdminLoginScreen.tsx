@@ -8,26 +8,20 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
-  BadgeCheck,
   Eye,
   EyeOff,
   Loader2,
   Lock,
   Mail,
   Moon,
-  Shield,
-  Sparkles,
+  ShieldCheck,
   Sun,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import {
-  getAdminApiBaseUrl,
-  getAdminApiEndpoint,
-  getAdminApiRequestUrl,
-} from "@/features/admin/adminApi";
+import { getAdminApiBaseUrl, getAdminApiEndpoint, getAdminApiRequestUrl } from "@/features/admin/adminApi";
 import {
   extractAdminMessage,
   extractAdminToken,
@@ -37,18 +31,6 @@ import {
 
 type FieldName = "email" | "password";
 type FieldErrors = Partial<Record<FieldName, string>>;
-
-const securityStats = [
-  { value: "24/7", label: "access monitoring" },
-  { value: "<120ms", label: "auth latency target" },
-  { value: "v1", label: "secured api cluster" },
-];
-
-const trustHighlights = [
-  "Super admin credentials are validated against the live API.",
-  "Successful sessions are kept locally and used to unlock admin routes.",
-  "Clean error handling keeps bad credentials and server issues easy to understand.",
-];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -85,7 +67,8 @@ function parseAdminError(error: unknown) {
   if (!error.response) {
     return {
       fieldErrors,
-      message: "Cannot reach the API server. Check that your backend is running and NEXT_PUBLIC_API_URL is correct.",
+      message:
+        "Cannot reach the API server. Check that your backend is running and NEXT_PUBLIC_API_URL is correct.",
     };
   }
 
@@ -112,10 +95,6 @@ function parseAdminError(error: unknown) {
     }
   }
 
-  if (error.response.status === 401 || error.response.status === 403) {
-    message = message || "Invalid email or password.";
-  }
-
   if (error.response.status >= 500) {
     message = "The server is available but could not complete the login. Please try again in a moment.";
   }
@@ -126,7 +105,7 @@ function parseAdminError(error: unknown) {
 export default function AdminLoginScreen() {
   const router = useRouter();
   const { theme, setTheme } = useTheme();
-  const { isRTL, t } = useLanguage();
+  const { isRTL } = useLanguage();
 
   const [mounted, setMounted] = useState(false);
   const [credentials, setCredentials] = useState({ email: "", password: "" });
@@ -143,7 +122,8 @@ export default function AdminLoginScreen() {
   }, []);
 
   const updateField =
-    (field: FieldName) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    (field: FieldName) =>
+    (event: React.ChangeEvent<HTMLInputElement>) => {
       const value = event.target.value;
       setCredentials((current) => ({ ...current, [field]: value }));
       setFieldErrors((current) => ({ ...current, [field]: undefined }));
@@ -203,10 +183,7 @@ export default function AdminLoginScreen() {
         },
       });
 
-      setSuccessMessage(
-        extractAdminMessage(response.data) ?? "Access granted. Redirecting to the management dashboard."
-      );
-
+      setSuccessMessage(extractAdminMessage(response.data) ?? "Access granted. Redirecting...");
       router.replace("/admin/dashboard");
     } catch (error) {
       const parsed = parseAdminError(error);
@@ -218,213 +195,147 @@ export default function AdminLoginScreen() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#f4f7ff] text-slate-950 transition-colors duration-300 dark:bg-[#040816] dark:text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(79,70,229,0.22),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.16),transparent_30%),linear-gradient(180deg,rgba(15,23,42,0.04),transparent)] dark:bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.32),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(14,165,233,0.16),transparent_30%),linear-gradient(180deg,rgba(2,6,23,0.92),rgba(2,6,23,1))]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(99,102,241,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(99,102,241,0.06)_1px,transparent_1px)] bg-[size:72px_72px] opacity-30 dark:opacity-20" />
-      <div className="absolute left-1/2 top-0 h-[36rem] w-[36rem] -translate-x-1/2 rounded-full bg-indigo-500/10 blur-3xl dark:bg-indigo-500/20" />
+    <div
+      className="relative min-h-screen overflow-hidden bg-[#f8f6f2] text-[#111827] dark:bg-[#05060a] dark:text-white"
+      style={{ fontFamily: '"Sora", "Plus Jakarta Sans", "Manrope", sans-serif' }}
+    >
+      <div className="pointer-events-none absolute -left-20 top-10 h-72 w-72 rounded-full bg-[#f97316]/25 blur-3xl dark:bg-[#fb7185]/20" />
+      <div className="pointer-events-none absolute -right-10 top-28 h-80 w-80 rounded-full bg-[#22d3ee]/25 blur-3xl dark:bg-[#38bdf8]/20" />
+      <div className="pointer-events-none absolute bottom-[-8rem] left-1/2 h-[26rem] w-[26rem] -translate-x-1/2 rounded-full bg-[#f59e0b]/20 blur-3xl dark:bg-[#a78bfa]/20" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(17,24,39,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(17,24,39,0.05)_1px,transparent_1px)] bg-[size:38px_38px] opacity-40 dark:opacity-20" />
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1800px] items-start px-3 py-4 sm:px-5 sm:py-6 lg:px-8 lg:py-8 xl:items-center 2xl:px-10 2xl:py-10">
-        <button
-          type="button"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/80 text-slate-700 shadow-lg shadow-slate-900/5 backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-indigo-300 hover:text-indigo-600 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:shadow-black/20 dark:hover:border-indigo-400 dark:hover:text-white sm:right-5 sm:top-5 sm:h-11 sm:w-11 lg:right-6 lg:top-6 lg:h-12 lg:w-12"
-          aria-label="Toggle theme"
-        >
-          {mounted && theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-        </button>
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-7xl flex-col p-4 sm:p-6 lg:p-10">
+        <div className={clsx("mb-6 flex items-center justify-between", isRTL && "flex-row-reverse")}>
+          <Link
+            href="/"
+            className={clsx(
+              "inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/75 px-4 py-2 text-xs font-semibold tracking-[0.14em] text-black/70 backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white dark:border-white/15 dark:bg-white/5 dark:text-white/70 dark:hover:bg-white/10",
+              isRTL && "flex-row-reverse"
+            )}
+          >
+            <ArrowLeft className={clsx("h-4 w-4", isRTL && "rotate-180")} />
+            HOME
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-black/10 bg-white/80 text-black/70 backdrop-blur-md transition hover:-translate-y-0.5 dark:border-white/15 dark:bg-white/5 dark:text-white/80"
+            aria-label="Toggle theme"
+          >
+            {mounted && theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </button>
+        </div>
 
         <motion.div
-          initial={{ opacity: 0, y: 24 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, ease: "easeOut" }}
-          className="grid w-full overflow-hidden rounded-[1.75rem] border border-white/60 bg-white/75 shadow-[0_30px_120px_-40px_rgba(15,23,42,0.35)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/70 dark:shadow-[0_40px_120px_-40px_rgba(0,0,0,0.75)] sm:rounded-[2rem] xl:grid-cols-[1.04fr_0.96fr] 2xl:min-h-[920px]"
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="grid flex-1 overflow-hidden rounded-[2rem] border border-black/10 bg-white/50 shadow-[0_30px_100px_-40px_rgba(0,0,0,0.4)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/[0.03] lg:grid-cols-[1.05fr_0.95fr]"
         >
-          <section className="order-2 relative overflow-hidden border-t border-slate-200/70 p-5 sm:p-7 lg:p-10 xl:order-1 xl:border-t-0 xl:border-r xl:border-slate-200/70 xl:p-12 2xl:p-14 dark:border-white/10">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(79,70,229,0.16),transparent_38%),linear-gradient(145deg,rgba(255,255,255,0.88),rgba(244,247,255,0.72))] dark:bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.22),transparent_38%),linear-gradient(145deg,rgba(15,23,42,0.85),rgba(2,6,23,0.72))]" />
+          <section className="relative hidden border-r border-black/10 p-8 lg:block xl:p-12 dark:border-white/10">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_45%),radial-gradient(circle_at_bottom_right,rgba(6,182,212,0.14),transparent_40%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(251,113,133,0.2),transparent_40%),radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.16),transparent_40%)]" />
 
-            <div className="relative z-10 flex h-full flex-col">
-              <div className={clsx("flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4", isRTL && "sm:flex-row-reverse")}>
-                <Link
-                  href="/"
-                  className={clsx(
-                    "group inline-flex w-full items-center justify-center gap-3 rounded-full border border-slate-200/80 bg-white/75 px-4 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-slate-500 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-white/10 dark:bg-white/5 dark:text-white/50 dark:hover:border-indigo-400 dark:hover:text-white sm:w-auto sm:justify-start sm:text-[11px] sm:tracking-[0.28em]",
-                    isRTL && "flex-row-reverse"
-                  )}
-                >
-                  <ArrowLeft
-                    className={clsx(
-                      "h-4 w-4 transition-transform",
-                      isRTL ? "rotate-180 group-hover:translate-x-1" : "group-hover:-translate-x-1"
-                    )}
-                  />
-                  {t("adm.return")}
-                </Link>
-
-                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600 dark:text-emerald-300 sm:text-[11px] sm:tracking-[0.28em]">
-                  <BadgeCheck className="h-4 w-4" />
-                  live auth ready
-                </div>
-              </div>
-
-              <div className="mt-8 flex items-center gap-3 sm:mt-12 sm:gap-4 xl:mt-14">
-                <div className="flex h-14 w-14 items-center justify-center rounded-[1.3rem] bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-xl shadow-indigo-600/30 sm:h-16 sm:w-16 sm:rounded-[1.5rem]">
-                  <Shield className="h-7 w-7 sm:h-8 sm:w-8" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-black uppercase tracking-[0.26em] text-slate-500 dark:text-white/45 sm:text-sm sm:tracking-[0.32em]">
-                    AFAQ ADMIN
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-                    Security governance for platform-wide operations
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-8 space-y-5 sm:mt-12 xl:mt-14 xl:space-y-6">
-                <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/20 bg-indigo-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.22em] text-indigo-600 dark:text-indigo-300 sm:text-[11px] sm:tracking-[0.28em]">
-                  <Sparkles className="h-4 w-4" />
-                  Super admin gateway
+            <div className="relative flex h-full flex-col justify-between">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/70 px-4 py-2 text-xs font-semibold tracking-[0.14em] text-black/70 dark:border-white/15 dark:bg-white/5 dark:text-white/70">
+                  <ShieldCheck className="h-4 w-4" />
+                  ADMIN CONTROL
                 </div>
 
-                <div className="space-y-4">
-                  <h1 className="max-w-2xl text-[2.5rem] font-black leading-[0.95] tracking-[-0.05em] text-slate-950 sm:text-5xl xl:text-6xl 2xl:text-[4.8rem] dark:text-white">
-                    Real admin login.
-                    <span className="block bg-gradient-to-r from-indigo-500 via-violet-500 to-sky-500 bg-clip-text text-transparent">
-                      Clean, secure, production-ready.
-                    </span>
-                  </h1>
-                  <p className="max-w-2xl text-sm leading-7 text-slate-600 dark:text-white/65 sm:text-base xl:text-lg">
-                    This page now connects directly to the backend login API and keeps the premium control-room look,
-                    while making the actual sign-in flow clear and reliable.
-                  </p>
-                </div>
-              </div>
+                <h1 className="mt-8 max-w-xl text-5xl font-semibold leading-[0.94] tracking-[-0.04em] text-black/90 dark:text-white xl:text-6xl">
+                  Login to your
+                  <span className="block bg-gradient-to-r from-[#f97316] via-[#ef4444] to-[#06b6d4] bg-clip-text text-transparent">
+                    command center
+                  </span>
+                </h1>
 
-              <div className="mt-8 grid gap-3 sm:mt-10 sm:grid-cols-3 sm:gap-4 xl:mt-12">
-                {securityStats.map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-[1.35rem] border border-slate-200/80 bg-white/80 p-4 shadow-sm shadow-slate-900/5 dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none sm:rounded-[1.5rem]"
-                  >
-                    <p className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">{item.value}</p>
-                    <p className="mt-1 text-[11px] font-black uppercase tracking-[0.26em] text-slate-500 dark:text-white/40">
-                      {item.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-8 rounded-[1.6rem] border border-slate-200/80 bg-slate-950 p-5 text-white shadow-2xl shadow-slate-950/10 sm:mt-10 sm:rounded-[1.75rem] sm:p-6 xl:mt-auto dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
-                <div className={clsx("flex items-center justify-between gap-3", isRTL && "flex-row-reverse")}>
-                  <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.28em] text-indigo-300">
-                      access checklist
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-slate-300 dark:text-white/70">{t("adm.status_desc")}</p>
-                  </div>
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-indigo-300">
-                    <Shield className="h-5 w-5" />
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-3">
-                  {trustHighlights.map((item) => (
-                    <div key={item} className={clsx("flex items-start gap-3", isRTL && "flex-row-reverse text-right")}>
-                      <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-300">
-                        <BadgeCheck className="h-3.5 w-3.5" />
-                      </div>
-                      <p className="text-sm leading-6 text-slate-300 dark:text-white/75">{item}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="order-1 relative p-5 sm:p-7 lg:p-10 xl:order-2 xl:p-12 2xl:p-14">
-            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.52),rgba(244,247,255,0.32))] dark:bg-[linear-gradient(180deg,rgba(2,6,23,0.12),rgba(2,6,23,0.45))]" />
-
-            <div className="relative z-10 mx-auto flex h-full w-full max-w-xl flex-col justify-center">
-              <div className="mb-6 sm:mb-8">
-                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/70 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-white/45 sm:text-[11px] sm:tracking-[0.24em]">
-                  <Mail className="h-3.5 w-3.5" />
-                  POST /auth/login
-                </div>
-                <h2 className="mt-4 text-[2.35rem] font-black tracking-[-0.04em] text-slate-950 sm:mt-5 sm:text-4xl xl:text-[3.25rem] dark:text-white">
-                  {t("adm.management")}
-                  <span className="text-indigo-500">.</span>
-                </h2>
-                <p className="mt-3 max-w-md text-sm leading-6 text-slate-600 dark:text-white/60">
-                  Sign in with the super admin email and password configured in your backend. The session will unlock
-                  the protected admin pages immediately after a valid response.
+                <p className="mt-5 max-w-md text-base leading-7 text-black/60 dark:text-white/60">
+                  Secure admin sign-in, clean workflow, and instant dashboard access.
                 </p>
               </div>
 
+              <motion.div
+                initial={{ opacity: 0.75, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
+                className="rounded-3xl border border-black/10 bg-black/[0.03] p-6 backdrop-blur-md dark:border-white/10 dark:bg-white/[0.03]"
+              >
+                <div className={clsx("flex items-center gap-3", isRTL && "flex-row-reverse")}>
+                  <div className="h-3 w-3 rounded-full bg-emerald-400" />
+                  <p className="text-xs font-semibold tracking-[0.14em] text-black/65 dark:text-white/65">
+                    LIVE AUTH ENDPOINT
+                  </p>
+                </div>
+                <p className="mt-3 break-all text-sm text-black/75 dark:text-white/75">{getAdminApiEndpoint("/auth/login")}</p>
+              </motion.div>
+            </div>
+          </section>
+
+          <section className="relative p-5 sm:p-8 lg:p-12">
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.3),rgba(255,255,255,0.08))] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]" />
+
+            <div className="relative mx-auto flex h-full w-full max-w-xl flex-col justify-center">
+              <div className="mb-7">
+                <h2 className="text-4xl font-semibold tracking-[-0.03em] text-black/90 dark:text-white sm:text-5xl">
+                  Admin Login
+                </h2>
+                <p className="mt-3 text-sm text-black/60 dark:text-white/60">Use your super admin credentials.</p>
+              </div>
+
               {errorMessage ? (
-                <div className="mb-5 flex items-start gap-3 rounded-[1.4rem] border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                <div className="mb-5 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
                   <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
                   <p className="text-sm leading-6">{errorMessage}</p>
                 </div>
               ) : null}
 
               {successMessage ? (
-                <div className="mb-5 flex items-start gap-3 rounded-[1.4rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
-                  <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0" />
+                <div className="mb-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+                  <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
                   <p className="text-sm leading-6">{successMessage}</p>
                 </div>
               ) : null}
 
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <label className="block text-[11px] font-black uppercase tracking-[0.26em] text-slate-500 dark:text-white/45">
-                    Email address
+                  <label className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-black/60 dark:text-white/55">
+                    Email
                   </label>
                   <div
                     className={clsx(
-                      "group relative flex items-center rounded-[1.5rem] border bg-white/80 px-4 py-1 shadow-sm shadow-slate-900/5 transition focus-within:-translate-y-0.5 focus-within:border-indigo-400 focus-within:shadow-lg focus-within:shadow-indigo-500/10 dark:bg-white/[0.04] dark:shadow-none",
-                      fieldErrors.email
-                        ? "border-rose-300 dark:border-rose-500/40"
-                        : "border-slate-200/80 dark:border-white/10"
+                      "group flex items-center rounded-2xl border bg-white/80 px-4 py-1 shadow-sm transition focus-within:border-[#f97316] dark:bg-white/[0.04]",
+                      fieldErrors.email ? "border-rose-300 dark:border-rose-500/40" : "border-black/10 dark:border-white/10"
                     )}
                   >
-                    <Mail className="h-5 w-5 text-slate-400 transition group-focus-within:text-indigo-500 dark:text-white/35" />
+                    <Mail className="h-5 w-5 text-black/35 transition group-focus-within:text-[#f97316] dark:text-white/35" />
                     <input
                       type="email"
                       name="email"
                       value={credentials.email}
                       onChange={updateField("email")}
-                      placeholder="yara@example.com"
+                      placeholder="admin@example.com"
                       required
                       autoComplete="email"
                       dir="ltr"
                       aria-invalid={Boolean(fieldErrors.email)}
-                      className="w-full bg-transparent px-3 py-4 text-base text-slate-950 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-white/25"
+                      className="w-full bg-transparent px-3 py-4 text-base text-black outline-none placeholder:text-black/35 dark:text-white dark:placeholder:text-white/30"
                     />
                   </div>
-                  {fieldErrors.email ? (
-                    <p className="px-1 text-sm text-rose-600 dark:text-rose-300">{fieldErrors.email}</p>
-                  ) : null}
+                  {fieldErrors.email ? <p className="px-1 text-sm text-rose-600 dark:text-rose-300">{fieldErrors.email}</p> : null}
                 </div>
 
                 <div className="space-y-2">
-                  <div className={clsx("flex items-center justify-between gap-3", isRTL && "flex-row-reverse")}>
-                    <label className="block text-[11px] font-black uppercase tracking-[0.26em] text-slate-500 dark:text-white/45">
-                      Password
-                    </label>
-                    <span className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400 dark:text-white/30">
-                      secure credential
-                    </span>
-                  </div>
-
+                  <label className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-black/60 dark:text-white/55">
+                    Password
+                  </label>
                   <div
                     className={clsx(
-                      "group relative flex items-center rounded-[1.5rem] border bg-white/80 px-4 py-1 shadow-sm shadow-slate-900/5 transition focus-within:-translate-y-0.5 focus-within:border-indigo-400 focus-within:shadow-lg focus-within:shadow-indigo-500/10 dark:bg-white/[0.04] dark:shadow-none",
-                      fieldErrors.password
-                        ? "border-rose-300 dark:border-rose-500/40"
-                        : "border-slate-200/80 dark:border-white/10"
+                      "group flex items-center rounded-2xl border bg-white/80 px-4 py-1 shadow-sm transition focus-within:border-[#f97316] dark:bg-white/[0.04]",
+                      fieldErrors.password ? "border-rose-300 dark:border-rose-500/40" : "border-black/10 dark:border-white/10"
                     )}
                   >
-                    <Lock className="h-5 w-5 text-slate-400 transition group-focus-within:text-indigo-500 dark:text-white/35" />
+                    <Lock className="h-5 w-5 text-black/35 transition group-focus-within:text-[#f97316] dark:text-white/35" />
                     <input
                       type={showPassword ? "text" : "password"}
                       name="password"
@@ -438,82 +349,60 @@ export default function AdminLoginScreen() {
                       autoComplete="current-password"
                       dir="ltr"
                       aria-invalid={Boolean(fieldErrors.password)}
-                      className="w-full bg-transparent px-3 py-4 text-base text-slate-950 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-white/25"
+                      className="w-full bg-transparent px-3 py-4 text-base text-black outline-none placeholder:text-black/35 dark:text-white dark:placeholder:text-white/30"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword((current) => !current)}
-                      className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-indigo-600 dark:text-white/40 dark:hover:bg-white/10 dark:hover:text-white"
+                      className="flex h-10 w-10 items-center justify-center rounded-xl text-black/45 transition hover:bg-black/5 hover:text-black dark:text-white/45 dark:hover:bg-white/10 dark:hover:text-white"
                       aria-label={showPassword ? "Hide password" : "Show password"}
                     >
                       {showPassword ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
                     </button>
                   </div>
-
                   {fieldErrors.password ? (
                     <p className="px-1 text-sm text-rose-600 dark:text-rose-300">{fieldErrors.password}</p>
                   ) : null}
-
                   {capsLockOn ? (
-                    <p className="px-1 text-sm text-amber-600 dark:text-amber-300">
-                      Caps Lock looks enabled. Double-check your password before submitting.
-                    </p>
+                    <p className="px-1 text-sm text-amber-600 dark:text-amber-300">Caps Lock is on.</p>
                   ) : null}
                 </div>
 
-                <div className={clsx("flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4", isRTL && "sm:flex-row-reverse")}>
-                  <label className={clsx("inline-flex items-center gap-3 text-sm text-slate-600 dark:text-white/60", isRTL && "flex-row-reverse")}>
+                <div className={clsx("flex items-center justify-between gap-3", isRTL && "flex-row-reverse")}>
+                  <label className={clsx("inline-flex items-center gap-3 text-sm text-black/65 dark:text-white/65", isRTL && "flex-row-reverse")}>
                     <input
                       type="checkbox"
                       checked={rememberMe}
                       onChange={(event) => setRememberMe(event.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      className="h-4 w-4 rounded border-black/20 text-[#f97316] focus:ring-[#f97316]"
                     />
-                    Keep this session on this device
+                    Remember this device
                   </label>
-                  <span className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-white/30">
-                    {rememberMe ? "persistent session" : "session only"}
+                  <span className="text-[11px] uppercase tracking-[0.16em] text-black/45 dark:text-white/40">
+                    {rememberMe ? "persistent" : "session"}
                   </span>
                 </div>
 
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="group mt-2 inline-flex w-full items-center justify-center gap-3 rounded-[1.6rem] bg-slate-950 px-6 py-4 text-sm font-black uppercase tracking-[0.28em] text-white shadow-[0_20px_50px_-20px_rgba(15,23,42,0.6)] transition hover:-translate-y-0.5 hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-slate-950 dark:hover:bg-indigo-400"
+                  className="group inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-black px-6 py-4 text-sm font-semibold uppercase tracking-[0.2em] text-white transition hover:-translate-y-0.5 hover:bg-[#111827] disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-black dark:hover:bg-white/90"
                 >
                   {isLoading ? (
                     <>
                       <Loader2 className="h-5 w-5 animate-spin" />
-                      Authorizing...
+                      Authorizing
                     </>
                   ) : (
                     <>
-                      {t("adm.init_auth")}
+                      Enter Dashboard
                       <ArrowRight
-                        className={clsx(
-                          "h-4 w-4 transition-transform",
-                          isRTL ? "rotate-180 group-hover:-translate-x-1" : "group-hover:translate-x-1"
-                        )}
+                        className={clsx("h-4 w-4 transition-transform", isRTL ? "rotate-180 group-hover:-translate-x-1" : "group-hover:translate-x-1")}
                       />
                     </>
                   )}
                 </button>
               </form>
-
-              <div className="mt-6 grid gap-3 rounded-[1.6rem] border border-slate-200/80 bg-slate-50/80 p-4 sm:mt-8 sm:rounded-[1.75rem] sm:p-5 dark:border-white/10 dark:bg-white/[0.03]">
-                <div className={clsx("flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between", isRTL && "sm:flex-row-reverse")}>
-                  <p className="text-[11px] font-black uppercase tracking-[0.26em] text-slate-500 dark:text-white/40">
-                    current endpoint
-                  </p>
-                  <span className="max-w-full break-all rounded-full border border-indigo-500/20 bg-indigo-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600 dark:text-indigo-300 sm:text-right sm:tracking-[0.22em]">
-                    {getAdminApiEndpoint("/auth/login")}
-                  </span>
-                </div>
-                <p className="text-sm leading-6 text-slate-600 dark:text-white/60">
-                  Request body is sent as JSON with <span className="font-semibold text-slate-900 dark:text-white">email</span> and{" "}
-                  <span className="font-semibold text-slate-900 dark:text-white">password</span>, matching the backend request you shared.
-                </p>
-              </div>
             </div>
           </section>
         </motion.div>
