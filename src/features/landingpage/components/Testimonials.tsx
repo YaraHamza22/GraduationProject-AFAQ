@@ -62,7 +62,7 @@ export function Testimonials() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-10">
           {testimonials.map((item, i) => (
             <motion.div
-              key={i}
+              key={item.name}
               initial={{ opacity: 0, scale: 0.9 }}
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
@@ -78,12 +78,21 @@ export function Testimonials() {
               </div>
 
               <p className="text-slate-300 text-lg md:text-xl font-medium leading-relaxed mb-10 italic">
-                "{item.text}"
+                &ldquo;{item.text}&rdquo;
               </p>
 
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <Image src={item.avatar} width={56} height={56} className="w-14 h-14 rounded-full border-2 border-indigo-500/30" alt={item.name} />
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                  <Image
+                    src={item.avatar}
+                    width={56}
+                    height={56}
+                    loading="lazy"
+                    sizes="56px"
+                    quality={65}
+                    className="w-14 h-14 rounded-full border-2 border-indigo-500/30"
+                    alt={item.name}
+                  />
                   <div className="absolute -bottom-1 -right-1 bg-indigo-500 border-2 border-slate-950 rounded-full p-0.5">
                     <CheckCircle2 className="w-3 h-3 text-white" />
                   </div>

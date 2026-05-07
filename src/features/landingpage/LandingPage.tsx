@@ -1,16 +1,14 @@
-"use client";
-
 import { Navbar } from "./components/Navbar";
 import { Hero } from "./components/Hero";
 import { AboutUs } from "./components/AboutUs";
 import { SectionDivider } from "./components/SectionDivider";
 import dynamic from "next/dynamic";
 
-const CourseGrid = dynamic(() => import("./components/CourseGrid").then(mod => mod.CourseGrid));
-const Features = dynamic(() => import("./components/Features").then(mod => mod.Features));
-const Testimonials = dynamic(() => import("./components/Testimonials").then(mod => mod.Testimonials));
-const FAQ = dynamic(() => import("./components/FAQ").then(mod => mod.FAQ));
-const Footer = dynamic(() => import("./components/Footer").then(mod => mod.Footer));
+const CourseGrid = dynamic(() => import("./components/CourseGrid").then((mod) => mod.CourseGrid));
+const Features = dynamic(() => import("./components/Features").then((mod) => mod.Features));
+const Testimonials = dynamic(() => import("./components/Testimonials").then((mod) => mod.Testimonials));
+const FAQ = dynamic(() => import("./components/FAQ").then((mod) => mod.FAQ));
+const Footer = dynamic(() => import("./components/Footer").then((mod) => mod.Footer));
 
 export function LandingPage() {
   return (

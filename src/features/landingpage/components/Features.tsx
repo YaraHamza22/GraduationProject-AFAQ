@@ -45,7 +45,7 @@ const pillars = [
     icon: Layers,
     color: "text-rose-600",
     bg: "bg-rose-50",
-  }
+  },
 ];
 
 export function Features() {
@@ -53,7 +53,7 @@ export function Features() {
     <section className="relative py-32 bg-linear-to-b from-slate-50 to-white overflow-hidden">
       <div className="max-w-7xl mx-auto px-6">
         <div className="text-center max-w-3xl mx-auto mb-24">
-          <motion.span 
+          <motion.span
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
@@ -61,7 +61,7 @@ export function Features() {
           >
             The Afaq Edge
           </motion.span>
-          <motion.h2 
+          <motion.h2
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -70,21 +70,21 @@ export function Features() {
           >
             Core Pillars of <span className="text-indigo-600">Excellence</span>.
           </motion.h2>
-          <motion.p 
+          <motion.p
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.2 }}
             className="text-slate-500 text-lg font-medium"
           >
-            We don't just teach—we transform. Discover the features that make our platform the horizon of modern education.
+            We don&apos;t just teach. We transform. Discover the features that make our platform the horizon of modern education.
           </motion.p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
           {pillars.map((pillar, i) => (
             <motion.div
-              key={i}
+              key={pillar.title}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -97,9 +97,7 @@ export function Features() {
               <h3 className="text-xl font-bold text-slate-900 mb-4 group-hover:text-indigo-600 transition-colors">
                 {pillar.title}
               </h3>
-              <p className="text-slate-500 leading-relaxed font-medium">
-                {pillar.description}
-              </p>
+              <p className="text-slate-500 leading-relaxed font-medium">{pillar.description}</p>
             </motion.div>
           ))}
         </div>

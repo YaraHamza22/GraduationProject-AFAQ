@@ -1,14 +1,13 @@
 "use client";
 
-import { Canvas } from "@react-three/fiber";
-import { Suspense } from "react";
+import { useEffect, useState } from "react";
 import { motion, Variants } from "framer-motion";
 import { ArrowRight, Play, Sparkles, TrendingUp, Users } from "lucide-react";
 import dynamic from "next/dynamic";
 
-const Book3D = dynamic(() => import("./Book3D").then((mod) => mod.Book3D), { 
+const HeroScene = dynamic(() => import("./HeroScene").then((mod) => mod.HeroScene), {
   ssr: false,
-  loading: () => null
+  loading: () => null,
 });
 // Animation Variants
 const fadeUp: Variants = {
@@ -28,23 +27,48 @@ const staggerContainer: Variants = {
 };
 
 export function Hero() {
+  const [showScene, setShowScene] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const hasIdleCallback =
+      typeof window !== "undefined" &&
+      typeof (window as Window & { requestIdleCallback?: unknown }).requestIdleCallback === "function";
+
+    const idleHandle = hasIdleCallback
+      ? (
+          window as Window & {
+            requestIdleCallback: (cb: () => void) => number;
+          }
+        ).requestIdleCallback(() => {
+          if (!cancelled) setShowScene(true);
+        })
+      : window.setTimeout(() => {
+          if (!cancelled) setShowScene(true);
+        }, 180);
+
+    return () => {
+      cancelled = true;
+      if (hasIdleCallback) {
+        (
+          window as Window & {
+            cancelIdleCallback: (id: number) => void;
+          }
+        ).cancelIdleCallback(idleHandle as number);
+      } else {
+        window.clearTimeout(idleHandle);
+      }
+    };
+  }, []);
+
   return (
     <section className="relative min-h-screen overflow-hidden flex items-center justify-center bg-[#020617] selection:bg-indigo-500/30">
       {/* Dynamic Background Gradients */}
       <div className="absolute top-[20%] -left-[10%] w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[120px] mix-blend-screen animate-pulse pointer-events-none" />
       <div className="absolute bottom-[20%] -right-[10%] w-[600px] h-[600px] bg-purple-600/10 rounded-full blur-[150px] mix-blend-screen pointer-events-none" />
 
-      {/* Immersive 3D Background */}
-      <div 
-        className="absolute inset-0 z-0 opacity-50 mix-blend-lighten pointer-events-none"
-        style={{ WebkitMaskImage: 'radial-gradient(ellipse at center, black 40%, transparent 80%)', maskImage: 'radial-gradient(ellipse at center, black 40%, transparent 80%)' }}
-      >
-        <Canvas shadows dpr={[1, 2]} camera={{ position: [0, 0, 15], fov: 45 }}>
-          <Suspense fallback={null}>
-            <Book3D />
-          </Suspense>
-        </Canvas>
-      </div>
+      {/* Immersive 3D Background (deferred for faster first paint) */}
+      {showScene ? <HeroScene /> : null}
 
       {/* Content Layer */}
       <div className="relative z-10 w-full max-w-[1400px] mx-auto px-6 pt-20 pb-32 flex flex-col items-center justify-center text-center">

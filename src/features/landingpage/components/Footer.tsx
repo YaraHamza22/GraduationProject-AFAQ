@@ -1,7 +1,7 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { Facebook, Twitter, Instagram, Linkedin, Mail, MapPin, Phone, Github, ShieldCheck, GraduationCap } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 
 export function Footer() {
@@ -16,9 +16,17 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-16 mb-20">
 
           {/* Brand Column */}
-          <div className="space-y-8">
+            <div className="space-y-8">
             <div className="flex items-center gap-3">
-              <img src="/logo.jpeg" alt="Afaq Logo" className="w-12 h-12 rounded-xl object-cover shadow-2xl" />
+              <Image
+                src="/logo.jpeg"
+                alt="Afaq Logo"
+                width={48}
+                height={48}
+                sizes="48px"
+                quality={75}
+                className="w-12 h-12 rounded-xl object-cover shadow-2xl"
+              />
               <span className="text-2xl font-black text-white tracking-tighter">
                 Afaq<span className="text-indigo-500">.</span>
               </span>

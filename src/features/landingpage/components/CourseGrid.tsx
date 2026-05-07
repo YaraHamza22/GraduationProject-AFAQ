@@ -79,7 +79,7 @@ export function CourseGrid() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {courses.map((course, i) => (
             <motion.div
-              key={i}
+              key={course.title}
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -96,6 +96,9 @@ export function CourseGrid() {
                     src={course.image} 
                     alt={course.title}
                     fill
+                    loading="lazy"
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    quality={70}
                     className="object-cover transition-transform duration-700 group-hover:scale-110"
                   />
                   <div className="absolute top-4 left-4 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 flex items-center gap-2">
@@ -117,7 +120,16 @@ export function CourseGrid() {
 
                   <div className="mt-auto pt-6 border-t border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <Image src={course.avatar} width={32} height={32} className="w-8 h-8 rounded-full border border-white/20" alt={course.instructor} />
+                      <Image
+                        src={course.avatar}
+                        width={32}
+                        height={32}
+                        loading="lazy"
+                        sizes="32px"
+                        quality={65}
+                        className="w-8 h-8 rounded-full border border-white/20"
+                        alt={course.instructor}
+                      />
                       <span className="text-sm text-slate-400 font-medium">{course.instructor}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-slate-500">

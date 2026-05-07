@@ -5,7 +5,22 @@ import { useFrame } from "@react-three/fiber";
 import { Float, Stars, PerspectiveCamera, MeshTransmissionMaterial, Sphere } from "@react-three/drei";
 import * as THREE from "three";
 
-function FloatingPage({ position, rotation, scale, color }: any) {
+type FloatingPageProps = {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: number;
+  color: string;
+};
+
+const PAGE_COUNT = 22;
+const PAGE_EDGE_GEOMETRY = new THREE.BoxGeometry(1, 1.4, 0.05);
+
+function seededUnit(index: number, salt: number) {
+  const value = Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453123;
+  return value - Math.floor(value);
+}
+
+function FloatingPage({ position, rotation, scale, color }: FloatingPageProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   
   // Custom tiny rotation on individual pages
@@ -35,7 +50,7 @@ function FloatingPage({ position, rotation, scale, color }: any) {
         />
         {/* Glowing Edge outline */}
         <lineSegments>
-          <edgesGeometry attach="geometry" args={[new THREE.BoxGeometry(1, 1.4, 0.05)]} />
+          <edgesGeometry attach="geometry" args={[PAGE_EDGE_GEOMETRY]} />
           <lineBasicMaterial attach="material" color={color} transparent opacity={0.3} />
         </lineSegments>
       </mesh>
@@ -58,19 +73,19 @@ function OrbitalHorizons() {
     <group ref={groupRef}>
       {/* Outer Horizon */}
       <mesh rotation={[Math.PI / 2 + 0.2, 0, 0]}>
-        <torusGeometry args={[8.5, 0.008, 16, 100]} />
+        <torusGeometry args={[8.5, 0.008, 12, 64]} />
         <meshBasicMaterial color="#6366f1" transparent opacity={0.4} />
       </mesh>
       
       {/* Middle Horizon - Rotating faster */}
       <mesh rotation={[Math.PI / 3 - 0.4, 0.2, 0]}>
-         <torusGeometry args={[5.5, 0.012, 16, 100]} />
+         <torusGeometry args={[5.5, 0.012, 12, 64]} />
          <meshBasicMaterial color="#a855f7" transparent opacity={0.5} />
       </mesh>
 
       {/* Inner Horizon */}
       <mesh rotation={[Math.PI / 4, -0.3, 0.1]}>
-         <torusGeometry args={[3.2, 0.015, 16, 100]} />
+         <torusGeometry args={[3.2, 0.015, 12, 64]} />
          <meshBasicMaterial color="#ec4899" transparent opacity={0.8} />
       </mesh>
     </group>
@@ -82,13 +97,13 @@ export function Book3D() {
   
   // Generate floating fragmented "pages" simulating digital knowledge scattered around the core
   const pages = useMemo(() => {
-    return [...Array(32)].map((_, i) => {
+    return [...Array(PAGE_COUNT)].map((_, i) => {
       // Golden spiral distribution roughly
-      const y = 1 - (i / 31) * 2; // from 1 to -1
+      const y = 1 - (i / (PAGE_COUNT - 1)) * 2; // from 1 to -1
       const radius = Math.sqrt(1 - y * y);
       const theta = i * Math.PI * (1 + Math.sqrt(5)); // Golden angle padding
       
-      const r = 4 + Math.random() * 4; // Distance from center
+      const r = 4 + seededUnit(i, 1) * 4; // Distance from center
       const posX = Math.cos(theta) * radius * r;
       const posY = y * (r * 0.6); // slight squash
       const posZ = Math.sin(theta) * radius * r;
@@ -96,11 +111,11 @@ export function Book3D() {
       return {
         position: [posX, posY, posZ] as [number, number, number],
         rotation: [
-          Math.random() * Math.PI,
-          Math.random() * Math.PI,
-          Math.random() * Math.PI
+          seededUnit(i, 2) * Math.PI,
+          seededUnit(i, 3) * Math.PI,
+          seededUnit(i, 4) * Math.PI
         ] as [number, number, number],
-        scale: Math.random() * 0.4 + 0.4,
+        scale: seededUnit(i, 5) * 0.4 + 0.4,
         color: i % 4 === 0 ? "#6366f1" : i % 4 === 1 ? "#a855f7" : i % 4 === 2 ? "#ec4899" : "#e2e8f0"
       };
     });
@@ -123,13 +138,13 @@ export function Book3D() {
       <spotLight position={[-10, -20, -10]} intensity={3} color="#a855f7" penumbra={1} distance={40} angle={Math.PI / 3} />
       
       {/* Deep Space Background / Constellations of Information */}
-      <Stars radius={80} depth={50} count={6000} factor={4} saturation={1} fade speed={1} />
+      <Stars radius={80} depth={50} count={2400} factor={3.2} saturation={1} fade speed={0.8} />
 
       <group ref={codexRef}>
         {/* Core Element: The Nucleus of Knowledge */}
         <Float speed={3} rotationIntensity={2} floatIntensity={0.5}>
           {/* Outer high-fidelity refractive shell */}
-          <Sphere args={[1.6, 64, 64]}>
+          <Sphere args={[1.6, 42, 42]}>
             <MeshTransmissionMaterial 
               samples={4} // keep low for performance while maintaining premium look
               resolution={256}
@@ -143,7 +158,7 @@ export function Book3D() {
             />
           </Sphere>
           {/* Inner Glowing AI Core */}
-          <Sphere args={[0.7, 32, 32]}>
+          <Sphere args={[0.7, 24, 24]}>
             <meshBasicMaterial color="#ffffff" />
           </Sphere>
         </Float>

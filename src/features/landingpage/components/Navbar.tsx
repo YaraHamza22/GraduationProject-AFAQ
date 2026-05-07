@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -10,13 +10,18 @@ import logoImage from "../../../../public/logo.jpeg";
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const scrolledRef = useRef(false);
 
   useEffect(() => {
     let ticking = false;
     const handleScroll = () => {
       if (!ticking) {
         window.requestAnimationFrame(() => {
-          setScrolled(window.scrollY > 20);
+          const nextScrolled = window.scrollY > 20;
+          if (nextScrolled !== scrolledRef.current) {
+            scrolledRef.current = nextScrolled;
+            setScrolled(nextScrolled);
+          }
           ticking = false;
         });
         ticking = true;
@@ -46,6 +51,8 @@ export function Navbar() {
               fill
               priority
               loading="eager"
+              sizes="40px"
+              quality={70}
               className="object-cover"
             />
           </div>
