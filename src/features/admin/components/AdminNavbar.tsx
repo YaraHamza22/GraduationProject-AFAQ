@@ -19,8 +19,10 @@ import {
   BookOpen
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { clearAdminSession, getStoredAdminUser, subscribeToAdminSession } from "@/features/admin/adminSession";
+import { clearAdminSession, getAdminToken, getStoredAdminUser, subscribeToAdminSession } from "@/features/admin/adminSession";
 import { useTheme } from "next-themes";
+import { getAdminApiRequestUrl } from "@/features/admin/adminApi";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 const SyrianFlag = () => (
   <svg width="20" height="14" viewBox="0 0 3 2" className="rounded-sm shadow-sm">
@@ -250,6 +252,17 @@ export default function AdminNavbar() {
 
       {/* Toggles and Actions */}
       <div className="p-4 space-y-2 border-t border-slate-200 dark:border-white/5">
+        <div className={`flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-100/70 px-3 py-2 dark:border-white/10 dark:bg-white/5 ${isRTL ? "flex-row-reverse" : ""}`}>
+          <span className="hidden md:block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/40">
+            Notifications
+          </span>
+          <NotificationBell
+            getRequestUrl={getAdminApiRequestUrl}
+            token={getAdminToken()}
+            isRTL={isRTL}
+          />
+        </div>
+
         <div className="rounded-3xl border border-slate-200 bg-slate-100/70 p-4 shadow-sm dark:border-white/5 dark:bg-white/5 dark:shadow-none">
           <p className={`text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-white/30 ${isRTL ? "text-right" : ""}`}>
             {t("adm.secure_session")}

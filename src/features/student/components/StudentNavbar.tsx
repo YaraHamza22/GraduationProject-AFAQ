@@ -15,6 +15,7 @@ import {
   Library,
   Loader2,
   LogOut,
+  MessageSquare,
   Moon,
   Sun,
   UserCircle,
@@ -24,6 +25,7 @@ import { useLanguage } from "@/components/providers/LanguageProvider";
 import { AnimatePresence, motion } from "framer-motion";
 import { getStudentApiRequestUrl } from "@/features/student/studentApi";
 import { clearStudentSession, getStudentToken } from "@/features/student/studentSession";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 const SyrianFlag = () => (
   <svg width="20" height="14" viewBox="0 0 3 2" className="rounded-sm shadow-sm">
@@ -68,6 +70,7 @@ const navItems = [
   { id: "dashboard", icon: LayoutDashboard, href: "/student", label: "std.dashboard" },
   { id: "courses", icon: BookOpen, href: "/student/courses", label: "std.courses" },
   { id: "quizzes", icon: FileText, href: "/student/quizzes", label: "std.quizzes" },
+  { id: "forum", icon: MessageSquare, href: "/student/forum", label: "Forum" },
   { id: "certificates", icon: Award, href: "/student/certificates", label: "std.certificates" },
   { id: "profile", icon: UserCircle, href: "/student/profile", label: "nav.profile" },
 ];
@@ -335,6 +338,17 @@ export default function StudentNavbar() {
       </div>
 
       <div className="p-2 sm:p-3 lg:p-4 space-y-2 border-t border-slate-200 dark:border-white/5">
+        <div className={`flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-100/70 px-3 py-2 dark:border-white/10 dark:bg-white/5 ${isRTL ? "flex-row-reverse" : ""}`}>
+          <span className="hidden lg:block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/40">
+            Notifications
+          </span>
+          <NotificationBell
+            getRequestUrl={getStudentApiRequestUrl}
+            token={getStudentToken()}
+            isRTL={isRTL}
+          />
+        </div>
+
         <div className="flex items-center justify-around gap-2 p-2 rounded-2xl bg-slate-100 dark:bg-white/5">
           <button
             onClick={() => setLanguage(language === "en" ? "ar" : "en")}
