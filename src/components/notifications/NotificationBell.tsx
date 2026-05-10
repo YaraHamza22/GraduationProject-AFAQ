@@ -88,15 +88,52 @@ export default function NotificationBell({ getRequestUrl, token, isRTL = false }
     };
   }, [token]);
 
+  const getNotificationPaths = React.useCallback((suffix: string) => {
+    const normalized = suffix.startsWith("/") ? suffix : `/${suffix}`;
+    return [`/v1/notifications${normalized}`, `/notifications${normalized}`];
+  }, []);
+
+  const tryGet = React.useCallback(
+    async (suffix: string, params?: Record<string, string>) => {
+      const paths = getNotificationPaths(suffix);
+      let lastError: unknown = null;
+      for (const path of paths) {
+        try {
+          return await axios.get(getRequestUrl(path), { headers, params });
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError;
+    },
+    [getNotificationPaths, getRequestUrl, headers]
+  );
+
+  const tryPost = React.useCallback(
+    async (suffix: string, data: Record<string, unknown> = {}) => {
+      const paths = getNotificationPaths(suffix);
+      let lastError: unknown = null;
+      for (const path of paths) {
+        try {
+          return await axios.post(getRequestUrl(path), data, { headers });
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError;
+    },
+    [getNotificationPaths, getRequestUrl, headers]
+  );
+
   const fetchUnreadCount = React.useCallback(async () => {
     if (!headers) return;
     try {
-      const response = await axios.get(getRequestUrl("/v1/notifications/unread-count"), { headers });
+      const response = await tryGet("/unread-count");
       setUnreadCount(parseUnreadCount(response.data));
     } catch {
       // Keep existing count on transient failures.
     }
-  }, [getRequestUrl, headers]);
+  }, [headers, tryGet]);
 
   const fetchNotifications = React.useCallback(
     async (unreadOnly = false) => {
@@ -104,10 +141,7 @@ export default function NotificationBell({ getRequestUrl, token, isRTL = false }
       setIsLoading(true);
       setErrorMessage(null);
       try {
-        const response = await axios.get(getRequestUrl("/v1/notifications"), {
-          headers,
-          params: { unread_only: unreadOnly ? "true" : "false" },
-        });
+        const response = await tryGet("", { unread_only: unreadOnly ? "true" : "false" });
         setItems(parseNotifications(response.data));
       } catch (error) {
         const apiMessage =
@@ -119,7 +153,7 @@ export default function NotificationBell({ getRequestUrl, token, isRTL = false }
         setIsLoading(false);
       }
     },
-    [getRequestUrl, headers]
+    [headers, tryGet]
   );
 
   const markOneAsRead = React.useCallback(
@@ -127,7 +161,7 @@ export default function NotificationBell({ getRequestUrl, token, isRTL = false }
       if (!headers) return;
       setIsActionLoading(true);
       try {
-        await axios.post(getRequestUrl(`/v1/notifications/${id}/read`), {}, { headers });
+        await tryPost(`/${id}/read`);
         setItems((prev) =>
           prev.map((item) => (item.id === id ? { ...item, read_at: new Date().toISOString() } : item))
         );
@@ -138,20 +172,20 @@ export default function NotificationBell({ getRequestUrl, token, isRTL = false }
         setIsActionLoading(false);
       }
     },
-    [getRequestUrl, headers]
+    [headers, tryPost]
   );
 
   const markAllAsRead = React.useCallback(async () => {
     if (!headers) return;
     setIsActionLoading(true);
     try {
-      await axios.post(getRequestUrl("/v1/notifications/read-all"), {}, { headers });
+      await tryPost("/read-all");
       setItems((prev) => prev.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })));
       setUnreadCount(0);
     } finally {
       setIsActionLoading(false);
     }
-  }, [getRequestUrl, headers]);
+  }, [headers, tryPost]);
 
   React.useEffect(() => {
     if (!headers) return;

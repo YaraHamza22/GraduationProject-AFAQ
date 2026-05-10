@@ -16,6 +16,7 @@ import {
   Loader2,
   LogOut,
   MessageSquare,
+  MessagesSquare,
   Moon,
   Sun,
   UserCircle,
@@ -71,6 +72,7 @@ const navItems = [
   { id: "courses", icon: BookOpen, href: "/student/courses", label: "std.courses" },
   { id: "quizzes", icon: FileText, href: "/student/quizzes", label: "std.quizzes" },
   { id: "forum", icon: MessageSquare, href: "/student/forum", label: "Forum" },
+  { id: "chat", icon: MessagesSquare, href: "/student/chat", label: "Chatting" },
   { id: "certificates", icon: Award, href: "/student/certificates", label: "std.certificates" },
   { id: "profile", icon: UserCircle, href: "/student/profile", label: "nav.profile" },
 ];

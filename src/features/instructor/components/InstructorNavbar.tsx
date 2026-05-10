@@ -9,6 +9,7 @@ import {
   LayoutDashboard, 
   BookOpen, 
   HelpCircle, 
+  MessagesSquare,
   UserCircle, 
   LogOut,
   GraduationCap,
@@ -64,6 +65,7 @@ const navItems = [
   { name: "nav.home", href: "/instructor", icon: LayoutDashboard },
   { name: "nav.courses", href: "/instructor/courses", icon: BookOpen },
   { name: "nav.quizzes", href: "/instructor/quizzes", icon: HelpCircle },
+  { name: "Chatting", href: "/instructor/chat", icon: MessagesSquare },
   { name: "nav.profile", href: "/instructor/profile", icon: UserCircle },
 ];
 
