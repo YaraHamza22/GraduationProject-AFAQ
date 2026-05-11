@@ -133,15 +133,6 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     return { Accept: "application/json", Authorization: `Bearer ${token}` };
   };
 
-  const withV1Fallback = async <T,>(fn: (prefix: string) => Promise<T>) => {
-    try {
-      return await fn("/v1");
-    } catch (error) {
-      if (getStatus(error) === 404) return fn("");
-      throw error;
-    }
-  };
-
   const run = async (work: () => Promise<void>) => {
     setBusy(true); setErr(null); setMsg(null);
     try { await work(); } catch (error) { setErr(getErrorText(error)); } finally { setBusy(false); }
@@ -151,7 +142,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     const paths = roleLabel.toLowerCase().includes("admin") ? ["/super-admin/courses", "/courses", "/my-courses"] : ["/my-courses", "/courses"];
     for (const path of paths) {
       try {
-        const res = await withV1Fallback((prefix) => axios.get(getRequestUrl(`${prefix}${path}`), { headers: headers() }));
+        const res = await axios.get(getRequestUrl(path), { headers: headers() });
         setCourses(listFromPayload<CourseItem>(res.data));
         return;
       } catch (error) {
@@ -164,8 +155,8 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     setLoading(true); setErr(null); setMsg(null);
     try {
       const [integrationRes, sessionsRes] = await Promise.all([
-        withV1Fallback((prefix) => axios.get(getRequestUrl(`${prefix}/external-integrations`), { headers: headers() })),
-        withV1Fallback((prefix) => axios.get(getRequestUrl(`${prefix}/virtual-sessions`), { headers: headers() })),
+        axios.get(getRequestUrl("/external-integrations"), { headers: headers() }),
+        axios.get(getRequestUrl("/virtual-sessions"), { headers: headers() }),
       ]);
       setIntegrations(listFromPayload<Integration>(integrationRes.data));
       setSessions(listFromPayload<SessionItem>(sessionsRes.data));
@@ -193,7 +184,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (integrationForm.access_token.trim()) payload.access_token = integrationForm.access_token.trim();
     if (integrationForm.refresh_token.trim()) payload.refresh_token = integrationForm.refresh_token.trim();
     const exp = toIsoOrNull(integrationForm.expires_at); if (exp) payload.expires_at = exp;
-    await withV1Fallback((prefix) => axios.post(getRequestUrl(`${prefix}/external-integrations`), payload, { headers: headers() }));
+    await axios.post(getRequestUrl("/external-integrations"), payload, { headers: headers() });
     setIntegrationForm(integrationInitial); setSelectedIntegrationId(null); await loadAll(); setMsg("Integration created.");
   });
 
@@ -204,25 +195,25 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (integrationForm.access_token.trim()) payload.access_token = integrationForm.access_token.trim();
     if (integrationForm.refresh_token.trim()) payload.refresh_token = integrationForm.refresh_token.trim();
     const exp = toIsoOrNull(integrationForm.expires_at); if (exp) payload.expires_at = exp;
-    await withV1Fallback((prefix) => axios.put(getRequestUrl(`${prefix}/external-integrations/${selectedIntegrationId}`), payload, { headers: headers() }));
+    await axios.put(getRequestUrl(`/external-integrations/${selectedIntegrationId}`), payload, { headers: headers() });
     await loadAll(); setMsg("Integration updated.");
   });
 
   const revokeIntegration = (id: number) => run(async () => {
-    await withV1Fallback((prefix) => axios.delete(getRequestUrl(`${prefix}/external-integrations/${id}`), { headers: headers() }));
+    await axios.delete(getRequestUrl(`/external-integrations/${id}`), { headers: headers() });
     if (selectedIntegrationId === id) { setSelectedIntegrationId(null); setIntegrationForm(integrationInitial); }
     await loadAll(); setMsg("Integration revoked.");
   });
 
   const generateOauthUrl = () => run(async () => {
-    const res = await withV1Fallback((prefix) => axios.get(getRequestUrl(`${prefix}/external-integrations/${oauthProvider}/oauth-url`), { headers: headers() }));
+    const res = await axios.get(getRequestUrl(`/external-integrations/${oauthProvider}/oauth-url`), { headers: headers() });
     const data = itemFromPayload<{ authorize_url?: string }>(res.data);
     setOauthUrl(data?.authorize_url ?? "");
   });
 
   const exchangeOauthCode = () => run(async () => {
     if (!oauthCode.trim()) throw new Error("Authorization code is required.");
-    await withV1Fallback((prefix) => axios.post(getRequestUrl(`${prefix}/external-integrations/${oauthProvider}/exchange-code`), { code: oauthCode.trim() }, { headers: headers() }));
+    await axios.post(getRequestUrl(`/external-integrations/${oauthProvider}/exchange-code`), { code: oauthCode.trim() }, { headers: headers() });
     setOauthCode(""); await loadAll(); setMsg("OAuth code exchanged.");
   });
 
@@ -244,7 +235,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (sessionMode === "manual") payload.join_url = sessionForm.join_url.trim();
     if (sessionForm.status.trim()) payload.status = sessionForm.status.trim();
 
-    await withV1Fallback((prefix) => axios.post(getRequestUrl(`${prefix}/virtual-sessions`), payload, { headers: headers() }));
+    await axios.post(getRequestUrl("/virtual-sessions"), payload, { headers: headers() });
     setEditingSessionId(null); setSessionForm(sessionInitial); await loadAll(); setMsg("Session created.");
   });
 
@@ -259,23 +250,23 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (sessionForm.description.trim()) payload.description = sessionForm.description.trim();
     if (sessionMode === "manual" && sessionForm.join_url.trim()) payload.join_url = sessionForm.join_url.trim();
     if (sessionForm.status.trim()) payload.status = sessionForm.status.trim();
-    await withV1Fallback((prefix) => axios.put(getRequestUrl(`${prefix}/virtual-sessions/${editingSessionId}`), payload, { headers: headers() }));
+    await axios.put(getRequestUrl(`/virtual-sessions/${editingSessionId}`), payload, { headers: headers() });
     await loadAll(); setMsg("Session updated.");
   });
 
   const deleteSession = (id: number) => run(async () => {
-    await withV1Fallback((prefix) => axios.delete(getRequestUrl(`${prefix}/virtual-sessions/${id}`), { headers: headers() }));
+    await axios.delete(getRequestUrl(`/virtual-sessions/${id}`), { headers: headers() });
     if (editingSessionId === id) { setEditingSessionId(null); setSessionForm(sessionInitial); }
     await loadAll(); setMsg("Session deleted.");
   });
 
   const publishSession = (id: number) => run(async () => {
-    await withV1Fallback((prefix) => axios.post(getRequestUrl(`${prefix}/virtual-sessions/${id}/publish`), {}, { headers: headers() }));
+    await axios.post(getRequestUrl(`/virtual-sessions/${id}/publish`), {}, { headers: headers() });
     await loadAll(); setMsg("Session published.");
   });
 
   const cancelSession = (id: number) => run(async () => {
-    await withV1Fallback((prefix) => axios.post(getRequestUrl(`${prefix}/virtual-sessions/${id}/cancel`), {}, { headers: headers() }));
+    await axios.post(getRequestUrl(`/virtual-sessions/${id}/cancel`), {}, { headers: headers() });
     await loadAll(); setMsg("Session cancelled.");
   });
 
@@ -287,7 +278,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (joined) payload.joined_at = joined;
     if (left) payload.left_at = left;
     if (duration !== null) payload.duration_minutes = duration;
-    await withV1Fallback((prefix) => axios.post(getRequestUrl(`${prefix}/virtual-sessions/${sessionId}/attendance`), payload, { headers: headers() }));
+    await axios.post(getRequestUrl(`/virtual-sessions/${sessionId}/attendance`), payload, { headers: headers() });
     setAttendanceForm(attendanceInitial); setMsg("Attendance stored.");
   });
 

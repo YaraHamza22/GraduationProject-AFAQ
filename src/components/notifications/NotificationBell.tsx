@@ -90,7 +90,7 @@ export default function NotificationBell({ getRequestUrl, token, isRTL = false }
 
   const getNotificationPaths = React.useCallback((suffix: string) => {
     const normalized = suffix.startsWith("/") ? suffix : `/${suffix}`;
-    return [`/v1/notifications${normalized}`, `/notifications${normalized}`];
+    return [`/notifications${normalized}`];
   }, []);
 
   const tryGet = React.useCallback(
