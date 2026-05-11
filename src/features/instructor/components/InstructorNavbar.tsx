@@ -14,7 +14,8 @@ import {
   LogOut,
   GraduationCap,
   Sun,
-  Moon
+  Moon,
+  Video
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { useTheme } from "next-themes";
@@ -65,6 +66,7 @@ const navItems = [
   { name: "nav.home", href: "/instructor", icon: LayoutDashboard },
   { name: "nav.courses", href: "/instructor/courses", icon: BookOpen },
   { name: "nav.quizzes", href: "/instructor/quizzes", icon: HelpCircle },
+  { name: "Virtual Meet", href: "/instructor/virtual-meet", icon: Video },
   { name: "Chatting", href: "/instructor/chat", icon: MessagesSquare },
   { name: "nav.profile", href: "/instructor/profile", icon: UserCircle },
 ];

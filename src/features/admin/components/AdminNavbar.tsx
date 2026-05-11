@@ -16,7 +16,8 @@ import {
   Moon,
   ChevronRight,
   Tags,
-  BookOpen
+  BookOpen,
+  Video
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { clearAdminSession, getAdminToken, getStoredAdminUser, subscribeToAdminSession } from "@/features/admin/adminSession";
@@ -71,6 +72,7 @@ const navItems = [
 const managementItems = [
   { name: "Students", href: "/admin/students", icon: GraduationCap, label: "adm.students" },
   { name: "Courses", href: "/admin/courses", icon: BookOpen, label: "adm.courses" },
+  { name: "Virtual Meet", href: "/admin/virtual-meet", icon: Video, label: "Virtual Meet" },
   {
     name: "Instructors",
     href: "/admin/instructors",
