@@ -554,9 +554,10 @@ export default function StudentsManagement() {
                   <select value={form.education_level} onChange={updateField("education_level")} className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
                     <option value="">Select</option>
                     <option value="highschool">highschool</option>
-                    <option value="diploma">diploma</option>
-                    <option value="bachelor">bachelor</option>
+                    <option value="collage">collage</option>
                     <option value="master">master</option>
+                    <option value="doctorate">doctorate</option>
+                    <option value="other">other</option>
                   </select>
                 </div>
                 <div className="md:col-span-2">
