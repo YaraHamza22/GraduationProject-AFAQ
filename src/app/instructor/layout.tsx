@@ -47,6 +47,11 @@ export default function InstructorLayout({
       return;
     }
 
+    if (role?.includes("auditor")) {
+      router.replace("/auditor");
+      return;
+    }
+
     router.replace("/student");
   }, [isLoginPage, router]);
 

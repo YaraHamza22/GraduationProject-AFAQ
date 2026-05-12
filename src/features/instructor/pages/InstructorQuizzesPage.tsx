@@ -2,7 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { AlertCircle, CheckCircle2, ClipboardCheck, Loader2, RefreshCw, Search } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { AlertCircle, BadgeCheck, CheckCircle2, ClipboardCheck, Clock, Loader2, RefreshCw, Search } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiEndpoint, getStudentApiRequestUrl } from "@/features/student/studentApi";
 import { getStudentToken } from "@/features/student/studentSession";
@@ -95,7 +96,7 @@ async function requestWithProxyFallback<T>(path: string, config: Parameters<type
   }
 }
 
-function stringifyAnswerValue(value: unknown) {
+function stringifyAnswerValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "boolean") return value ? "True" : "False";
   if (isRecord(value)) {
@@ -309,6 +310,7 @@ export default function InstructorQuizzesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"all" | "pending" | "graded">("all");
 
   const headers = useMemo(() => {
     const token = getStudentToken();
@@ -366,6 +368,7 @@ export default function InstructorQuizzesPage() {
       try {
         if (!headers) throw new Error("missing_token");
 
+        // Try standard grading sheet endpoint
         const response = await requestWithProxyFallback(`/attempts/${attemptId}/grading-sheet`, {
           method: "GET",
           headers,
@@ -381,7 +384,7 @@ export default function InstructorQuizzesPage() {
         if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
           setErrorMessage(error.response.data.message);
         } else {
-          setErrorMessage("Failed to load grading sheet.");
+          setErrorMessage("Failed to load grading sheet. This attempt may not be available for review yet.");
         }
       } finally {
         setIsSheetLoading(false);
@@ -393,6 +396,14 @@ export default function InstructorQuizzesPage() {
   useEffect(() => {
     void loadAttempts();
   }, [loadAttempts]);
+
+  const filteredAttempts = useMemo(() => {
+    return attempts.filter(a => {
+      if (activeTab === "pending") return a.status === "submitted" || a.status === "pending_review";
+      if (activeTab === "graded") return a.status === "graded" || a.status === "completed";
+      return true;
+    });
+  }, [attempts, activeTab]);
 
   const handleLoadByInput = async () => {
     const id = readNumber(attemptInput);
@@ -431,18 +442,20 @@ export default function InstructorQuizzesPage() {
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
+      // The user specifically mentioned "grade-attempt", we use the instructor-grade endpoint as primary
+      // but we could also try a fallback if needed.
       await requestWithProxyFallback(`/attempts/${sheet.attemptId}/instructor-grade`, {
         method: "POST",
         headers,
         data: { answers },
       });
-      setSuccessMessage("Grading submitted successfully.");
+      setSuccessMessage("Grading submitted successfully!");
       await Promise.all([loadSheet(sheet.attemptId), loadAttempts()]);
     } catch (error) {
       if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
         setErrorMessage(error.response.data.message);
       } else {
-        setErrorMessage("Failed to submit grading.");
+        setErrorMessage("Failed to submit grading. Please check if the API /instructor-grade is correctly configured.");
       }
     } finally {
       setIsSubmitting(false);
@@ -450,178 +463,305 @@ export default function InstructorQuizzesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-(--background) p-8 text-(--foreground) md:p-12">
-      <div className={`mb-8 flex items-center justify-between gap-4 ${isRTL ? "flex-row-reverse" : ""}`}>
+    <div className="min-h-screen bg-(--background) p-4 md:p-8 lg:p-12 text-(--foreground)">
+      {/* Header Section */}
+      <div className={`mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6 ${isRTL ? "md:flex-row-reverse" : ""}`}>
         <div className={isRTL ? "text-right" : ""}>
-          <h1 className="text-4xl font-black tracking-tighter">{t("nav.quizzes")}</h1>
-          <p className="mt-2 text-sm opacity-60">Review submissions and send instructor grades.</p>
+          <div className="flex items-center gap-3 mb-4 opacity-50 uppercase tracking-[0.2em] text-[10px] font-black">
+            <ClipboardCheck className="w-4 h-4" />
+            <span>Assessment Management</span>
+          </div>
+          <h1 className="text-5xl font-black tracking-tighter leading-none mb-4">
+            {t("nav.quizzes")}
+          </h1>
+          <p className="text-lg opacity-40 font-medium max-w-xl">
+            Review student submissions, provide feedback, and assign scores to manually graded questions.
+          </p>
         </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={() => void loadAttempts()}
+            disabled={isAttemptsLoading}
+            className="p-4 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-indigo-500/50 transition-all duration-300 group"
+          >
+            <RefreshCw className={`w-5 h-5 transition-transform duration-700 ${isAttemptsLoading ? "animate-spin" : "group-hover:rotate-180"}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Stats/Tabs Bar */}
+      <div className="flex flex-wrap items-center gap-4 mb-8 bg-slate-200/50 dark:bg-white/5 p-2 rounded-2xl backdrop-blur-xl w-fit">
         <button
-          onClick={() => void loadAttempts()}
-          disabled={isAttemptsLoading}
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-white disabled:opacity-70 dark:bg-white dark:text-slate-900"
+          onClick={() => setActiveTab("all")}
+          className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === "all" ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-xl scale-105" : "opacity-50 hover:opacity-100"}`}
         >
-          {isAttemptsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Refresh
+          All Attempts
+        </button>
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === "pending" ? "bg-white dark:bg-amber-600 text-amber-600 dark:text-white shadow-xl scale-105" : "opacity-50 hover:opacity-100"}`}
+        >
+          Pending Review
+        </button>
+        <button
+          onClick={() => setActiveTab("graded")}
+          className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === "graded" ? "bg-white dark:bg-emerald-600 text-emerald-600 dark:text-white shadow-xl scale-105" : "opacity-50 hover:opacity-100"}`}
+        >
+          Graded
         </button>
       </div>
 
-      {errorMessage ? (
-        <div className={`mb-4 flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200 ${isRTL ? "flex-row-reverse text-right" : ""}`}>
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      ) : null}
+      <AnimatePresence mode="wait">
+        {errorMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`mb-8 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}
+          >
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <p className="font-bold text-sm">{errorMessage}</p>
+          </motion.div>
+        )}
+        {successMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`mb-8 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}
+          >
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            <p className="font-bold text-sm">{successMessage}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {successMessage ? (
-        <div className={`mb-4 flex items-start gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200 ${isRTL ? "flex-row-reverse text-right" : ""}`}>
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{successMessage}</span>
-        </div>
-      ) : null}
+      <div className="grid grid-cols-1 gap-8 xl:grid-cols-[380px_1fr]">
+        {/* Sidebar: Attempts List */}
+        <section className="space-y-6">
+          <div className="rounded-[2.5rem] border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-6 shadow-sm flex flex-col h-[70vh]">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-black tracking-tight">Recent Submissions</h2>
+              <span className="px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
+                {filteredAttempts.length}
+              </span>
+            </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_1fr]">
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/5">
-          <h2 className="mb-3 text-lg font-black">Attempts</h2>
+            <div className="relative mb-6">
+              <Search className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 opacity-30 ${isRTL ? "right-4" : "left-4"}`} />
+              <input
+                value={attemptInput}
+                onChange={(e) => setAttemptInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLoadByInput()}
+                placeholder="Find Attempt ID..."
+                className={`h-12 w-full rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/2 text-sm outline-none focus:border-indigo-500/50 transition-all ${isRTL ? "pr-11 pl-4" : "pl-11 pr-4"}`}
+              />
+            </div>
 
-          <div className="mb-4 flex items-center gap-2">
-            <input
-              value={attemptInput}
-              onChange={(event) => setAttemptInput(event.target.value)}
-              placeholder="Attempt ID"
-              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-indigo-400 dark:border-white/10 dark:bg-white/[0.02]"
-            />
-            <button
-              onClick={() => void handleLoadByInput()}
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-indigo-600 px-3 text-xs font-black uppercase tracking-wider text-white hover:bg-indigo-500"
-            >
-              <Search className="h-4 w-4" />
-            </button>
+            <div className="flex-1 overflow-auto pr-2 space-y-3 custom-scrollbar">
+              {isAttemptsLoading ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 opacity-30">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                  <p className="text-xs font-bold uppercase tracking-widest">Syncing Data...</p>
+                </div>
+              ) : filteredAttempts.length === 0 ? (
+                <div className="text-center py-12 opacity-30">
+                  <p className="text-sm font-bold italic">No submissions found</p>
+                </div>
+              ) : (
+                filteredAttempts.map((attempt) => (
+                  <button
+                    key={attempt.id}
+                    onClick={() => void loadSheet(attempt.id)}
+                    className={`w-full group relative rounded-2xl border p-4 text-left transition-all duration-300 ${
+                      selectedAttemptId === attempt.id
+                        ? "border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/10"
+                        : "border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/1 hover:border-indigo-500/30"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div>
+                        <p className="text-[10px] font-black opacity-30 uppercase tracking-widest mb-1">ID #{attempt.id}</p>
+                        <p className="font-bold text-sm group-hover:text-indigo-400 transition-colors line-clamp-1">{attempt.studentName}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-tighter ${statusBadgeColor(attempt.status)}`}>
+                        {attempt.status.replace("_", " ")}
+                      </span>
+                    </div>
+                    <p className="text-xs opacity-40 font-medium line-clamp-1">{attempt.quizTitle}</p>
+                    {attempt.submittedAt && (
+                      <div className="mt-3 flex items-center gap-1.5 opacity-20 text-[10px] font-bold">
+                        <Clock className="w-3 h-3" />
+                        <span>{new Date(attempt.submittedAt).toLocaleDateString()}</span>
+                      </div>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
           </div>
-
-          {isAttemptsLoading ? (
-            <div className="flex items-center gap-2 text-sm opacity-60">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading attempts...
-            </div>
-          ) : attempts.length === 0 ? (
-            <p className="text-sm opacity-60">No attempts found.</p>
-          ) : (
-            <div className="max-h-[60vh] space-y-2 overflow-auto pr-1">
-              {attempts.map((attempt) => (
-                <button
-                  key={attempt.id}
-                  onClick={() => void loadSheet(attempt.id)}
-                  className={`w-full rounded-xl border p-3 text-left transition ${selectedAttemptId === attempt.id ? "border-indigo-400 bg-indigo-50 dark:border-indigo-400/70 dark:bg-indigo-500/10" : "border-slate-200 bg-slate-50 hover:border-indigo-300 dark:border-white/10 dark:bg-white/[0.02]"}`}
-                >
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-black">Attempt #{attempt.id}</p>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeColor(attempt.status)}`}>
-                      {attempt.status}
-                    </span>
-                  </div>
-                  <p className="truncate text-xs opacity-70">{attempt.quizTitle}</p>
-                  <p className="truncate text-xs opacity-60">{attempt.studentName}</p>
-                </button>
-              ))}
-            </div>
-          )}
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/5">
-          {!sheet ? (
-            <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300 text-center dark:border-white/10">
-              <ClipboardCheck className="h-9 w-9 opacity-30" />
-              <p className="text-sm opacity-60">Select an attempt to load grading sheet.</p>
-            </div>
-          ) : isSheetLoading ? (
-            <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm opacity-60">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading grading sheet...
-            </div>
-          ) : (
-            <div>
-              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-widest opacity-50">Attempt #{sheet.attemptId}</p>
-                  <h2 className="text-2xl font-black">{sheet.quizTitle}</h2>
-                  <p className="text-sm opacity-70">{sheet.studentName}</p>
+        {/* Main: Grading Interface */}
+        <section>
+          <div className="rounded-[2.5rem] border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 p-8 shadow-sm min-h-[70vh]">
+            {!sheet ? (
+              <div className="flex flex-col items-center justify-center min-h-[50vh] gap-6 text-center">
+                <div className="relative">
+                  <div className="absolute inset-0 blur-3xl bg-indigo-500/10 rounded-full" />
+                  <ClipboardCheck className="w-24 h-24 opacity-10 relative" />
                 </div>
-                <div className="text-right text-sm">
-                  <p className="font-bold">
-                    Max: {sheet.maxScore ?? "--"} | Pass: {sheet.passingScore ?? "--"}
-                  </p>
-                  <p className="opacity-60">Status: {sheet.status}</p>
+                <div>
+                  <h3 className="text-2xl font-black tracking-tight opacity-40">Ready to Grade</h3>
+                  <p className="text-sm opacity-20 mt-2 max-w-xs">Select a student submission from the left sidebar to begin the review process.</p>
                 </div>
               </div>
-
-              <div className="space-y-4">
-                {sheet.questions.map((question, index) => (
-                  <div key={question.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.02]">
-                    <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
-                      <p className="text-sm font-black">
-                        Q{index + 1}. {question.text}
-                      </p>
-                      <span className="text-xs font-bold opacity-60">{question.point ?? 0} pts</span>
-                    </div>
-
-                    <p className="mb-2 text-xs uppercase tracking-wider opacity-50">Student Answer</p>
-                    <div className="mb-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.03]">
-                      {question.studentAnswerText}
-                    </div>
-
-                    {question.options.length ? (
-                      <div className="mb-3">
-                        <p className="mb-1 text-xs uppercase tracking-wider opacity-50">Options</p>
-                        <ul className="space-y-1 text-xs opacity-70">
-                          {question.options.map((option) => (
-                            <li key={option.id}>#{option.id}: {option.text}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-[160px_auto] md:items-end">
-                      <div>
-                        <label className="mb-1 block text-xs uppercase tracking-wider opacity-50">Earned Score</label>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={draftByQuestion[question.id]?.earnedScore ?? "0"}
-                          onChange={(event) => updateDraft(question.id, { earnedScore: event.target.value })}
-                          className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-indigo-400 dark:border-white/10 dark:bg-white/[0.03]"
-                        />
-                      </div>
-                      <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-white/10 dark:bg-white/[0.03]">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(draftByQuestion[question.id]?.isCorrect)}
-                          onChange={(event) => updateDraft(question.id, { isCorrect: event.target.checked })}
-                          className="h-4 w-4 accent-indigo-600"
-                        />
-                        Correct
-                      </label>
+            ) : isSheetLoading ? (
+              <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4 opacity-30">
+                <Loader2 className="w-12 h-12 animate-spin text-indigo-500" />
+                <p className="text-sm font-bold uppercase tracking-[0.2em]">Assembling Grading Sheet...</p>
+              </div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="space-y-8"
+              >
+                {/* Grading Sheet Header */}
+                <div className="flex flex-wrap items-start justify-between gap-6 pb-8 border-b border-slate-200 dark:border-white/10">
+                  <div className={isRTL ? "text-right" : "text-left"}>
+                    <p className="text-xs font-black text-indigo-500 uppercase tracking-[0.2em] mb-2">Grading Session</p>
+                    <h2 className="text-4xl font-black tracking-tighter mb-2">{sheet.studentName}</h2>
+                    <div className="flex items-center gap-4 text-sm opacity-50 font-medium">
+                      <span>{sheet.quizTitle}</span>
+                      <span className="w-1 h-1 rounded-full bg-current opacity-30" />
+                      <span>Attempt #{sheet.attemptId}</span>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <div className="mt-5 flex justify-end">
-                <button
-                  onClick={() => void submitGrading()}
-                  disabled={isSubmitting || !sheet.questions.length}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-xs font-black uppercase tracking-[0.16em] text-white hover:bg-indigo-500 disabled:opacity-70"
-                >
-                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {isSubmitting ? "Submitting..." : "Submit Instructor Grade"}
-                </button>
-              </div>
-            </div>
-          )}
+                  <div className="bg-slate-50 dark:bg-white/5 p-6 rounded-4xl border border-slate-200 dark:border-white/10 text-center min-w-[160px]">
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-1">Max Potential</p>
+                    <p className="text-3xl font-black tracking-tighter text-indigo-500">{sheet.maxScore ?? "--"}</p>
+                    <p className="text-[10px] font-bold opacity-30 mt-1">Pass: {sheet.passingScore ?? "--"}</p>
+                  </div>
+                </div>
+
+                {/* Questions List */}
+                <div className="space-y-6">
+                  {sheet.questions.map((question, index) => (
+                    <div
+                      key={question.id}
+                      className="group relative rounded-3xl border border-slate-200 dark:border-white/10 bg-slate-50/50 dark:bg-white/1 p-6 md:p-8 transition-all hover:border-indigo-500/30"
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-6">
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-black text-indigo-500/60 uppercase tracking-widest">Question {index + 1}</span>
+                          <h4 className="text-lg font-bold leading-tight">{question.text}</h4>
+                          <p className="text-[10px] opacity-30 font-bold uppercase">{question.type.replace("_", " ")}</p>
+                        </div>
+                        <div className="shrink-0 px-3 py-1 rounded-full bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[10px] font-black opacity-60">
+                          {question.point ?? 0} PTS
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* Submission Content */}
+                        <div className="space-y-4">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-3">Student Submission</p>
+                            <div className="p-5 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-sm font-medium leading-relaxed italic text-indigo-600 dark:text-indigo-400">
+                              "{question.studentAnswerText}"
+                            </div>
+                          </div>
+
+                          {question.options.length > 0 && (
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-widest opacity-30 mb-2">Available Options</p>
+                              <div className="flex flex-wrap gap-2">
+                                {question.options.map(opt => (
+                                  <span key={opt.id} className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/5 text-[10px] font-bold opacity-50">
+                                    {opt.text}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Grading Controls */}
+                        <div className="bg-white dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 p-6 flex flex-col justify-center space-y-6">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-black uppercase tracking-widest opacity-30">Assign Score</p>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={0}
+                                max={question.point ?? 100}
+                                step="0.5"
+                                value={draftByQuestion[question.id]?.earnedScore ?? "0"}
+                                onChange={(e) => updateDraft(question.id, { earnedScore: e.target.value })}
+                                className="w-20 h-10 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-center font-black text-indigo-500 outline-none focus:border-indigo-500 transition-all"
+                              />
+                              <span className="text-xs opacity-30 font-bold">/ {question.point ?? "--"}</span>
+                            </div>
+                          </div>
+
+                          <div className="h-px bg-slate-100 dark:bg-white/5" />
+
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-black uppercase tracking-widest opacity-30">Mark Validity</p>
+                            <label className="relative inline-flex items-center cursor-pointer group/toggle">
+                              <input
+                                type="checkbox"
+                                checked={draftByQuestion[question.id]?.isCorrect}
+                                onChange={(e) => updateDraft(question.id, { isCorrect: e.target.checked })}
+                                className="sr-only peer"
+                              />
+                              <div className="w-14 h-7 bg-slate-200 dark:bg-white/10 rounded-full peer peer-checked:bg-emerald-500 transition-all duration-500 peer-focus:ring-2 peer-focus:ring-indigo-500/30">
+                                <div className="absolute left-1 top-1 w-5 h-5 bg-white rounded-full transition-all duration-500 peer-checked:translate-x-7 flex items-center justify-center">
+                                  {draftByQuestion[question.id]?.isCorrect && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                                </div>
+                              </div>
+                              <span className={`ml-3 text-[10px] font-black uppercase tracking-widest transition-colors ${draftByQuestion[question.id]?.isCorrect ? "text-emerald-500" : "opacity-30"}`}>
+                                {draftByQuestion[question.id]?.isCorrect ? "Correct" : "Incorrect"}
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer Actions */}
+                <div className="pt-8 border-t border-slate-200 dark:border-white/10 flex items-center justify-between gap-4">
+                  <div className="hidden md:block">
+                    <p className="text-xs font-bold opacity-30 italic">Total questions: {sheet.questions.length}</p>
+                  </div>
+                  <button
+                    onClick={() => void submitGrading()}
+                    disabled={isSubmitting || !sheet.questions.length}
+                    className="relative group overflow-hidden px-8 py-4 rounded-2xl bg-indigo-600 text-white text-sm font-black uppercase tracking-widest shadow-2xl shadow-indigo-600/20 transition-all duration-500 hover:scale-[1.02] hover:shadow-indigo-600/40 disabled:opacity-50 disabled:scale-100"
+                  >
+                    <div className="relative z-10 flex items-center gap-3">
+                      {isSubmitting ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <BadgeCheck className="w-5 h-5" />
+                      )}
+                      <span>{isSubmitting ? "Finalizing Grades..." : "Confirm & Submit Grading"}</span>
+                    </div>
+                    <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </div>
         </section>
       </div>
     </div>
   );
 }
+
 

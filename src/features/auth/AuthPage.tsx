@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, User, MapPin, ChevronDown, ArrowRight, ArrowLeft, Loader2, Crosshair, Calendar, BookOpen, Globe, FileText, Star, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, User, MapPin, ChevronDown, ArrowRight, ArrowLeft, Loader2, Crosshair, Calendar, BookOpen, Globe, FileText, Star, AlertCircle, Eye, EyeOff, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -39,6 +39,70 @@ const gradients = [
   "from-cyan-500 via-blue-600 to-indigo-700",
 ];
 
+type LoginModeId = "student" | "instructor" | "auditor";
+
+const loginModes: Array<{
+  id: LoginModeId;
+  label: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  visualTitle: string;
+  visualSuffix: string;
+  visualMessage: string;
+  submitLabel: string;
+  endpointPaths: string[];
+  redirectPath: string;
+  sessionRole: string;
+  icon: typeof BookOpen;
+}> = [
+    {
+      id: "student",
+      label: "Student",
+      eyebrow: "POST /auth/login",
+      title: "Student Login",
+      description: "Login to continue your learning journey.",
+      visualTitle: "Student",
+      visualSuffix: "Back!",
+      visualMessage: "Access your courses, quizzes, and progress from one dashboard.",
+      submitLabel: "Sign In as Student",
+      endpointPaths: ["/auth/login"],
+      redirectPath: "/student",
+      sessionRole: "student",
+      icon: BookOpen,
+    },
+    {
+      id: "instructor",
+      label: "Instructor",
+    eyebrow: "POST /auth/login",
+      title: "Instructor Login",
+      description: "Open your courses, quizzes, and learner activity.",
+      visualTitle: "Instructor",
+      visualSuffix: "Hub",
+      visualMessage: "Manage courses, assessments, and class progress with a focused teaching console.",
+      submitLabel: "Sign In as Instructor",
+    endpointPaths: ["/auth/login"],
+      redirectPath: "/instructor",
+      sessionRole: "instructor",
+      icon: Star,
+    },
+    {
+      id: "auditor",
+      label: "Auditor",
+      eyebrow: "POST /auth/login",
+      title: "Auditor Login",
+      description: "Review courses, lessons, quizzes, and content quality.",
+      visualTitle: "Auditor",
+      visualSuffix: "Desk",
+      visualMessage: "Inspect learning content, request changes, and keep quality reviews moving.",
+      submitLabel: "Sign In as Auditor",
+      endpointPaths: ["/auth/login"],
+      redirectPath: "/auditor",
+      sessionRole: "auditor",
+      icon: User,
+    },
+  ];
+
 function normalizeRole(role: string) {
   return role.trim().toLowerCase().replace(/[_\s]+/g, "-");
 }
@@ -56,6 +120,10 @@ function getRedirectPathByRole(rawRole: string | null) {
 
   if (role.includes("manager")) {
     return "/manager/dashboard";
+  }
+
+  if (role.includes("auditor")) {
+    return "/auditor";
   }
 
   return "/student";
@@ -89,6 +157,7 @@ async function resolveRedirectPath(token: string, rawRole: string | null) {
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
+  const [loginMode, setLoginMode] = useState<LoginModeId>("student");
   const [gradientIdx, setGradientIdx] = useState(0);
   const [isLocating, setIsLocating] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -96,9 +165,15 @@ export default function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  
+  const [isForgotOpen, setIsForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
+
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const selectedLoginMode = loginModes.find((mode) => mode.id === loginMode) ?? loginModes[0];
 
   const [formData, setFormData] = useState({
     name: "",
@@ -157,6 +232,16 @@ export default function AuthPage() {
     setGeneralError(null);
   };
 
+  const selectLoginMode = (modeId: LoginModeId) => {
+    const nextIndex = loginModes.findIndex((mode) => mode.id === modeId);
+
+    setLoginMode(modeId);
+    setErrors({});
+    setGeneralError(null);
+    setSuccessMessage(null);
+    setGradientIdx(nextIndex >= 0 ? nextIndex : 0);
+  };
+
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       alert("Geolocation is not supported by your browser");
@@ -196,6 +281,80 @@ export default function AuthPage() {
     );
   };
 
+  const openForgotPassword = () => {
+    setForgotEmail(formData.email);
+    setForgotError(null);
+    setForgotSuccess(null);
+    setIsForgotOpen(true);
+  };
+
+  const closeForgotPassword = () => {
+    if (isForgotLoading) {
+      return;
+    }
+
+    setIsForgotOpen(false);
+    setForgotError(null);
+  };
+
+  const handleForgotPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setForgotError(null);
+    setForgotSuccess(null);
+
+    const email = forgotEmail.trim();
+    if (!email) {
+      setForgotError("Enter the email connected to your account.");
+      return;
+    }
+
+    const forgotPasswordUrl = getStudentApiRequestUrl("/auth/forgot-password");
+    if (!forgotPasswordUrl) {
+      setForgotError("NEXT_PUBLIC_API_URL is missing. Set it to your backend API URL and try again.");
+      return;
+    }
+
+    setIsForgotLoading(true);
+    try {
+      const response = await axios.post(
+        forgotPasswordUrl,
+        { email },
+        {
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const message =
+        typeof response.data?.message === "string"
+          ? response.data.message
+          : "Password reset instructions were sent to your email.";
+
+      setFormData((current) => ({ ...current, email }));
+      setForgotSuccess(message);
+      setSuccessMessage(message);
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      if (axios.isAxiosError(error) && error.response) {
+        const responseErrors = error.response.data?.errors;
+        const emailError = Array.isArray(responseErrors?.email) ? responseErrors.email[0] : null;
+        const message =
+          emailError ||
+          error.response.data?.message ||
+          "We could not send the reset email. Please check the address and try again.";
+
+        setForgotError(message);
+      } else {
+        setForgotError("Network error. Please check your connection and the API server.");
+      }
+    } finally {
+      setIsForgotLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
@@ -209,10 +368,9 @@ export default function AuthPage() {
           password: formData.password
         };
 
-        const loginCandidates = [
-          getStudentApiRequestUrl("/login"),
-          getStudentApiRequestUrl("/auth/login"),
-        ].filter(Boolean);
+        const loginCandidates = selectedLoginMode.endpointPaths
+          .map((path) => getStudentApiRequestUrl(path))
+          .filter(Boolean);
 
         if (loginCandidates.length === 0) {
           setGeneralError("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.");
@@ -242,24 +400,25 @@ export default function AuthPage() {
         if (!response) {
           throw new Error("login_endpoint_not_found");
         }
-        
+
         const user = extractStudentUser(response.data);
         const token = extractStudentToken(response.data);
-        
+
         if (!token) {
           throw new Error("missing_token");
         }
 
-        persistStudentSession(token, user);
-        setSuccessMessage("Login successful! Redirecting...");
-
-        const role =
+        const responseRole =
           extractStudentRole(user) ??
           extractStudentRole(response.data) ??
           extractStudentRoleFromToken(token);
+        const sessionRole = selectedLoginMode.sessionRole;
 
-        const redirectPath = await resolveRedirectPath(token, role);
-        
+        persistStudentSession(token, user ? { ...user, role: sessionRole, api_role: responseRole } : { role: sessionRole, api_role: responseRole });
+        setSuccessMessage(`${selectedLoginMode.label} login successful! Redirecting...`);
+
+        const redirectPath = selectedLoginMode.redirectPath;
+
         setTimeout(() => {
           router.replace(redirectPath);
         }, 1500);
@@ -271,18 +430,18 @@ export default function AuthPage() {
           return;
         }
         if (error instanceof Error && error.message === "login_endpoint_not_found") {
-          setGeneralError("Login endpoint is not available. Verify backend routes for /login or /auth/login.");
+          setGeneralError(`${selectedLoginMode.label} login endpoint is not available. Verify backend routes for ${selectedLoginMode.endpointPaths.join(" or ")}.`);
           return;
         }
         if (axios.isAxiosError(error) && error.response) {
           const isHtmlResponse = String(error.response.headers?.["content-type"] ?? "").includes("text/html");
 
           if (error.response.status === 405 || isHtmlResponse) {
-             setGeneralError("The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy.");
+            setGeneralError("The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy.");
           } else if (error.response.status === 422 || error.response.status === 401) {
-             setGeneralError(error.response.data.message || "Invalid credentials. Please try again.");
+            setGeneralError(error.response.data.message || "Invalid credentials. Please try again.");
           } else {
-             setGeneralError('An unexpected error occurred from the server.');
+            setGeneralError('An unexpected error occurred from the server.');
           }
         } else {
           setGeneralError('Network error. Please check your connection and the API server.');
@@ -310,29 +469,29 @@ export default function AuthPage() {
           ...formData,
           phone: formattedPhone
         };
-        
+
         await axios.post(registerUrl, payload, {
           headers: {
             'Accept': 'application/json'
           }
         });
-        
+
         setIsLogin(true);
         setSuccessMessage('Registration successful! You can now log in.');
         setTimeout(() => setSuccessMessage(null), 4000);
-        
+
       } catch (error) {
         console.error("Registration error:", error);
         if (axios.isAxiosError(error) && error.response) {
           const isHtmlResponse = String(error.response.headers?.["content-type"] ?? "").includes("text/html");
 
           if (error.response.status === 405 || isHtmlResponse) {
-             setGeneralError("The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy.");
+            setGeneralError("The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy.");
           } else if (error.response.status === 422) {
-             setErrors(error.response.data.errors || {});
-             setGeneralError("Please fix the validation errors below.");
+            setErrors(error.response.data.errors || {});
+            setGeneralError("Please fix the validation errors below.");
           } else {
-             setGeneralError(error.response.data.message || 'An unexpected error occurred from the server.');
+            setGeneralError(error.response.data.message || 'An unexpected error occurred from the server.');
           }
         } else {
           setGeneralError('Network error. Please check your connection and the API server.');
@@ -347,6 +506,9 @@ export default function AuthPage() {
     setIsLogin(!isLogin);
     setErrors({});
     setGeneralError(null);
+    setIsForgotOpen(false);
+    setForgotError(null);
+    setForgotSuccess(null);
     setGradientIdx(Math.floor(Math.random() * gradients.length));
     setFormData({
       name: "",
@@ -372,9 +534,9 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-[#020617] flex items-center justify-center p-4 md:p-8 overflow-hidden font-sans transition-colors duration-300">
       <div className="absolute top-4 right-4 z-50">
-        <button 
-           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-           className="p-3 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-lg"
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="p-3 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-lg"
         >
           {mounted && (theme === "dark" ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />)}
         </button>
@@ -412,13 +574,38 @@ export default function AuthPage() {
               className="flex-1 overflow-y-auto pr-3 custom-scrollbar flex flex-col"
             >
               <h1 className="text-4xl md:text-5xl font-extrabold mb-3 tracking-tight text-slate-900 dark:text-white">
-                {isLogin ? "Student Login" : "Student Register"}
+                {isLogin ? selectedLoginMode.title : "Student Register"}
               </h1>
               <p className="text-slate-500 dark:text-white/40 mb-6 text-lg">
                 {isLogin
-                  ? "Login to continue your learning journey."
+                  ? selectedLoginMode.description
                   : "Start your learning journey with us today."}
               </p>
+
+              {isLogin && (
+                <div className="mb-6 grid grid-cols-3 gap-2 md:hidden">
+                  {loginModes.map((mode) => {
+                    const Icon = mode.icon;
+                    const isActive = mode.id === loginMode;
+
+                    return (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => selectLoginMode(mode.id)}
+                        disabled={isLoading}
+                        className={`rounded-2xl border px-2 py-3 text-center transition ${isActive
+                          ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-400/40 dark:bg-indigo-500/15 dark:text-indigo-200"
+                          : "border-slate-200 bg-slate-50 text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-white/50"
+                          }`}
+                      >
+                        <Icon className="mx-auto mb-1 h-4 w-4" />
+                        <span className="block text-[10px] font-black uppercase tracking-wider">{mode.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {generalError && (
                 <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-red-600 dark:text-red-400 rounded-2xl p-4 mb-6 flex items-start gap-3">
@@ -473,22 +660,30 @@ export default function AuthPage() {
                 )}
 
                 {isLogin && (
-                   <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Email Address</label>
-                      <div className="group relative">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
-                        <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="yara@example.com" required
-                          className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
-                        />
-                      </div>
-                   </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Email Address</label>
+                    <div className="group relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors" />
+                      <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="yara@example.com" required
+                        className="w-full bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all placeholder:text-slate-300 dark:placeholder:text-white/20 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
                 )}
 
                 <div className={!isLogin ? "grid grid-cols-1 sm:grid-cols-2 gap-4" : "space-y-2"}>
                   <div className="space-y-1">
                     <div className="flex justify-between items-center ml-1">
                       <label className="text-xs font-semibold text-slate-500 dark:text-white/60 uppercase tracking-wider">Password {isLogin ? '' : '*'}</label>
-                      {isLogin && <button type="button" className="text-xs text-indigo-500 dark:text-indigo-400 font-bold hover:text-indigo-300 transition-colors">FORGOT?</button>}
+                      {isLogin && (
+                        <button
+                          type="button"
+                          onClick={openForgotPassword}
+                          className="text-xs text-indigo-500 dark:text-indigo-400 font-bold hover:text-indigo-300 transition-colors"
+                        >
+                          FORGOT?
+                        </button>
+                      )}
                     </div>
                     <div className="group relative">
                       <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 ${isLogin ? 'w-5 h-5' : 'w-4 h-4'} text-slate-300 dark:text-white/20 group-focus-within:text-indigo-400 transition-colors`} />
@@ -535,7 +730,7 @@ export default function AuthPage() {
 
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Gender</label>
-                         <div className="relative group">
+                        <div className="relative group">
                           <select name="gender" value={formData.gender} onChange={handleChange} className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.gender ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 px-5 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none text-slate-900 dark:text-white/70 text-sm cursor-pointer`}>
                             <option value="" className="bg-white dark:bg-slate-900">Select...</option>
                             <option value="male" className="bg-white dark:bg-slate-900">Male</option>
@@ -551,7 +746,7 @@ export default function AuthPage() {
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-500 dark:text-white/60 ml-1 uppercase tracking-wider">Phone</label>
                         <div className="group relative flex items-center">
-                           <div className="absolute left-4 flex items-center gap-2 pr-2 border-r border-slate-200 dark:border-white/10 z-10">
+                          <div className="absolute left-4 flex items-center gap-2 pr-2 border-r border-slate-200 dark:border-white/10 z-10">
                             <SyrianFlag />
                             <span className="text-[10px] font-bold text-slate-400 dark:text-white/50 group-focus-within:text-indigo-400">+963</span>
                           </div>
@@ -658,14 +853,14 @@ export default function AuthPage() {
                     <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
                     <>
-                      {isLogin ? "Sign In as Student" : "Register Account"}
+                      {isLogin ? selectedLoginMode.submitLabel : "Register Account"}
                       <ArrowRight className="w-5 h-5" />
                     </>
                   )}
                 </button>
               </form>
 
-               <div className="mt-auto pt-6 pb-2 text-center">
+              <div className="mt-auto pt-6 pb-2 text-center">
                 <p className="text-slate-500 dark:text-white/40 font-medium text-sm">
                   {isLogin ? "Don't have an account yet?" : "Already have an account?"}{" "}
                   <button
@@ -688,27 +883,27 @@ export default function AuthPage() {
         >
           {/* Top Half - Study Image */}
           <div className="h-[60%] relative overflow-hidden z-30 rounded-b-[100px] shadow-[0_20px_50px_rgba(0,0,0,0.4)]">
-            <motion.img 
+            <motion.img
               initial={{ scale: 1.2 }}
               animate={{ scale: 1 }}
               transition={{ duration: 1.5, ease: "easeOut" }}
-              src="https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&q=80&w=1200" 
+              src="https://images.unsplash.com/photo-1434030216411-0b793f4b4173?auto=format&fit=crop&q=80&w=1200"
               className="absolute inset-0 w-full h-full object-cover blur-[0.2px]"
               alt="Studying"
             />
             <div className="absolute inset-0 bg-indigo-900/30 mix-blend-overlay" />
             <div className="absolute inset-0 bg-linear-to-b from-black/70 via-black/20 to-transparent" />
-            
+
             <div className="relative z-10 h-full flex flex-col justify-center items-center">
-               <motion.h2 
-                 key={isLogin ? "welcome" : "join"}
-                 initial={{ y: 50, opacity: 0 }}
-                 animate={{ y: 0, opacity: 1 }}
-                 transition={{ delay: 0.5, duration: 0.8, ease: "circOut" }}
-                 className="text-7xl lg:text-[110px] font-black text-white leading-none tracking-tighter drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] select-none -translate-y-8"
-               >
-                 {isLogin ? "Student" : "Join the"}
-               </motion.h2>
+              <motion.h2
+                key={isLogin ? "welcome" : "join"}
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.5, duration: 0.8, ease: "circOut" }}
+                className="text-7xl lg:text-[110px] font-black text-white leading-none tracking-tighter drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] select-none -translate-y-8"
+              >
+                {isLogin ? selectedLoginMode.visualTitle : "Join the"}
+              </motion.h2>
             </div>
           </div>
 
@@ -727,13 +922,13 @@ export default function AuthPage() {
             </div>
 
             <div className="relative z-10 h-full flex flex-col items-center text-center px-16 pt-24 pb-12">
-              <motion.h2 
-                 initial={{ y: -50, opacity: 0 }}
-                 animate={{ y: 0, opacity: 1 }}
-                 transition={{ delay: 0.7, duration: 0.8, ease: "circOut" }}
-                 className="text-7xl lg:text-[110px] font-black text-white leading-none tracking-tighter drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)] select-none"
+              <motion.h2
+                initial={{ y: -50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.7, duration: 0.8, ease: "circOut" }}
+                className="text-7xl lg:text-[110px] font-black text-white leading-none tracking-tighter drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)] select-none"
               >
-                 {isLogin ? "Back!" : "Future."}
+                {isLogin ? selectedLoginMode.visualSuffix : "Future."}
               </motion.h2>
 
               <AnimatePresence mode="wait">
@@ -742,25 +937,40 @@ export default function AuthPage() {
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ duration: 0.6 }}
-                  className="mt-6 space-y-6"
+                  className="mt-2 space-y-2"
                 >
                   <div className="w-12 h-1 bg-white/40 mx-auto rounded-full" />
                   <p className="text-white/90 text-lg font-medium max-w-sm mx-auto leading-relaxed drop-shadow-md">
                     {isLogin
-                      ? "Access your courses, quizzes, and progress from one dashboard."
+                      ? selectedLoginMode.visualMessage
                       : "Create your account and start exploring a world of knowledge tailored for you."}
                   </p>
-                  
-                  <div className="flex gap-2 justify-center pt-2">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        animate={{ opacity: [0.3, 1, 0.3] }}
-                        transition={{ duration: 2, delay: i * 0.4, repeat: Infinity }}
-                        className="w-1.5 h-1.5 rounded-full bg-white shadow-sm"
-                      />
-                    ))}
-                  </div>
+
+                  {isLogin && (
+                    <div className="grid grid-cols-3 gap-3 -mt-2">
+                      {loginModes.map((mode) => {
+                        const Icon = mode.icon;
+                        const isActive = mode.id === loginMode;
+
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => selectLoginMode(mode.id)}
+                            disabled={isLoading}
+                            className={`group flex min-h-[82px] flex-col items-center justify-center gap-2 rounded-2xl border px-2 py-3 text-center backdrop-blur-xl transition-all ${isActive
+                              ? "border-white bg-white text-slate-950 shadow-[0_18px_40px_rgba(0,0,0,0.22)]"
+                              : "border-white/20 bg-white/10 text-white/80 hover:border-white/45 hover:bg-white/20 hover:text-white"
+                              }`}
+                          >
+                            <Icon className={`h-5 w-5 ${isActive ? "text-indigo-600" : "text-white/80 group-hover:text-white"}`} />
+                            <span className="text-[11px] font-black uppercase tracking-wider">{mode.label}</span>
+                            {/* <span className={`text-[9px] font-bold leading-tight ${isActive ? "text-slate-500" : "text-white/45"}`}>{mode.eyebrow}</span> */}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </motion.div>
               </AnimatePresence>
             </div>
@@ -770,6 +980,126 @@ export default function AuthPage() {
           </div>
         </motion.div>
       </motion.div>
+
+      <AnimatePresence>
+        {isForgotOpen && (
+          <motion.div
+            className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/60 px-4 py-6 backdrop-blur-md"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="forgot-password-title"
+          >
+            <motion.form
+              onSubmit={handleForgotPassword}
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.96 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+              className="w-full max-w-md rounded-[32px] border border-white/20 bg-white p-6 shadow-[0_32px_80px_rgba(15,23,42,0.32)] dark:border-white/10 dark:bg-slate-950"
+            >
+              <div className="mb-6 flex items-start justify-between gap-4">
+                <div>
+                  <div className={`mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-linear-to-br ${gradients[gradientIdx]} text-white shadow-lg shadow-indigo-500/25`}>
+                    <Lock className="h-5 w-5" />
+                  </div>
+                  <h2 id="forgot-password-title" className="text-2xl font-black tracking-tight text-slate-950 dark:text-white">
+                    Reset your password
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-white/55">
+                    Enter your account email and we will send the password reset instructions.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeForgotPassword}
+                  disabled={isForgotLoading}
+                  className="rounded-full border border-slate-200 p-2 text-slate-400 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:hover:bg-white/10 dark:hover:text-white"
+                  aria-label="Close reset password dialog"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                <label className="ml-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-white/60">
+                  Email Address
+                </label>
+                <div className="group relative">
+                  <Mail className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-300 transition-colors group-focus-within:text-indigo-500 dark:text-white/20" />
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(event) => {
+                      setForgotEmail(event.target.value);
+                      setForgotError(null);
+                      setForgotSuccess(null);
+                    }}
+                    placeholder="you@example.com"
+                    required
+                    autoFocus
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-12 pr-4 text-sm text-slate-950 outline-none transition placeholder:text-slate-300 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-500/30 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/20 dark:focus:border-indigo-400/50 dark:focus:bg-white/10"
+                  />
+                </div>
+              </div>
+
+              <AnimatePresence mode="wait">
+                {forgotError && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="mt-4 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                  >
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+                    <p className="text-sm font-medium">{forgotError}</p>
+                  </motion.div>
+                )}
+                {forgotSuccess && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                  >
+                    {forgotSuccess}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={closeForgotPassword}
+                  disabled={isForgotLoading}
+                  className="h-12 flex-1 rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isForgotLoading}
+                  className={`h-12 flex-1 rounded-2xl bg-linear-to-r ${gradients[gradientIdx]} px-4 text-sm font-bold text-white shadow-xl shadow-indigo-500/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70`}
+                >
+                  {isForgotLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sending
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      Send reset link
+                      <ArrowRight className="h-4 w-4" />
+                    </span>
+                  )}
+                </button>
+              </div>
+            </motion.form>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {

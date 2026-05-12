@@ -38,6 +38,11 @@ export default function StudentLayout({
       return;
     }
 
+    if (role?.includes("auditor")) {
+      router.replace("/auditor");
+      return;
+    }
+
     setCanRender(true);
   }, [router]);
 

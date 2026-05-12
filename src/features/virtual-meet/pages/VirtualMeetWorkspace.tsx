@@ -2,7 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Ban, ExternalLink, Loader2, RefreshCw, Trash2, Users, Video } from "lucide-react";
+import { Ban, ExternalLink, Loader2, RefreshCw, Trash2, Users, Video, Zap } from "lucide-react";
+import LiveMeeting from "../components/LiveMeeting";
 
 type UrlFn = (path: string) => string;
 type TokenFn = () => string | null;
@@ -36,6 +37,8 @@ type Props = {
   getRequestUrl: UrlFn;
   getToken: TokenFn;
 };
+
+// Types for internal state
 
 const providers: Provider[] = ["zoom", "google_meet"];
 
@@ -123,6 +126,10 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // Live Meeting State
+  const [inLiveMeeting, setInLiveMeeting] = useState(false);
+  const [activeRoomId, setActiveRoomId] = useState("");
 
   const orderedSessions = useMemo(() => [...sessions].sort((a, b) => new Date(b.starts_at ?? 0).getTime() - new Date(a.starts_at ?? 0).getTime()), [sessions]);
   const providerIntegrations = useMemo(() => integrations.filter((i) => i.provider === sessionForm.provider), [integrations, sessionForm.provider]);
@@ -282,6 +289,16 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     setAttendanceForm(attendanceInitial); setMsg("Attendance stored.");
   });
 
+  if (inLiveMeeting) {
+    return (
+      <LiveMeeting 
+        roomId={activeRoomId} 
+        userName={roleLabel} 
+        onExit={() => setInLiveMeeting(false)} 
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_20%_0%,#dbeafe_0%,#f8fafc_45%,#eef2ff_100%)] p-6 dark:bg-[radial-gradient(circle_at_20%_0%,#0f172a_0%,#020617_45%,#111827_100%)] md:p-10">
       <div className="mx-auto max-w-[1600px] space-y-6 text-slate-900 dark:text-white">
@@ -375,6 +392,12 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                   </div>
                   <div className="flex flex-wrap gap-1">
                     <button onClick={() => { setEditingSessionId(s.id); setSessionMode(s.integration_id ? "provider" : "manual"); setSessionForm({ course_id: s.course_id ? String(s.course_id) : "", provider: s.provider === "zoom" ? "zoom" : "google_meet", integration_id: s.integration_id ? String(s.integration_id) : "", title: s.title, description: s.description ?? "", starts_at: toLocalInput(s.starts_at), ends_at: toLocalInput(s.ends_at), join_url: s.join_url ?? "", status: s.status ?? "draft", metadata_json: JSON.stringify(s.metadata ?? {}, null, 2) }); }} className="rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20">Edit</button>
+                    <button 
+                      onClick={() => { setActiveRoomId(`meet-${s.id}`); setInLiveMeeting(true); }} 
+                      className="rounded-lg bg-cyan-600 px-2 py-1 text-[10px] font-black uppercase text-white flex items-center gap-1 shadow-lg shadow-cyan-900/20"
+                    >
+                      <Zap className="h-3 w-3" /> Join Live (Afaq)
+                    </button>
                     <button onClick={() => void publishSession(s.id)} className="rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-black uppercase text-white">Publish</button>
                     <button onClick={() => void cancelSession(s.id)} className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-black uppercase text-white"><Ban className="h-3 w-3" />Cancel</button>
                     <button onClick={() => void deleteSession(s.id)} className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2 py-1 text-[10px] font-black uppercase text-white"><Trash2 className="h-3 w-3" />Delete</button>
