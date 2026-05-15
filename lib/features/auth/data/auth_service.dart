@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/errors/app_exception.dart';
@@ -27,14 +29,12 @@ class AuthService {
       return;
     }
 
-    final response = await _client.post<Map<String, dynamic>>(
-      ApiEndpoints.login,
-      data: {
-        'email': email,
-        'password': password,
-        'role': role.name,
-      },
-    );
+    final body = {
+      'email': email,
+      'password': password,
+      if (role != AfaqRole.instructor) 'role': role.name,
+    };
+    final response = await _loginWithFallback(body: body, role: role);
 
     final token = _readToken(response.data);
     if (token == null || token.isEmpty) {
@@ -42,11 +42,36 @@ class AuthService {
     }
 
     _store.save(accessToken: token, userRole: role);
+
+    if (role == AfaqRole.instructor) {
+      await _client.get<Map<String, dynamic>>(ApiEndpoints.instructorDashboard);
+    }
   }
 
   Future<void> logout() async {
     await _client.post(ApiEndpoints.logout);
     _store.clear();
+  }
+
+  Future<Response<Map<String, dynamic>>> _loginWithFallback({
+    required Map<String, dynamic> body,
+    required AfaqRole role,
+  }) async {
+    try {
+      return await _client.post<Map<String, dynamic>>(
+        ApiEndpoints.login,
+        data: body,
+      );
+    } on AppException {
+      if (role != AfaqRole.instructor) rethrow;
+      return _client.post<Map<String, dynamic>>(
+        ApiEndpoints.loginFallback,
+        data: {
+          'email': body['email'],
+          'password': body['password'],
+        },
+      );
+    }
   }
 
   String? _readToken(Map<String, dynamic>? data) {

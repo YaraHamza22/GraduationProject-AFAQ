@@ -67,7 +67,7 @@ class AfaqSidebar extends StatelessWidget {
       ),
       child: SafeArea(
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: _expanded ? 18 : 10),
+          padding: EdgeInsets.symmetric(horizontal: _expanded ? 18 : 8),
           child: Column(
             children: [
               const SizedBox(height: 18),
@@ -201,7 +201,7 @@ class _SidebarButton extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
         decoration: BoxDecoration(
           color: active ? activeBg : Colors.transparent,
           borderRadius: BorderRadius.circular(18),

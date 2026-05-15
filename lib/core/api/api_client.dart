@@ -10,7 +10,7 @@ class ApiClient {
         _dio = dio ??
             Dio(
               BaseOptions(
-                baseUrl: dotenv.env['FLUTTER_PUBLIC_API_URL'] ?? 'http://127.0.0.1:8000/api/v1',
+                baseUrl: dotenv.env['FLUTTER_PUBLIC_API_URL'] ?? 'http://10.0.2.2:8000/api/v1',
                 connectTimeout: const Duration(seconds: 20),
                 receiveTimeout: const Duration(seconds: 20),
                 headers: const {
@@ -43,20 +43,63 @@ class ApiClient {
   Future<Response<T>> get<T>(
     String path, {
     Map<String, dynamic>? queryParameters,
+    Options? options,
   }) async {
-    return _guard(() => _dio.get<T>(path, queryParameters: queryParameters));
+    return _guard(
+      () => _dio.get<T>(
+        path,
+        queryParameters: queryParameters,
+        options: options,
+      ),
+    );
   }
 
-  Future<Response<T>> post<T>(String path, {Object? data}) async {
-    return _guard(() => _dio.post<T>(path, data: data));
+  Future<Response<T>> post<T>(
+    String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    return _guard(
+      () => _dio.post<T>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+      ),
+    );
   }
 
-  Future<Response<T>> put<T>(String path, {Object? data}) async {
-    return _guard(() => _dio.put<T>(path, data: data));
+  Future<Response<T>> put<T>(
+    String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    return _guard(
+      () => _dio.put<T>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+      ),
+    );
   }
 
-  Future<Response<T>> delete<T>(String path) async {
-    return _guard(() => _dio.delete<T>(path));
+  Future<Response<T>> delete<T>(
+    String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    return _guard(
+      () => _dio.delete<T>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+      ),
+    );
   }
 
   Future<Response<T>> _guard<T>(Future<Response<T>> Function() request) async {

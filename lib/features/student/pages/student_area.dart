@@ -108,15 +108,24 @@ class StudentDashboardPage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          Flex(
-            direction: desktop ? Axis.horizontal : Axis.vertical,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Expanded(child: _ProgressPanel()),
-              SizedBox(width: desktop ? 24 : 0, height: desktop ? 0 : 24),
-              const Expanded(child: _LearningTreePanel()),
-            ],
-          ),
+          if (desktop)
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _ProgressPanel()),
+                SizedBox(width: 24),
+                Expanded(child: _LearningTreePanel()),
+              ],
+            )
+          else
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ProgressPanel(),
+                SizedBox(height: 24),
+                _LearningTreePanel(),
+              ],
+            ),
         ],
       ),
     );
@@ -135,7 +144,7 @@ class _StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return AfaqPanel(
       radius: 34,
-      padding: const EdgeInsets.all(26),
+      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -150,7 +159,12 @@ class _StatCard extends StatelessWidget {
             child: Icon(icon, color: color),
           ),
           Text(value, style: Theme.of(context).textTheme.headlineMedium),
-          Text(title, style: const TextStyle(color: AfaqColors.slate500, fontWeight: FontWeight.w800)),
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AfaqColors.slate500, fontWeight: FontWeight.w800),
+          ),
         ],
       ),
     );
