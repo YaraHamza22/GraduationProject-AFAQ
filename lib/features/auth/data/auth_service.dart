@@ -1,5 +1,6 @@
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
+import '../../../core/errors/app_exception.dart';
 import '../../../core/session/session_store.dart';
 import '../../../core/widgets/afaq_sidebar.dart';
 
@@ -18,7 +19,7 @@ class AuthService {
     required String email,
     required String password,
     required AfaqRole role,
-    bool demoMode = true,
+    bool demoMode = false,
   }) async {
     if (demoMode) {
       await Future<void>.delayed(const Duration(milliseconds: 700));
@@ -34,12 +35,32 @@ class AuthService {
         'role': role.name,
       },
     );
-    final token = response.data?['access_token'] as String?;
-    _store.save(accessToken: token ?? '', userRole: role);
+
+    final token = _readToken(response.data);
+    if (token == null || token.isEmpty) {
+      throw const AppException('Login succeeded but no access token was returned.');
+    }
+
+    _store.save(accessToken: token, userRole: role);
   }
 
   Future<void> logout() async {
     await _client.post(ApiEndpoints.logout);
     _store.clear();
+  }
+
+  String? _readToken(Map<String, dynamic>? data) {
+    if (data == null) return null;
+
+    final directToken = data['access_token'] ?? data['token'];
+    if (directToken is String) return directToken;
+
+    final nestedData = data['data'];
+    if (nestedData is Map<String, dynamic>) {
+      final nestedToken = nestedData['access_token'] ?? nestedData['token'];
+      if (nestedToken is String) return nestedToken;
+    }
+
+    return null;
   }
 }
