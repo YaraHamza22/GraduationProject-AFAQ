@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/afaq_theme.dart';
-import '../features/auth/pages/login_page.dart';
+import '../features/splash/pages/splash_page.dart';
 
 class AfaaqApp extends StatelessWidget {
   const AfaaqApp({super.key});
@@ -13,7 +13,7 @@ class AfaaqApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: afaqLightTheme(),
       darkTheme: afaqDarkTheme(),
-      home: const LoginPage(),
+      home: const SplashPage(),
     );
   }
 }

@@ -234,9 +234,9 @@ class _CourseReviewDetail extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AfaqColors.primary.withOpacity(.06),
+                color: AfaqColors.primary.withValues(alpha: .06),
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AfaqColors.primary.withOpacity(.18)),
+                border: Border.all(color: AfaqColors.primary.withValues(alpha: .18)),
               ),
               child: Row(
                 children: [

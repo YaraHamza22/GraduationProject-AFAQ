@@ -83,7 +83,7 @@ class _LearningLogoAnimationState extends State<LearningLogoAnimation>
                             borderRadius: BorderRadius.circular(34),
                             boxShadow: [
                               BoxShadow(
-                                color: const Color(0xFF155E63).withOpacity(.18),
+                                color: const Color(0xFF155E63).withValues(alpha: .18),
                                 blurRadius: 30,
                                 offset: const Offset(0, 18),
                               ),
@@ -157,13 +157,13 @@ class _LearningAuraPainter extends CustomPainter {
     final ringPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.6
-      ..color = const Color(0xFF155E63).withOpacity(.08 + pulse * .08);
+      ..color = const Color(0xFF155E63).withValues(alpha: .08 + pulse * .08);
 
     canvas.drawCircle(center, 112 + pulse * 10, ringPaint);
     canvas.drawCircle(
       center,
       84 + pulse * 7,
-      ringPaint..color = const Color(0xFFF2B84B).withOpacity(.10),
+      ringPaint..color = const Color(0xFFF2B84B).withValues(alpha: .10),
     );
   }
 
@@ -186,7 +186,7 @@ class _OpenBookPainter extends CustomPainter {
     final pageLift = math.sin(pageTurn * math.pi) * 20;
 
     final shadowPaint = Paint()
-      ..color = const Color(0xFF17212B).withOpacity(.12)
+      ..color = const Color(0xFF17212B).withValues(alpha: .12)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
     canvas.drawOval(
       Rect.fromCenter(
@@ -245,12 +245,12 @@ class _OpenBookPainter extends CustomPainter {
 
     canvas.drawPath(
       turningPage,
-      Paint()..color = const Color(0xFFFFF8E7).withOpacity(.88),
+      Paint()..color = const Color(0xFFFFF8E7).withValues(alpha: .88),
     );
     canvas.drawPath(turningPage, edgePaint);
 
     final linePaint = Paint()
-      ..color = const Color(0xFF155E63).withOpacity(.22)
+      ..color = const Color(0xFF155E63).withValues(alpha: .22)
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
 

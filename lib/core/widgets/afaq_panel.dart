@@ -21,16 +21,16 @@ class AfaqPanel extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: dark ? Colors.white.withOpacity(.05) : Colors.white,
+        color: dark ? Colors.white.withValues(alpha: .05) : Colors.white,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(
-          color: dark ? Colors.white.withOpacity(.10) : AfaqColors.slate300,
+          color: dark ? Colors.white.withValues(alpha: .10) : AfaqColors.slate300,
         ),
         boxShadow: dark
             ? null
             : [
                 BoxShadow(
-                  color: AfaqColors.slate900.withOpacity(.05),
+                  color: AfaqColors.slate900.withValues(alpha: .05),
                   blurRadius: 24,
                   offset: const Offset(0, 12),
                 ),

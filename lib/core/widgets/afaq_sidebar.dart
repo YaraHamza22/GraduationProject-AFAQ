@@ -57,7 +57,7 @@ class AfaqSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final border = dark ? Colors.white.withOpacity(.05) : AfaqColors.borderLight;
+    final border = dark ? Colors.white.withValues(alpha: .05) : AfaqColors.borderLight;
 
     return Container(
       width: width,
@@ -137,7 +137,7 @@ class _Brand extends StatelessWidget {
                 ? null
                 : [
                     BoxShadow(
-                      color: AfaqColors.primaryButton.withOpacity(.4),
+                      color: AfaqColors.primaryButton.withValues(alpha: .4),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -190,11 +190,11 @@ class _SidebarButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final activeBg = auditor
         ? (dark ? Colors.white : AfaqColors.slate950)
-        : AfaqColors.primaryButton.withOpacity(.10);
+        : AfaqColors.primaryButton.withValues(alpha: .10);
     final activeColor = auditor
         ? (dark ? AfaqColors.slate950 : Colors.white)
         : AfaqColors.primary;
-    final idleColor = dark ? Colors.white.withOpacity(.45) : AfaqColors.slate400;
+    final idleColor = dark ? Colors.white.withValues(alpha: .45) : AfaqColors.slate400;
 
     return InkWell(
       borderRadius: BorderRadius.circular(18),

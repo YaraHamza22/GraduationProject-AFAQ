@@ -142,7 +142,7 @@ class _InstructorStat extends StatelessWidget {
           Positioned(
             right: -8,
             top: -8,
-            child: Icon(icon, size: 78, color: color.withOpacity(.10)),
+            child: Icon(icon, size: 78, color: color.withValues(alpha: .10)),
           ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
