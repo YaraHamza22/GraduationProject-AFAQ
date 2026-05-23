@@ -55,11 +55,19 @@ function isHtml404AxiosError(error: unknown) {
   );
 }
 
+function isLocalProxy404(error: unknown) {
+  if (!axios.isAxiosError(error)) return false;
+  if (error.response?.status !== 404) return false;
+
+  const requestedUrl = String(error.config?.url ?? "");
+  return requestedUrl.startsWith("/api/") || requestedUrl.includes("localhost:3000/api/");
+}
+
 async function requestWithProxyFallback<T>(path: string, config: Parameters<typeof axios.request>[0]) {
   try {
     return await axios.request<T>({ ...config, url: getStudentApiRequestUrl(path) });
   } catch (error) {
-    if (!isHtml404AxiosError(error)) throw error;
+    if (!isHtml404AxiosError(error) && !isLocalProxy404(error)) throw error;
     return axios.request<T>({ ...config, url: getStudentApiEndpoint(path) });
   }
 }

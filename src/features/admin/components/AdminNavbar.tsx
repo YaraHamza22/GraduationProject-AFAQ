@@ -72,6 +72,7 @@ const navItems = [
 const managementItems = [
   { name: "Students", href: "/admin/students", icon: GraduationCap, label: "adm.students" },
   { name: "Courses", href: "/admin/courses", icon: BookOpen, label: "adm.courses" },
+  { name: "Course Category", href: "/admin/course-categories", icon: Tags, label: "adm.course_category" },
   { name: "Virtual Meet", href: "/admin/virtual-meet", icon: Video, label: "Virtual Meet" },
   {
     name: "Instructors",
@@ -80,7 +81,6 @@ const managementItems = [
     label: "adm.instructors",
     children: [
       { name: "All Instructors", href: "/admin/instructors", label: "adm.all_instructors" },
-      { name: "Course Category", href: "/admin/course-categories", icon: Tags, label: "adm.course_category" },
     ],
   },
   { name: "Managers", href: "/admin/managers", icon: ShieldCheck, label: "adm.managers" },

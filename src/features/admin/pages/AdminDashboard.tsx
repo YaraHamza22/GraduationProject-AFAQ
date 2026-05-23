@@ -53,6 +53,27 @@ type PerformanceByCourse = {
   completion_rate: number;
 };
 
+type AuditLogCauser = {
+  id: number;
+  name: string;
+  email: string;
+};
+
+type AuditLogEntry = {
+  id: number;
+  log_name: string;
+  description: string;
+  event: string;
+  subject_type: string;
+  subject_id: number;
+  causer_type: string;
+  causer_id: number;
+  created_at?: string;
+  updated_at?: string;
+  properties: UnknownRecord;
+  causer: AuditLogCauser | null;
+};
+
 type DashboardData = {
   summary: Summary;
   popular_courses: PopularCourse[];
@@ -90,6 +111,17 @@ type DashboardData = {
   };
 };
 
+type AuditLogListPayload = {
+  rows: AuditLogEntry[];
+  pagination: {
+    total: number;
+    count: number;
+    per_page: number;
+    current_page: number;
+    total_pages: number;
+  };
+};
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -104,6 +136,18 @@ function asString(value: unknown, fallback = "N/A") {
 
 function asArray(value: unknown) {
   return Array.isArray(value) ? value : [];
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "Unknown time";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function getSubjectLabel(subjectType: string) {
+  const normalized = subjectType.split("\\").pop() || subjectType;
+  return normalized.replace(/_/g, " ");
 }
 
 function formatNumber(value: number) {
@@ -219,6 +263,51 @@ function parseDashboardData(payload: unknown): DashboardData {
   };
 }
 
+function parseAuditLogEntry(payload: unknown): AuditLogEntry | null {
+  const row = isRecord(payload) ? payload : {};
+  const causerRaw = isRecord(row.causer) ? row.causer : null;
+
+  return {
+    id: asNumber(row.id),
+    log_name: asString(row.log_name, "default"),
+    description: asString(row.description),
+    event: asString(row.event),
+    subject_type: asString(row.subject_type),
+    subject_id: asNumber(row.subject_id),
+    causer_type: asString(row.causer_type),
+    causer_id: asNumber(row.causer_id),
+    created_at: typeof row.created_at === "string" ? row.created_at : undefined,
+    updated_at: typeof row.updated_at === "string" ? row.updated_at : undefined,
+    properties: isRecord(row.properties) ? row.properties : {},
+    causer: causerRaw
+      ? {
+          id: asNumber(causerRaw.id),
+          name: asString(causerRaw.name),
+          email: asString(causerRaw.email),
+        }
+      : null,
+  };
+}
+
+function parseAuditLogList(payload: unknown): AuditLogListPayload {
+  const root = isRecord(payload) && isRecord(payload.data) ? payload : {};
+  const rows = asArray(isRecord(root.data) ? root.data : isRecord(payload) ? payload.data : [])
+    .map((item) => parseAuditLogEntry(item))
+    .filter((item): item is AuditLogEntry => Boolean(item && item.id));
+  const paginationRaw = isRecord(root.pagination) ? root.pagination : isRecord(payload) && isRecord(payload.pagination) ? payload.pagination : {};
+
+  return {
+    rows,
+    pagination: {
+      total: asNumber(paginationRaw.total),
+      count: asNumber(paginationRaw.count),
+      per_page: asNumber(paginationRaw.per_page, 15),
+      current_page: asNumber(paginationRaw.current_page, 1),
+      total_pages: asNumber(paginationRaw.total_pages, 1),
+    },
+  };
+}
+
 function getDashboardErrorMessage(error: unknown) {
   if (error instanceof Error) {
     if (error.message === "missing_api_url") return "NEXT_PUBLIC_API_URL is missing.";
@@ -250,6 +339,9 @@ export default function AdminDashboard() {
   const apiBaseUrl = getAdminApiBaseUrl();
 
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [highlightedAuditLog, setHighlightedAuditLog] = useState<AuditLogEntry | null>(null);
+  const [auditLogTotal, setAuditLogTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -261,15 +353,39 @@ export default function AdminDashboard() {
       if (!apiBaseUrl) throw new Error("missing_api_url");
       const token = getAdminToken();
       if (!token) throw new Error("missing_token");
+      const headers = {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      };
 
-      const response = await axios.get(getAdminApiRequestUrl("/super-admin/dashboard"), {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const [dashboardResponse, auditLogListResponse] = await Promise.all([
+        axios.get(getAdminApiRequestUrl("/super-admin/dashboard"), { headers }),
+        axios.get(getAdminApiRequestUrl("/super-admin/security/audit-logs"), {
+          headers,
+          params: { page: 1, per_page: 8 },
+        }),
+      ]);
 
-      setDashboard(parseDashboardData(response.data));
+      const parsedDashboard = parseDashboardData(dashboardResponse.data);
+      const parsedAuditLogs = parseAuditLogList(auditLogListResponse.data);
+
+      setDashboard(parsedDashboard);
+      setAuditLogs(parsedAuditLogs.rows);
+      setAuditLogTotal(parsedAuditLogs.pagination.total);
+
+      if (parsedAuditLogs.rows.length > 0) {
+        try {
+          const detailResponse = await axios.get(
+            getAdminApiRequestUrl(`/super-admin/security/audit-logs/${parsedAuditLogs.rows[0].id}`),
+            { headers }
+          );
+          setHighlightedAuditLog(parseAuditLogEntry(isRecord(detailResponse.data) ? detailResponse.data.data : null));
+        } catch {
+          setHighlightedAuditLog(parsedAuditLogs.rows[0]);
+        }
+      } else {
+        setHighlightedAuditLog(null);
+      }
     } catch (error) {
       setErrorMessage(getDashboardErrorMessage(error));
     } finally {
@@ -441,6 +557,70 @@ export default function AdminDashboard() {
                     </p>
                   </div>
                 ))}
+              </div>
+            </Section>
+
+            <Section title="Security Audit Logs">
+              <div className="mb-4 flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/70">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Audit coverage</p>
+                  <p className="mt-1 text-lg font-black text-slate-900 dark:text-slate-100">{formatNumber(auditLogTotal)} records</p>
+                </div>
+                {highlightedAuditLog ? (
+                  <span className="rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-black text-cyan-700 dark:text-cyan-200">
+                    Highlight #{highlightedAuditLog.id}
+                  </span>
+                ) : null}
+              </div>
+
+              {highlightedAuditLog ? (
+                <div className="mb-4 rounded-2xl border border-cyan-200/70 bg-cyan-50/70 p-4 dark:border-cyan-400/20 dark:bg-cyan-400/10">
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-200">Sensitive log spotlight</p>
+                  <p className="mt-2 text-base font-black text-slate-900 dark:text-slate-100">{highlightedAuditLog.description}</p>
+                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                    {getSubjectLabel(highlightedAuditLog.subject_type)} #{highlightedAuditLog.subject_id} • {formatDateTime(highlightedAuditLog.created_at)}
+                  </p>
+                  {highlightedAuditLog.causer ? (
+                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      By {highlightedAuditLog.causer.name} ({highlightedAuditLog.causer.email})
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                {auditLogs.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    No audit log records were returned by the backend yet.
+                  </div>
+                ) : (
+                  auditLogs.map((log) => (
+                    <button
+                      key={log.id}
+                      type="button"
+                      onClick={() => setHighlightedAuditLog(log)}
+                      className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                        highlightedAuditLog?.id === log.id
+                          ? "border-cyan-300 bg-cyan-50/70 dark:border-cyan-400/30 dark:bg-cyan-400/10"
+                          : "border-slate-200/80 bg-white/70 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800/70 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{log.description}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {log.event} • {getSubjectLabel(log.subject_type)} #{log.subject_id}
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-black text-slate-400 dark:text-slate-500">#{log.id}</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span>{formatDateTime(log.created_at)}</span>
+                        {log.causer ? <span>{log.causer.name}</span> : null}
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
             </Section>
           </div>

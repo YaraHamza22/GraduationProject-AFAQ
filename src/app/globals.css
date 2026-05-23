@@ -5,12 +5,18 @@
   --background: #f1f5f9; /* Solid slate-100 */
   --foreground: #0f172a;
   --border: #cbd5e1; /* Solid slate-300 */
+  --select-surface: #ffffff;
+  --select-foreground: #0f172a;
+  --select-border: #cbd5e1;
 }
 
 .dark {
   --background: #020617;
   --foreground: #f8fafc;
   --border: rgba(255, 255, 255, 0.1);
+  --select-surface: #0f172a;
+  --select-foreground: #f8fafc;
+  --select-border: rgba(255, 255, 255, 0.14);
 }
 
 body {
@@ -28,6 +34,30 @@ body {
   body {
     background-color: var(--background);
     color: var(--foreground);
+  }
+
+  select {
+    color: var(--foreground);
+    color-scheme: light;
+  }
+
+  .dark select {
+    color-scheme: dark;
+  }
+
+  select,
+  option,
+  optgroup {
+    background-color: var(--select-surface);
+    color: var(--select-foreground);
+  }
+
+  option {
+    font-weight: 600;
+  }
+
+  option:disabled {
+    color: color-mix(in srgb, var(--select-foreground) 35%, transparent);
   }
 }
 

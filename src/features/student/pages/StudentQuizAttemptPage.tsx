@@ -202,12 +202,17 @@ async function requestWithProxyFallback<T>(path: string, config: Parameters<type
   } catch (error) {
     if (!axios.isAxiosError(error)) throw error;
 
+    const isLocalProxy404 =
+      error.response?.status === 404 &&
+      (String(error.config?.url ?? "").startsWith("/api/") ||
+        String(error.config?.url ?? "").includes("localhost:3000/api/"));
+
     const isHtml404 =
       error.response?.status === 404 &&
       ((typeof error.response?.data === "string" && error.response.data.includes("<!DOCTYPE html")) ||
         String(error.response?.headers?.["content-type"] ?? "").includes("text/html"));
 
-    if (!isHtml404) throw error;
+    if (!isHtml404 && !isLocalProxy404) throw error;
 
     // Fallback to direct backend URL when the local /api rewrite is unavailable.
     return axios.request<T>({

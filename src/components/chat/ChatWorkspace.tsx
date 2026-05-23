@@ -22,7 +22,8 @@ type Pagination = { total: number; count: number; per_page: number; current_page
 type Thread = { id: number; title: string; course_id: number | null; created_by: number | null; is_archived: number; updated_at?: string };
 type Message = { id: number; chat_thread_id: number; author_id: number | null; body: string; created_at?: string; updated_at?: string };
 type Participant = { user_id: number; role: string };
-type Contact = { id: number; name: string; email?: string };
+type ContactProfile = { specialization?: string; bio?: string; years_of_experience?: number };
+type Contact = { id: number; name: string; email?: string; gender?: string; avatar_url?: string; profile?: ContactProfile };
 
 type ChatWorkspaceProps = {
   viewerRole: ViewerRole;
@@ -138,7 +139,21 @@ function parseContacts(payload: unknown): Contact[] {
     if (!id) continue;
     const name = str(entry.name) || str(entry.full_name) || str(entry.username) || `User #${id}`;
     const email = str(entry.email);
-    rows.push({ id, name, email: email || undefined });
+    const profile = isObj(entry.profile)
+      ? {
+          specialization: str(entry.profile.specialization) || undefined,
+          bio: str(entry.profile.bio) || undefined,
+          years_of_experience: entry.profile.years_of_experience == null ? undefined : num(entry.profile.years_of_experience),
+        }
+      : undefined;
+    rows.push({
+      id,
+      name,
+      email: email || undefined,
+      gender: str(entry.gender) || undefined,
+      avatar_url: str(entry.avatar_url) || undefined,
+      profile,
+    });
   }
   return rows;
 }
@@ -191,10 +206,15 @@ export default function ChatWorkspace({ viewerRole }: ChatWorkspaceProps) {
 
   const contactById = React.useMemo(() => new Map(contacts.map((c) => [c.id, c])), [contacts]);
   const selectedThread = React.useMemo(() => threads.find((x) => x.id === selectedThreadId) ?? null, [selectedThreadId, threads]);
+  const selectedContact = React.useMemo(() => {
+    const id = num(newRecipientId);
+    return id ? contactById.get(id) ?? null : null;
+  }, [contactById, newRecipientId]);
 
   const contactCandidates = React.useMemo(() => {
     if (viewerRole === "student") {
       return [
+        { path: "/student/instructors", params: { per_page: "200", page: "1" } },
         { path: "/instructors", params: { per_page: "200" } },
         { path: "/users", params: { role: "instructor", per_page: "200" } },
         { path: "/super-admin/instructors", params: { per_page: "200" } },
@@ -289,6 +309,22 @@ export default function ChatWorkspace({ viewerRole }: ChatWorkspaceProps) {
     setNewRecipientId("");
   }, [contactCandidates, headers]);
 
+  const loadStudentInstructorProfile = React.useCallback(async (contactId: number) => {
+    if (!headers || viewerRole !== "student" || !contactId) return;
+    if (contactById.get(contactId)?.profile?.specialization || contactById.get(contactId)?.profile?.bio || contactById.get(contactId)?.profile?.years_of_experience != null) {
+      return;
+    }
+
+    try {
+      const res = await request({ method: "GET", url: `/student/instructors/${contactId}`, headers });
+      const details = parseContacts(res.data)[0];
+      if (!details) return;
+      setContacts((prev) => prev.map((contact) => (contact.id === contactId ? { ...contact, ...details } : contact)));
+    } catch {
+      // Keep the list result if the details endpoint is unavailable.
+    }
+  }, [contactById, headers, viewerRole]);
+
   React.useEffect(() => {
     void loadThreads(1);
     void loadContacts();
@@ -300,6 +336,13 @@ export default function ChatWorkspace({ viewerRole }: ChatWorkspaceProps) {
     void loadParticipants(selectedThreadId);
     void loadMessages(selectedThreadId, 1);
   }, [loadMessages, loadParticipants, selectedThreadId]);
+
+  React.useEffect(() => {
+    if (viewerRole !== "student") return;
+    const contactId = num(newRecipientId);
+    if (!contactId) return;
+    void loadStudentInstructorProfile(contactId);
+  }, [loadStudentInstructorProfile, newRecipientId, viewerRole]);
 
   const refreshFromRealtime = React.useCallback(async () => {
     await loadUnreadCount();
@@ -582,6 +625,27 @@ export default function ChatWorkspace({ viewerRole }: ChatWorkspaceProps) {
                   <option value="">{viewerRole === "student" ? "Choose instructor" : "Choose student"}</option>
                   {visibleContacts.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
                 </select>
+                {viewerRole === "student" && selectedContact ? (
+                  <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 text-sm dark:border-white/10 dark:bg-white/5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-slate-900 dark:text-slate-100">{selectedContact.name}</p>
+                        <p className="text-xs opacity-60">
+                          {selectedContact.profile?.specialization || "Instructor"}
+                          {selectedContact.profile?.years_of_experience != null ? ` • ${selectedContact.profile.years_of_experience} years experience` : ""}
+                        </p>
+                      </div>
+                      {selectedContact.gender ? (
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                          {selectedContact.gender}
+                        </span>
+                      ) : null}
+                    </div>
+                    {selectedContact.profile?.bio ? (
+                      <p className="mt-2 line-clamp-3 text-xs leading-relaxed opacity-70">{selectedContact.profile.bio}</p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <button onClick={() => void createThread()} disabled={creatingThread} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white hover:bg-indigo-500 disabled:opacity-60">
                   {creatingThread ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}Create
                 </button>

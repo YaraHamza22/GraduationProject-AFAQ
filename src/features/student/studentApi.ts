@@ -1,8 +1,6 @@
 "use client";
 
-function normalizeUrl(url: string) {
-  return url.trim().replace(/\/$/, "");
-}
+import { normalizeApiBaseUrl } from "@/lib/apiBaseUrl";
 
 export function getStudentApiBaseUrl() {
   const rawUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -11,7 +9,7 @@ export function getStudentApiBaseUrl() {
     return "";
   }
 
-  return normalizeUrl(rawUrl);
+  return normalizeApiBaseUrl(rawUrl);
 }
 
 export function getStudentApiEndpoint(path: string) {

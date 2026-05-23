@@ -129,7 +129,6 @@ const COURSES_API_PATH = "/super-admin/courses";
 const QUIZZES_API_PATH = "/super-admin/quizzes";
 const QUESTIONS_API_PATH = "/super-admin/questions";
 const QUESTION_OPTIONS_API_PATH = "/super-admin/question-options";
-const QUIZ_INSTRUCTOR_ID = 1;
 
 const initialForm: FormState = {
   title: "",
@@ -248,6 +247,28 @@ function getQuizId(quiz: Quiz) {
   return quiz.quiz_id || quiz.id;
 }
 
+function getInstructorIdValue(value: unknown) {
+  if (!isRecord(value)) return null;
+  const raw = value.user_id ?? value.id ?? value.instructor_id;
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && raw.trim() && Number.isFinite(Number(raw))) return Number(raw);
+  return null;
+}
+
+function getAssignedInstructorIdFromCourse(course: Record<string, unknown> | null) {
+  if (!course) return null;
+  const instructors = Array.isArray(course.instructors) ? course.instructors : [];
+  const primary = instructors.find((item) => isRecord(item) && (item.is_primary === true || item.is_primary === 1 || item.is_primary === "1"));
+  const preferred = primary ?? instructors.find(isRecord);
+  return getInstructorIdValue(preferred);
+}
+
+function getAssignedInstructorIdFromList(items: unknown[]) {
+  const primary = items.find((item) => isRecord(item) && (item.is_primary === true || item.is_primary === 1 || item.is_primary === "1"));
+  const preferred = primary ?? items.find(isRecord);
+  return getInstructorIdValue(preferred);
+}
+
 function getLessonQuizStorageKey(courseId: string, unitId: string) {
   return `lesson-quiz-map:${courseId}:${unitId}`;
 }
@@ -262,6 +283,7 @@ export default function UnitLessonsPage() {
   const unitId = String(params.unitId || "");
 
   const [courseTitle, setCourseTitle] = useState("");
+  const [courseInstructorId, setCourseInstructorId] = useState<number | null>(null);
   const [unitTitle, setUnitTitle] = useState("");
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -390,8 +412,21 @@ export default function UnitLessonsPage() {
 
       const courseItem = extractItem(courseRes.data);
       const unitItem = extractItem(unitRes.data);
+      let resolvedInstructorId = getAssignedInstructorIdFromCourse(courseItem);
+
+      if (!resolvedInstructorId) {
+        try {
+          const instructorsRes = await axios.get(getAdminApiRequestUrl(`${COURSES_API_PATH}/${courseId}/instructors`), {
+            headers: getHeaders(currentLocale),
+          });
+          resolvedInstructorId = getAssignedInstructorIdFromList(extractList(instructorsRes.data));
+        } catch {
+          // Keep null and let quiz creation explain the missing assignment.
+        }
+      }
 
       setCourseTitle(getLocalizedValue(courseItem?.title, currentLocale) || `Course #${courseId}`);
+      setCourseInstructorId(resolvedInstructorId);
       setUnitTitle(getLocalizedValue(unitItem?.title, currentLocale) || `Unit #${unitId}`);
 
       await loadLessons();
@@ -403,6 +438,10 @@ export default function UnitLessonsPage() {
   }, [courseId, currentLocale, getHeaders, loadLessons, unitId]);
 
   const createQuiz = useCallback(async (payloadOverrides?: Record<string, unknown>) => {
+    if (!courseInstructorId) {
+      throw new Error("Assign an instructor to this course before creating a quiz.");
+    }
+
     const payload = {
       title: {
         en: form.title.trim(),
@@ -416,7 +455,7 @@ export default function UnitLessonsPage() {
       passing_score: 60,
       type: "quiz",
       status: "published",
-      instructor_id: QUIZ_INSTRUCTOR_ID,
+      instructor_id: courseInstructorId,
       course_id: Number(courseId),
       courseId: Number(courseId),
       quizable_type: "course",
@@ -433,9 +472,13 @@ export default function UnitLessonsPage() {
       throw new Error("Quiz creation did not return 200.");
     }
     return extractItem(res.data) as Quiz | null;
-  }, [courseId, currentLocale, form.actual_duration_minutes, form.description, form.title, getHeaders]);
+  }, [courseId, courseInstructorId, currentLocale, form.actual_duration_minutes, form.description, form.title, getHeaders]);
 
   const updateQuiz = useCallback(async (quizId: string | number) => {
+    if (!courseInstructorId) {
+      throw new Error("Assign an instructor to this course before updating a quiz.");
+    }
+
     const payload = {
       title: {
         en: form.title.trim(),
@@ -449,7 +492,7 @@ export default function UnitLessonsPage() {
       passing_score: 60,
       type: "quiz",
       status: "draft",
-      instructor_id: QUIZ_INSTRUCTOR_ID,
+      instructor_id: courseInstructorId,
       course_id: Number(courseId),
       courseId: Number(courseId),
       quizable_type: "course",
@@ -462,7 +505,7 @@ export default function UnitLessonsPage() {
       headers: getHeaders(currentLocale),
     });
     return extractItem(res.data) as Quiz | null;
-  }, [courseId, currentLocale, form.actual_duration_minutes, form.description, form.title, getHeaders]);
+  }, [courseId, courseInstructorId, currentLocale, form.actual_duration_minutes, form.description, form.title, getHeaders]);
 
   const getQuizById = useCallback(async (quizId: string | number) => {
     const res = await axios.get(getAdminApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}`), {
@@ -490,11 +533,11 @@ export default function UnitLessonsPage() {
       params: {
         quizable_type: "course",
         type: "quiz",
-        instructor_id: QUIZ_INSTRUCTOR_ID,
+        course_id: Number(courseId),
       },
     });
     return extractList(res.data) as Quiz[];
-  }, [currentLocale, getHeaders]);
+  }, [courseId, currentLocale, getHeaders]);
 
   useEffect(() => {
     if (courseId && unitId) void loadData();
@@ -790,6 +833,10 @@ export default function UnitLessonsPage() {
   const handleConfirmCreateQuizForLesson = async () => {
     if (!selectedLessonForQuiz) return;
     try {
+      if (!courseInstructorId) {
+        throw new Error("Assign an instructor to this course before creating a quiz.");
+      }
+
       const lessonId = getLessonId(selectedLessonForQuiz);
       let activeQuiz: Quiz | null = null;
       const fallbackTitle = getLocalizedValue(selectedLessonForQuiz.title, currentLocale) || `Lesson ${lessonId}`;
@@ -806,7 +853,7 @@ export default function UnitLessonsPage() {
         passing_score: Number(quizCreateForm.passingScore || 60),
         type: "quiz",
         status: quizCreateForm.status,
-        instructor_id: QUIZ_INSTRUCTOR_ID,
+        instructor_id: courseInstructorId,
         course_id: Number(courseId),
         courseId: Number(courseId),
         quizable_type: quizCreateForm.quizableType,

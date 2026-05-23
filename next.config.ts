@@ -1,20 +1,27 @@
 import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === 'production';
-const defaultBackendOrigin = "http://127.0.0.1:8000";
+const defaultBackendOrigin = "https://afaaq-api.onrender.com";
+const apiVersionPrefix = "/api/v1";
 
-function normalizeUrl(url: string) {
-  return url.replace(/\/$/, "");
+function normalizeApiBaseUrl(url: string) {
+  const sanitizedUrl = url.trim().replace(/\/+$/, "");
+
+  if (/\/api\/v\d+$/i.test(sanitizedUrl) || sanitizedUrl.endsWith("/api")) {
+    return sanitizedUrl;
+  }
+
+  return `${sanitizedUrl}${apiVersionPrefix}`;
 }
 
 function getBackendApiUrl() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
   if (!apiUrl) {
-    return `${defaultBackendOrigin}/api`;
+    return normalizeApiBaseUrl(defaultBackendOrigin);
   }
 
-  return normalizeUrl(apiUrl);
+  return normalizeApiBaseUrl(apiUrl);
 }
 
 const nextConfig: NextConfig = {

@@ -21,7 +21,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { getAdminApiBaseUrl, getAdminApiEndpoint, getAdminApiRequestUrl } from "@/features/admin/adminApi";
+import { getAdminApiBaseUrl, getSuperAdminAuthApiEndpoint, getSuperAdminAuthApiRequestUrl } from "@/features/admin/adminApi";
 import {
   extractAdminMessage,
   extractAdminToken,
@@ -156,7 +156,7 @@ export default function AdminLoginScreen() {
 
     try {
       const response = await axios.post(
-        getAdminApiRequestUrl("/auth/login"),
+        getSuperAdminAuthApiRequestUrl("/login"),
         {
           email: credentials.email,
           password: credentials.password,
@@ -267,7 +267,7 @@ export default function AdminLoginScreen() {
                     LIVE AUTH ENDPOINT
                   </p>
                 </div>
-                <p className="mt-3 break-all text-sm text-black/75 dark:text-white/75">{getAdminApiEndpoint("/auth/login")}</p>
+                <p className="mt-3 break-all text-sm text-black/75 dark:text-white/75">{getSuperAdminAuthApiEndpoint("/login")}</p>
               </motion.div>
             </div>
           </section>

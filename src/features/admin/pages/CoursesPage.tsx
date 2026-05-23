@@ -191,16 +191,33 @@ function getLocalizedInputPair(
 }
 
 function getInstructorIdValue(inst: Instructor) {
-  return inst.id ?? inst.instructor_id ?? inst.user_id;
+  return inst.user_id ?? inst.id ?? inst.instructor_id;
 }
 
 function extractInstructorsFromPayload(payload: any): Instructor[] {
-  const direct = payload?.data?.data ?? payload?.data ?? payload ?? [];
-  if (Array.isArray(direct)) return direct;
-  if (Array.isArray(direct?.instructors)) return direct.instructors;
-  if (Array.isArray(direct?.items)) return direct.items;
-  if (direct && typeof direct === "object") {
-    const single = direct.instructor ?? direct.user ?? direct;
+  const root = payload?.data ?? payload ?? {};
+  const candidates = [
+    root?.data,
+    root?.instructors,
+    root?.items,
+    root?.users,
+    root,
+  ];
+
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate as Instructor[];
+    if (candidate && typeof candidate === "object") {
+      if (Array.isArray((candidate as any).data)) return (candidate as any).data as Instructor[];
+      if (Array.isArray((candidate as any).instructors)) return (candidate as any).instructors as Instructor[];
+      if (Array.isArray((candidate as any).items)) return (candidate as any).items as Instructor[];
+      if (Array.isArray((candidate as any).users)) return (candidate as any).users as Instructor[];
+      const single = (candidate as any).instructor ?? (candidate as any).user;
+      if (single && typeof single === "object") return [single as Instructor];
+    }
+  }
+
+  if (root && typeof root === "object") {
+    const single = root.instructor ?? root.user;
     if (single && typeof single === "object") return [single as Instructor];
   }
   return [];
@@ -420,7 +437,7 @@ export default function CoursesPage() {
     try {
       const res = await axios.get(
         getAdminApiRequestUrl("/super-admin/instructors"),
-        { headers: getHeaders(currentLocale) }
+        { headers: getHeaders(currentLocale), params: { per_page: 100 } }
       );
       const data = extractInstructorsFromPayload(res);
       setInstructors(Array.isArray(data) ? data : []);
@@ -468,7 +485,8 @@ export default function CoursesPage() {
       await loadData();
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (error) {
-      setListError(getErrorMessage(error, "Failed to assign instructor."));
+      const fieldError = axios.isAxiosError(error) ? error.response?.data?.errors?.instructor_id?.[0] : null;
+      setListError(typeof fieldError === "string" ? fieldError : getErrorMessage(error, "Failed to assign instructor."));
       setIsAssignModalOpen(false);
     } finally {
       setIsAssigning(false);

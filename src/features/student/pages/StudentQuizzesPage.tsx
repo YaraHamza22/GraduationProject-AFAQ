@@ -86,11 +86,19 @@ function isHtml404AxiosError(error: unknown) {
   );
 }
 
+function isLocalProxy404(error: unknown) {
+  if (!axios.isAxiosError(error)) return false;
+  if (error.response?.status !== 404) return false;
+
+  const requestedUrl = String(error.config?.url ?? "");
+  return requestedUrl.startsWith("/api/") || requestedUrl.includes("localhost:3000/api/");
+}
+
 async function requestWithProxyFallback<T>(path: string, config: Parameters<typeof axios.request>[0]) {
   try {
     return await axios.request<T>({ ...config, url: getStudentApiRequestUrl(path) });
   } catch (error) {
-    if (!isHtml404AxiosError(error)) throw error;
+    if (!isHtml404AxiosError(error) && !isLocalProxy404(error)) throw error;
     return axios.request<T>({ ...config, url: getStudentApiEndpoint(path) });
   }
 }
@@ -481,19 +489,27 @@ export default function StudentQuizzesPage() {
           }
         }
 
-        if (!attemptId) throw new Error("attempt_not_found");
-
-        try {
-          await requestWithProxyFallback(`/attempts/${attemptId}/start`, {
-            method: "POST",
-            headers,
-            data: {},
-          });
-        } catch {
-          // ignore already-started/invalid-state
+        if (attemptId) {
+          try {
+            await requestWithProxyFallback(`/attempts/${attemptId}/start`, {
+              method: "POST",
+              headers,
+              data: {},
+            });
+          } catch {
+            // ignore already-started/invalid-state
+          }
         }
 
-        router.push(`/student/quizzes/${quiz.id}/attempt?course_id=${quiz.courseId}&attempt_id=${attemptId}`);
+        const query = new URLSearchParams();
+        if (quiz.courseId) {
+          query.set("course_id", String(quiz.courseId));
+        }
+        if (attemptId) {
+          query.set("attempt_id", String(attemptId));
+        }
+
+        router.push(`/student/quizzes/${quiz.id}/attempt${query.toString() ? `?${query.toString()}` : ""}`);
       } catch (error) {
         if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
           setErrorMessage(error.response.data.message);

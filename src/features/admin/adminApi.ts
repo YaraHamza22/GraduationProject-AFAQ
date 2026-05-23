@@ -1,10 +1,9 @@
 "use client";
 
-const adminProxyPrefix = "/api";
+import { normalizeApiBaseUrl } from "@/lib/apiBaseUrl";
 
-function normalizeUrl(url: string) {
-  return url.trim().replace(/\/$/, "");
-}
+const adminProxyPrefix = "/api";
+const superAdminAuthPrefix = "/super-admin/auth";
 
 export function getAdminApiBaseUrl() {
   const rawUrl = process.env.NEXT_PUBLIC_API_URL;
@@ -13,7 +12,7 @@ export function getAdminApiBaseUrl() {
     return "";
   }
 
-  return normalizeUrl(rawUrl);
+  return normalizeApiBaseUrl(rawUrl);
 }
 
 export function getAdminApiEndpoint(path: string) {
@@ -31,4 +30,17 @@ export function getAdminApiRequestUrl(path: string) {
   }
 
   return getAdminApiEndpoint(normalizedPath);
+}
+
+function getSuperAdminAuthPath(path: string) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${superAdminAuthPrefix}${normalizedPath}`;
+}
+
+export function getSuperAdminAuthApiEndpoint(path: string) {
+  return getAdminApiEndpoint(getSuperAdminAuthPath(path));
+}
+
+export function getSuperAdminAuthApiRequestUrl(path: string) {
+  return getAdminApiRequestUrl(getSuperAdminAuthPath(path));
 }

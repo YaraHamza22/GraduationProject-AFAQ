@@ -12,7 +12,7 @@ import {
   Shield,
   UserCircle,
 } from "lucide-react";
-import { getAdminApiBaseUrl, getAdminApiRequestUrl } from "@/features/admin/adminApi";
+import { getAdminApiBaseUrl, getAdminApiRequestUrl, getSuperAdminAuthApiRequestUrl } from "@/features/admin/adminApi";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import {
   type AdminSessionUser,
@@ -111,7 +111,7 @@ export default function AdminProfilePage() {
         throw new Error("missing_token");
       }
 
-      const response = await axios.get(getAdminApiRequestUrl("/auth/profile"), {
+      const response = await axios.get(getSuperAdminAuthApiRequestUrl("/profile"), {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
