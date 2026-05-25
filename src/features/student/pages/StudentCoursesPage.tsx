@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiRequestUrl } from "@/features/student/studentApi";
-import { getStudentToken } from "@/features/student/studentSession";
+import { getStoredStudentId, getStudentToken } from "@/features/student/studentSession";
 import { motion, AnimatePresence } from "framer-motion";
 
 // --- Types ---
@@ -174,15 +174,26 @@ export default function StudentCoursesPage() {
     setSuccessMessage(null);
     try {
       const token = getStudentToken();
+      const learnerId = getStoredStudentId();
+
+      if (!token || learnerId === null) {
+        throw new Error("missing_student_session");
+      }
+
       await axios.post(getStudentApiRequestUrl("/enrollments"),
-        { course_id: courseId },
+        { course_id: courseId, learner_id: learnerId },
         { headers: { Accept: "application/json", Authorization: `Bearer ${token}` } }
       );
       setSuccessMessage("Successfully enrolled in the course!");
       void fetchData(); // Refresh both lists
       setActiveTab("my-learning");
     } catch (error) {
-      setErrorMessage("Failed to enroll in the course.");
+      const apiMessage =
+        axios.isAxiosError(error) && typeof error.response?.data?.message === "string"
+          ? error.response.data.message
+          : null;
+
+      setErrorMessage(apiMessage || "Failed to enroll in the course.");
     } finally {
       setIsActionLoading(null);
     }

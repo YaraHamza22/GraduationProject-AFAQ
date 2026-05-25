@@ -6,10 +6,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
   BadgeCheck,
-  BookOpen,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock3,
+  Eye,
   FileQuestion,
   Loader2,
   Pencil,
@@ -20,6 +21,8 @@ import {
   Sparkles,
   Target,
   Trash2,
+  Trophy,
+  UserRound,
   X,
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
@@ -68,6 +71,66 @@ type Question = {
   order_index?: number | string;
   is_required?: boolean;
   options?: QuestionOption[];
+};
+
+type QuizAttemptStudent = {
+  id: number | null;
+  name: string;
+  email: string;
+};
+
+type QuizAttemptAnswer = {
+  question_id: number;
+  selected_option_id: number | null;
+  boolean_answer: boolean | null;
+  answer_text: string;
+  question_score: number | null;
+  is_correct: boolean | null;
+};
+
+type QuizAttemptResult = {
+  id: number;
+  quiz_id: number | null;
+  student_id: number | null;
+  status: string;
+  score: number | null;
+  is_passed: boolean | null;
+  submitted_at: string | null;
+  graded_at: string | null;
+  student: QuizAttemptStudent;
+  graded_by_name: string;
+  answers: QuizAttemptAnswer[];
+};
+
+type ResultsSummary = {
+  submitted: number;
+  graded: number;
+  total: number;
+};
+
+type ResultsPagination = {
+  total: number;
+  current_page: number;
+  total_pages: number;
+};
+
+type QuizResultsState = {
+  activeStatus: "submitted" | "graded";
+  submitted: QuizAttemptResult[];
+  graded: QuizAttemptResult[];
+  pagination: Record<"submitted" | "graded", ResultsPagination>;
+  summary: ResultsSummary;
+  loading: boolean;
+  error: string | null;
+};
+
+type GradeDraftRow = {
+  questionId: number;
+  prompt: string;
+  studentAnswer: string;
+  maxScore: number;
+  earnedScore: string;
+  isCorrect: boolean;
 };
 
 type QuizFormState = {
@@ -143,6 +206,18 @@ const initialQuestionForm: QuestionFormState = {
   type: "multiple_choice",
   trueFalseAnswer: true,
   options: createInitialOptions(),
+};
+
+const initialResultsPagination: ResultsPagination = {
+  total: 0,
+  current_page: 1,
+  total_pages: 1,
+};
+
+const initialResultsSummary: ResultsSummary = {
+  submitted: 0,
+  graded: 0,
+  total: 0,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -259,6 +334,120 @@ function normalizeQuestionOptions(question: Record<string, unknown>): QuestionOp
   return nested as QuestionOption[];
 }
 
+function normalizeAttemptStudent(item: Record<string, unknown>): QuizAttemptStudent {
+  const nested = isRecord(item.student) ? item.student : null;
+  return {
+    id: toNumber(nested?.id) ?? toNumber(item.student_id),
+    name:
+      getStringValue(nested?.name) ||
+      getStringValue(item.student_name) ||
+      `Student #${toNumber(nested?.id) ?? toNumber(item.student_id) ?? "--"}`,
+    email: getStringValue(nested?.email) || getStringValue(item.student_email),
+  };
+}
+
+function normalizeAttemptAnswers(item: Record<string, unknown>): QuizAttemptAnswer[] {
+  const rows = Array.isArray(item.answers) ? item.answers.filter(isRecord) : [];
+  return rows
+    .map((answer) => {
+      const questionId = toNumber(answer.question_id);
+      if (!questionId) return null;
+      return {
+        question_id: questionId,
+        selected_option_id: toNumber(answer.selected_option_id),
+        boolean_answer: typeof answer.boolean_answer === "boolean" ? answer.boolean_answer : null,
+        answer_text:
+          getLocalizedValue(answer.answer_text, "en") ||
+          getLocalizedValue(answer.answer_text, "ar") ||
+          getStringValue(answer.answer_text),
+        question_score: toNumber(answer.question_score),
+        is_correct: typeof answer.is_correct === "boolean" ? answer.is_correct : null,
+      } satisfies QuizAttemptAnswer;
+    })
+    .filter((answer): answer is QuizAttemptAnswer => answer !== null);
+}
+
+function normalizeAttemptResult(item: Record<string, unknown>): QuizAttemptResult | null {
+  const id = toNumber(item.id);
+  if (!id) return null;
+
+  const grader = isRecord(item.grader) ? item.grader : null;
+  return {
+    id,
+    quiz_id: toNumber(item.quiz_id),
+    student_id: toNumber(item.student_id),
+    status: getStringValue(item.status) || "unknown",
+    score: toNumber(item.score),
+    is_passed: typeof item.is_passed === "boolean" ? item.is_passed : null,
+    submitted_at: getStringValue(item.submitted_at) || null,
+    graded_at: getStringValue(item.graded_at) || null,
+    student: normalizeAttemptStudent(item),
+    graded_by_name:
+      getStringValue(grader?.name) ||
+      getStringValue(item.graded_by_name) ||
+      "",
+    answers: normalizeAttemptAnswers(item),
+  };
+}
+
+function parseResultsEnvelope(payload: unknown) {
+  const root = isRecord(payload) ? payload : {};
+  const outer = isRecord(root.data) ? root.data : null;
+  const data = outer && isRecord(outer.data) ? outer.data : outer && Array.isArray(outer.data) ? outer : outer;
+
+  const attemptsSource =
+    isRecord(data) && Array.isArray(data.attempts)
+      ? data.attempts
+      : isRecord(data) && Array.isArray(data.results)
+        ? data.results
+        : Array.isArray((data as { data?: unknown[] })?.data)
+          ? (data as { data: unknown[] }).data
+          : [];
+
+  const attempts = attemptsSource
+    .filter(isRecord)
+    .map(normalizeAttemptResult)
+    .filter((item): item is QuizAttemptResult => item !== null);
+
+  const paginationSource =
+    (isRecord(data) && isRecord(data.pagination) ? data.pagination : null) ??
+    (isRecord(outer) && isRecord(outer.pagination) ? outer.pagination : null) ??
+    (isRecord(root.pagination) ? root.pagination : null);
+
+  const summarySource =
+    (isRecord(data) && isRecord(data.summary) ? data.summary : null) ??
+    (isRecord(outer) && isRecord(outer.summary) ? outer.summary : null);
+
+  return {
+    attempts,
+    pagination: {
+      total: toNumber(paginationSource?.total) ?? attempts.length,
+      current_page: toNumber(paginationSource?.current_page) ?? 1,
+      total_pages: toNumber(paginationSource?.total_pages) ?? 1,
+    } satisfies ResultsPagination,
+    summary: {
+      submitted: toNumber(summarySource?.submitted) ?? 0,
+      graded: toNumber(summarySource?.graded) ?? 0,
+      total: toNumber(summarySource?.total) ?? attempts.length,
+    } satisfies ResultsSummary,
+  };
+}
+
+function createEmptyResultsState(): QuizResultsState {
+  return {
+    activeStatus: "submitted",
+    submitted: [],
+    graded: [],
+    pagination: {
+      submitted: { ...initialResultsPagination },
+      graded: { ...initialResultsPagination },
+    },
+    summary: { ...initialResultsSummary },
+    loading: false,
+    error: null,
+  };
+}
+
 function normalizeQuiz(item: Record<string, unknown>): Quiz {
   const questionRows = Array.isArray(item.questions) ? item.questions.filter(isRecord) : [];
   return {
@@ -331,6 +520,11 @@ export default function InstructorQuizzesPage() {
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
   const [questionForm, setQuestionForm] = useState<QuestionFormState>(initialQuestionForm);
+  const [quizResults, setQuizResults] = useState<Record<number, QuizResultsState>>({});
+  const [selectedAttempt, setSelectedAttempt] = useState<QuizAttemptResult | null>(null);
+  const [gradingQuiz, setGradingQuiz] = useState<Quiz | null>(null);
+  const [gradeDraft, setGradeDraft] = useState<GradeDraftRow[]>([]);
+  const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
 
   const buildAuthHeaders = useCallback(() => {
     const token = getStudentToken();
@@ -440,6 +634,11 @@ export default function InstructorQuizzesPage() {
     setQuestionForm({ ...initialQuestionForm, options: createInitialOptions() });
   }, []);
 
+  const getResultState = useCallback(
+    (quizId: number) => quizResults[quizId] ?? createEmptyResultsState(),
+    [quizResults]
+  );
+
   const openCreateQuizModal = () => {
     resetQuizForm();
     setIsQuizModalOpen(true);
@@ -547,12 +746,121 @@ export default function InstructorQuizzesPage() {
     [buildAuthHeaders]
   );
 
+  const loadQuizResults = useCallback(
+    async (quizId: number, status: "submitted" | "graded" = "submitted", page = 1) => {
+      setQuizResults((current) => {
+        const state = current[quizId] ?? createEmptyResultsState();
+        return {
+          ...current,
+          [quizId]: {
+            ...state,
+            activeStatus: status,
+            loading: true,
+            error: null,
+          },
+        };
+      });
+
+      try {
+        const response = await axios.get(getStudentApiRequestUrl(`/quizzes/${quizId}/results`), {
+          headers: buildAuthHeaders(),
+          params: { status, page, per_page: 20 },
+        });
+
+        const parsed = parseResultsEnvelope(response.data);
+        setQuizResults((current) => {
+          const state = current[quizId] ?? createEmptyResultsState();
+          return {
+            ...current,
+            [quizId]: {
+              ...state,
+              activeStatus: status,
+              [status]: parsed.attempts,
+              pagination: {
+                ...state.pagination,
+                [status]: parsed.pagination,
+              },
+              summary: parsed.summary,
+              loading: false,
+              error: null,
+            },
+          };
+        });
+      } catch (error) {
+        setQuizResults((current) => {
+          const state = current[quizId] ?? createEmptyResultsState();
+          return {
+            ...current,
+            [quizId]: {
+              ...state,
+              activeStatus: status,
+              loading: false,
+              error: getErrorMessage(error, "Failed to load quiz results."),
+            },
+          };
+        });
+      }
+    },
+    [buildAuthHeaders]
+  );
+
+  const closeGradeModal = useCallback(() => {
+    setIsGradeModalOpen(false);
+    setSelectedAttempt(null);
+    setGradingQuiz(null);
+    setGradeDraft([]);
+  }, []);
+
+  const openGradeModal = useCallback(
+    (quiz: Quiz, attempt: QuizAttemptResult) => {
+      const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
+      const rows = questions.map((question) => {
+        const questionId = getQuestionId(question);
+        const answer = attempt.answers.find((item) => item.question_id === questionId);
+        const selectedOption =
+          answer?.selected_option_id != null
+            ? (question.options ?? []).find((option) => toNumber(option.id) === answer.selected_option_id)
+            : null;
+        const studentAnswer =
+          answer?.answer_text ||
+          (answer?.boolean_answer == null ? "" : answer.boolean_answer ? "True" : "False") ||
+          (selectedOption ? getOptionText(selectedOption, currentLocale) || getOptionText(selectedOption, "en") : "") ||
+          "No answer provided";
+
+        return {
+          questionId,
+          prompt: getLocalizedValue(question.question_text ?? question.text, currentLocale) || `Question #${questionId}`,
+          studentAnswer,
+          maxScore: toNumber(question.point) ?? 0,
+          earnedScore: String(answer?.question_score ?? toNumber(question.point) ?? 0),
+          isCorrect: answer?.is_correct ?? false,
+        } satisfies GradeDraftRow;
+      });
+
+      setGradingQuiz(quiz);
+      setSelectedAttempt(attempt);
+      setGradeDraft(rows);
+      setIsGradeModalOpen(true);
+    },
+    [currentLocale]
+  );
+
+  const updateGradeDraft = useCallback((questionId: number, patch: Partial<GradeDraftRow>) => {
+    setGradeDraft((current) =>
+      current.map((row) => (row.questionId === questionId ? { ...row, ...patch } : row))
+    );
+  }, []);
+
   const handleSaveQuiz = async (event: React.FormEvent) => {
     event.preventDefault();
     setIsSubmitting(true);
     setErrorMessage(null);
 
     try {
+      if (!currentInstructorId || currentInstructorId <= 0) {
+        throw new Error("Instructor session is missing. Please log in again.");
+      }
+
       const resolvedCourseId = Number(quizForm.courseId);
       if (!Number.isFinite(resolvedCourseId) || resolvedCourseId <= 0) {
         throw new Error("Please select a valid course.");
@@ -564,6 +872,7 @@ export default function InstructorQuizzesPage() {
       const descriptionAr = quizForm.descriptionAr.trim();
 
       const payload = {
+        instructor_id: currentInstructorId,
         title: {
           en: titleEn || titleAr || "Quiz",
           ar: titleAr || titleEn || "اختبار",
@@ -614,7 +923,10 @@ export default function InstructorQuizzesPage() {
       setExpandedQuizId(savedQuizId);
       closeQuizModal();
     } catch (error) {
-      if (error instanceof Error && error.message === "Please select a valid course.") {
+      if (
+        error instanceof Error &&
+        (error.message === "Please select a valid course." || error.message === "Instructor session is missing. Please log in again.")
+      ) {
         setErrorMessage(error.message);
       } else {
         setErrorMessage(getErrorMessage(error, "Failed to save quiz."));
@@ -859,6 +1171,54 @@ export default function InstructorQuizzesPage() {
     }
   };
 
+  const handleGradeAttempt = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedAttempt || !gradingQuiz) return;
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const answers = gradeDraft.map((row) => {
+        const earnedScore = Number(row.earnedScore);
+        if (!Number.isFinite(earnedScore) || earnedScore < 0) {
+          throw new Error(`Enter a valid score for question ${row.questionId}.`);
+        }
+        if (earnedScore > row.maxScore) {
+          throw new Error(`Question ${row.questionId} score cannot exceed ${row.maxScore}.`);
+        }
+
+        return {
+          question_id: row.questionId,
+          earned_score: earnedScore,
+          is_correct: row.isCorrect,
+        };
+      });
+
+      await axios.post(
+        getStudentApiRequestUrl(`/attempts/${selectedAttempt.id}/grade`),
+        { answers },
+        { headers: buildAuthHeaders() }
+      );
+
+      setSuccessMessage(`Graded ${selectedAttempt.student.name} successfully.`);
+      closeGradeModal();
+      const quizId = getQuizId(gradingQuiz);
+      await Promise.all([
+        loadQuizResults(quizId, "submitted"),
+        loadQuizResults(quizId, "graded"),
+      ]);
+    } catch (error) {
+      if (error instanceof Error && error.message.trim()) {
+        setErrorMessage(error.message);
+      } else {
+        setErrorMessage(getErrorMessage(error, "Failed to grade attempt."));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className={`min-h-screen bg-(--background) p-4 text-(--foreground) md:p-8 lg:p-12 ${isRTL ? "text-right" : ""}`}>
       <div className="mx-auto max-w-[1500px]">
@@ -1038,6 +1398,18 @@ export default function InstructorQuizzesPage() {
                     <div className={`flex flex-wrap gap-2 lg:max-w-[440px] ${isRTL ? "justify-end" : ""}`}>
                       <button
                         type="button"
+                        onClick={() => {
+                          setExpandedQuizId(quizId);
+                          void loadQuizDetails(quizId, true);
+                          void loadQuizResults(quizId, "submitted");
+                        }}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200/80 bg-emerald-50 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-emerald-700 transition hover:border-emerald-500/50 hover:bg-white dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
+                      >
+                        <Trophy className="h-4 w-4" />
+                        Results
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void loadQuizDetails(quizId)}
                         className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-700 transition hover:border-indigo-500/50 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-white/80"
                       >
@@ -1135,6 +1507,137 @@ export default function InstructorQuizzesPage() {
                           ))}
                         </div>
                       )}
+
+                      <div className="mt-6 rounded-[1.9rem] border border-slate-200/90 bg-white/80 p-5 shadow-[0_16px_34px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-white/[0.03]">
+                        {(() => {
+                          const resultState = getResultState(quizId);
+                          const activeStatus = resultState.activeStatus;
+                          const attempts = resultState[activeStatus];
+                          const activePagination = resultState.pagination[activeStatus];
+
+                          return (
+                            <div className="space-y-4">
+                              <div className={`flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between ${isRTL ? "lg:flex-row-reverse" : ""}`}>
+                                <div>
+                                  <p className="text-[11px] font-black uppercase tracking-[0.24em] text-indigo-400">Quiz Results</p>
+                                  <h3 className="mt-2 text-2xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
+                                    Students and grading flow
+                                  </h3>
+                                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300/70">
+                                    Review submitted attempts, see student names, and grade manually when needed.
+                                  </p>
+                                </div>
+
+                                <div className={`flex flex-wrap gap-2 ${isRTL ? "justify-end" : ""}`}>
+                                  <span className="rounded-2xl border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-xs font-black text-amber-600 dark:text-amber-300">
+                                    Submitted {resultState.summary.submitted}
+                                  </span>
+                                  <span className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-600 dark:text-emerald-300">
+                                    Graded {resultState.summary.graded}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => void loadQuizResults(quizId, activeStatus, activePagination.current_page)}
+                                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80"
+                                  >
+                                    <RefreshCw className="h-4 w-4" />
+                                    Refresh
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className={`flex flex-wrap gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                                <button
+                                  type="button"
+                                  onClick={() => void loadQuizResults(quizId, "submitted")}
+                                  className={`rounded-2xl px-4 py-2 text-xs font-black uppercase tracking-[0.18em] transition ${
+                                    activeStatus === "submitted"
+                                      ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+                                      : "border border-slate-200/80 bg-white text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+                                  }`}
+                                >
+                                  Submitted
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void loadQuizResults(quizId, "graded")}
+                                  className={`rounded-2xl px-4 py-2 text-xs font-black uppercase tracking-[0.18em] transition ${
+                                    activeStatus === "graded"
+                                      ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950"
+                                      : "border border-slate-200/80 bg-white text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+                                  }`}
+                                >
+                                  Graded
+                                </button>
+                              </div>
+
+                              {resultState.error ? (
+                                <div className="rounded-2xl border border-rose-300/40 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                                  {resultState.error}
+                                </div>
+                              ) : null}
+
+                              {resultState.loading ? (
+                                <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-4 text-sm opacity-60 dark:border-white/10 dark:bg-white/[0.04]">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Loading quiz results...
+                                </div>
+                              ) : attempts.length === 0 ? (
+                                <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm opacity-50 dark:border-white/15">
+                                  No {activeStatus} attempts yet.
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  {attempts.map((attempt) => (
+                                    <div
+                                      key={attempt.id}
+                                      className={`rounded-[1.5rem] border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/[0.04] ${isRTL ? "text-right" : ""}`}
+                                    >
+                                      <div className={`flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between ${isRTL ? "lg:flex-row-reverse" : ""}`}>
+                                        <div className="min-w-0 flex-1">
+                                          <div className={`flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] ${isRTL ? "flex-row-reverse" : ""}`}>
+                                            <span className="rounded-full bg-indigo-500/10 px-2.5 py-1 text-indigo-500 dark:text-indigo-300">
+                                              Attempt #{attempt.id}
+                                            </span>
+                                            <span className="rounded-full bg-slate-200 px-2.5 py-1 text-slate-500 dark:bg-white/10 dark:text-white/60">
+                                              {attempt.status}
+                                            </span>
+                                          </div>
+                                          <div className={`mt-3 flex flex-wrap items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
+                                            <div className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2 text-sm font-bold text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/85">
+                                              <UserRound className="h-4 w-4 text-cyan-400" />
+                                              <span>{attempt.student.name}</span>
+                                            </div>
+                                            {attempt.student.email ? (
+                                              <span className="text-sm text-slate-500 dark:text-slate-300/60">{attempt.student.email}</span>
+                                            ) : null}
+                                          </div>
+                                          <div className={`mt-3 flex flex-wrap gap-3 text-xs font-bold text-slate-500 dark:text-slate-300/60 ${isRTL ? "flex-row-reverse" : ""}`}>
+                                            <span>Submitted: {attempt.submitted_at || "--"}</span>
+                                            <span>Score: {attempt.score ?? "--"}</span>
+                                            {attempt.graded_by_name ? <span>Graded by: {attempt.graded_by_name}</span> : null}
+                                          </div>
+                                        </div>
+
+                                        <div className={`flex flex-wrap gap-2 ${isRTL ? "justify-end" : ""}`}>
+                                          <button
+                                            type="button"
+                                            onClick={() => openGradeModal(quiz, attempt)}
+                                            className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#0ea5e9_0%,#2563eb_100%)] px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white shadow-[0_14px_34px_rgba(37,99,235,0.24)] transition hover:translate-y-[-1px]"
+                                          >
+                                            <Eye className="h-4 w-4" />
+                                            {activeStatus === "submitted" ? "Review & Grade" : "View Grade"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -1504,6 +2007,108 @@ export default function InstructorQuizzesPage() {
                     {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                     {editingQuestionId ? "Save Question" : "Create Question"}
                   </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isGradeModalOpen && selectedAttempt && gradingQuiz ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeGradeModal} className="absolute inset-0 bg-slate-950/75" />
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 18 }}
+              className="relative z-10 w-full max-w-5xl overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-[#0A0F1D]"
+            >
+              <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_28%),linear-gradient(145deg,#ffffff_0%,#f8fafc_100%)] px-8 py-7 dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.16),transparent_28%),linear-gradient(145deg,#0b1120_0%,#0a0f1d_100%)]">
+                <div className={`flex items-start justify-between gap-4 ${isRTL ? "flex-row-reverse" : ""}`}>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.25em] text-sky-400">Instructor Grading Desk</p>
+                    <h2 className="mt-2 text-3xl font-black tracking-[-0.04em]">
+                      {selectedAttempt.student.name}
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-300/70">
+                      Quiz: {getLocalizedValue(gradingQuiz.title, currentLocale) || "Untitled quiz"} • Attempt #{selectedAttempt.id}
+                    </p>
+                  </div>
+                  <button type="button" onClick={closeGradeModal} className="rounded-xl border border-slate-200 p-2 transition hover:border-sky-500/50 dark:border-white/10">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <form onSubmit={handleGradeAttempt} className="space-y-6 px-8 py-7">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/45">Student</p>
+                    <p className="mt-2 text-lg font-black">{selectedAttempt.student.name}</p>
+                    <p className="mt-1 text-sm opacity-60">{selectedAttempt.student.email || "No email"}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/45">Attempt Status</p>
+                    <p className="mt-2 text-lg font-black uppercase">{selectedAttempt.status}</p>
+                    <p className="mt-1 text-sm opacity-60">Submitted at {selectedAttempt.submitted_at || "--"}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/45">Current Score</p>
+                    <p className="mt-2 text-lg font-black">{selectedAttempt.score ?? "--"}</p>
+                    <p className="mt-1 text-sm opacity-60">Pass result: {selectedAttempt.is_passed == null ? "--" : selectedAttempt.is_passed ? "Passed" : "Not passed"}</p>
+                  </div>
+                </div>
+
+                <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+                  {gradeDraft.map((row, index) => (
+                    <div key={row.questionId} className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 dark:border-white/10 dark:bg-white/[0.03]">
+                      <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em]">
+                        <span className="rounded-full bg-sky-500/10 px-2.5 py-1 text-sky-500 dark:text-sky-300">Question {index + 1}</span>
+                        <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-500 dark:text-emerald-300">Max {row.maxScore}</span>
+                      </div>
+                      <h3 className="text-lg font-black tracking-[-0.02em]">{row.prompt}</h3>
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/80">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-45">Student Answer</p>
+                        <p className="mt-2 whitespace-pre-wrap">{row.studentAnswer}</p>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 md:grid-cols-[180px_180px]">
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/45">Earned Score</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={row.maxScore}
+                            value={row.earnedScore}
+                            onChange={(event) => updateGradeDraft(row.questionId, { earnedScore: event.target.value })}
+                            className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-sky-500/50 dark:border-white/10 dark:bg-white/5"
+                          />
+                        </div>
+                        <label className={`flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-bold dark:border-white/10 dark:bg-white/5 ${isRTL ? "flex-row-reverse" : ""}`}>
+                          <span>Correct answer</span>
+                          <input
+                            type="checkbox"
+                            checked={row.isCorrect}
+                            onChange={(event) => updateGradeDraft(row.questionId, { isCorrect: event.target.checked })}
+                            className="h-4 w-4 accent-sky-600"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className={`flex flex-wrap justify-end gap-3 pt-2 ${isRTL ? "justify-start" : ""}`}>
+                  <button type="button" onClick={closeGradeModal} className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-bold dark:border-white/10">
+                    Close
+                  </button>
+                  {selectedAttempt.status.toLowerCase() === "submitted" ? (
+                    <button type="submit" disabled={isSubmitting} className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#0ea5e9_0%,#2563eb_100%)] px-6 py-3.5 text-sm font-black uppercase tracking-[0.18em] text-white shadow-[0_18px_45px_rgba(37,99,235,0.28)] disabled:opacity-60">
+                      {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      Submit Grade
+                    </button>
+                  ) : null}
                 </div>
               </form>
             </motion.div>

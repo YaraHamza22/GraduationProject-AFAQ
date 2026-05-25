@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowLeft, CheckCircle2, Clock, Loader2, Save, Send } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiEndpoint, getStudentApiRequestUrl } from "@/features/student/studentApi";
-import { getStoredStudentUser, getStudentToken } from "@/features/student/studentSession";
+import { extractStudentUser, getStoredStudentId, getStudentToken, updateStoredStudentUser } from "@/features/student/studentSession";
 
 type LocalizedText = {
   en?: string;
@@ -58,6 +58,11 @@ type AnswerDraft = {
   answer_text: string;
 };
 
+type SubmitAnswerPayload =
+  | { question_id: number; selected_option_id: number }
+  | { question_id: number; boolean_answer: boolean }
+  | { question_id: number; answer_text: { en: string } };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -83,12 +88,30 @@ function getLocalizedValue(value: unknown, locale: "en" | "ar", fallbackLocale: 
   return readString(value[fallbackLocale], "");
 }
 
-function extractAttemptData(payload: unknown): Record<string, unknown> | null {
-  if (!isRecord(payload)) return null;
+function unwrapApiPayload(payload: unknown): unknown {
+  let current = payload;
 
-  if (isRecord(payload.data) && isRecord(payload.data.data)) return payload.data.data;
-  if (isRecord(payload.data)) return payload.data;
-  return payload;
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (!isRecord(current)) return current;
+    if (!("data" in current)) return current;
+
+    const next = current.data;
+    const looksLikeWrapper =
+      typeof current.status === "string" ||
+      typeof current.success === "boolean" ||
+      typeof current.message === "string" ||
+      typeof current.code === "number";
+
+    if (!looksLikeWrapper || next == null) return current;
+    current = next;
+  }
+
+  return current;
+}
+
+function extractAttemptData(payload: unknown): Record<string, unknown> | null {
+  const unwrapped = unwrapApiPayload(payload);
+  return isRecord(unwrapped) ? unwrapped : null;
 }
 
 function extractAttemptId(payload: unknown): number | null {
@@ -105,10 +128,42 @@ function extractAttemptId(payload: unknown): number | null {
 }
 
 function extractList(payload: unknown) {
-  if (Array.isArray(payload)) return payload;
-  if (!isRecord(payload)) return [];
-  if (Array.isArray(payload.data)) return payload.data;
-  if (isRecord(payload.data) && Array.isArray(payload.data.data)) return payload.data.data;
+  const unwrapped = unwrapApiPayload(payload);
+  if (Array.isArray(unwrapped)) return unwrapped;
+  if (isRecord(unwrapped) && Array.isArray(unwrapped.data)) return unwrapped.data;
+  return [];
+}
+
+function getAttemptIdFromProgress(item: Record<string, unknown>) {
+  const candidates = [
+    item.attempt_id,
+    item.current_attempt_id,
+    item.active_attempt_id,
+    item.in_progress_attempt_id,
+    isRecord(item.attempt) ? item.attempt.id : null,
+  ];
+
+  for (const value of candidates) {
+    const parsed = readNumber(value);
+    if (parsed && parsed > 0) return parsed;
+  }
+
+  return null;
+}
+
+function extractAssessmentProgressRows(payload: unknown) {
+  const unwrapped = unwrapApiPayload(payload);
+  if (!isRecord(unwrapped)) return [];
+
+  if (Array.isArray(unwrapped.quizzes)) {
+    return unwrapped.quizzes.filter(isRecord);
+  }
+
+  const progress = isRecord(unwrapped.progress) ? unwrapped.progress : null;
+  if (progress && Array.isArray(progress.quizzes)) {
+    return progress.quizzes.filter(isRecord);
+  }
+
   return [];
 }
 
@@ -164,6 +219,57 @@ function normalizeAttempt(payload: unknown): AttemptDetails | null {
         })
       )
       .filter((answer) => answer.question_id > 0),
+  };
+}
+
+function normalizeQuestionsFromQuizRecord(quizRecord: Record<string, unknown>) {
+  const questions = Array.isArray(quizRecord.questions) ? quizRecord.questions.filter(isRecord) : [];
+
+  return questions
+    .map(
+      (question): AttemptQuestion => ({
+        id: readNumber(question.id) ?? 0,
+        type: readString(question.type, ""),
+        question_text: question.question_text as string | LocalizedText | undefined,
+        point: readNumber(question.point) ?? undefined,
+        is_required: Boolean(question.is_required),
+        order_index: readNumber(question.order_index) ?? undefined,
+        options: Array.isArray(question.options)
+          ? question.options
+              .filter(isRecord)
+              .map((option): AttemptOption => ({
+                id: readNumber(option.id) ?? 0,
+                option_text: option.option_text as string | LocalizedText | undefined,
+              }))
+              .filter((option) => option.id > 0)
+          : [],
+      })
+    )
+    .filter((question) => question.id > 0)
+    .sort((a, b) => (a.order_index ?? 999999) - (b.order_index ?? 999999));
+}
+
+function normalizeAttemptFromQuizPayload(payload: unknown, attemptId: number): AttemptDetails | null {
+  const quizRecord = extractAttemptData(payload);
+  if (!quizRecord) return null;
+
+  const normalizedQuizId = readNumber(quizRecord.id) ?? readNumber(quizRecord.quiz_id) ?? 0;
+  if (!normalizedQuizId) return null;
+
+  return {
+    id: attemptId,
+    quiz_id: normalizedQuizId,
+    attempt_number: undefined,
+    status: "in_progress",
+    remaining_seconds: undefined,
+    is_time_up: false,
+    quiz: {
+      id: normalizedQuizId,
+      title: quizRecord.title as string | LocalizedText | undefined,
+      duration_minutes: readNumber(quizRecord.duration_minutes) ?? undefined,
+      questions: normalizeQuestionsFromQuizRecord(quizRecord),
+    },
+    answers: [],
   };
 }
 
@@ -234,6 +340,7 @@ export default function StudentQuizAttemptPage() {
 
   const locale = language === "ar" ? "ar" : "en";
   const fallbackLocale = locale === "ar" ? "en" : "ar";
+  const currentStudentId = getStoredStudentId();
 
   const [attempt, setAttempt] = useState<AttemptDetails | null>(null);
   const [drafts, setDrafts] = useState<Record<number, AnswerDraft>>({});
@@ -246,7 +353,10 @@ export default function StudentQuizAttemptPage() {
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [isQuizPageActive, setIsQuizPageActive] = useState(true);
 
-  const attemptStorageKey = useMemo(() => `student_quiz_attempt:${quizId}`, [quizId]);
+  const attemptStorageKey = useMemo(
+    () => `student_quiz_attempt:${currentStudentId ?? "anon"}:${quizId}`,
+    [currentStudentId, quizId]
+  );
 
   const headers = useMemo(() => {
     const token = getStudentToken();
@@ -256,6 +366,26 @@ export default function StudentQuizAttemptPage() {
       Authorization: `Bearer ${token}`,
     };
   }, []);
+
+  const resolveStudentId = useCallback(async () => {
+    if (!headers) return currentStudentId;
+
+    try {
+      const response = await requestWithProxyFallback("/auth/profile", {
+        method: "GET",
+        headers,
+      });
+      const profile = extractStudentUser(response.data);
+      if (profile) {
+        updateStoredStudentUser(profile);
+        return readNumber(profile.id) ?? currentStudentId;
+      }
+    } catch {
+      // Fall back to the locally stored id when profile refresh fails.
+    }
+
+    return currentStudentId;
+  }, [currentStudentId, headers]);
 
   useEffect(() => {
     if (attempt?.remaining_seconds != null) {
@@ -294,26 +424,56 @@ export default function StudentQuizAttemptPage() {
   }, []);
 
   const isTimeUp = Boolean(attempt?.is_time_up) || (remainingSeconds != null && remainingSeconds <= 0);
+  const isAttemptReadOnly = attempt ? !["pending", "in_progress"].includes((attempt.status ?? "").toLowerCase()) : false;
 
-  const resolveAttemptId = useCallback(async () => {
+  const hydrateAttempt = useCallback(
+    (normalized: AttemptDetails) => {
+      localStorage.setItem(attemptStorageKey, String(normalized.id));
+      setAttempt(normalized);
+      setDrafts(getInitialDrafts(normalized.quiz.questions, normalized.answers, locale, fallbackLocale));
+      setQuestionError({});
+      setSavedByQuestion({});
+    },
+    [attemptStorageKey, fallbackLocale, locale]
+  );
+
+  const loadWorkspace = useCallback(async () => {
     if (!headers) throw new Error("missing_token");
 
-    if (explicitAttemptId && explicitAttemptId > 0) {
+    const resolvedStudentId = await resolveStudentId();
+    const response = await requestWithProxyFallback(`/attempts/workspace/${quizId}`, {
+      method: "GET",
+      headers,
+      params: resolvedStudentId ? { student_id: resolvedStudentId } : undefined,
+    });
+
+    const normalized = normalizeAttempt(response.data);
+    if (!normalized || !normalized.id) {
+      throw new Error("invalid_workspace_payload");
+    }
+
+    hydrateAttempt(normalized);
+    return normalized.id;
+  }, [headers, hydrateAttempt, quizId, resolveStudentId]);
+
+  const resolveAttemptId = useCallback(async (options?: { ignoreCache?: boolean }) => {
+    if (!headers) throw new Error("missing_token");
+    const resolvedStudentId = await resolveStudentId();
+
+    if (!options?.ignoreCache && explicitAttemptId && explicitAttemptId > 0) {
       localStorage.setItem(attemptStorageKey, String(explicitAttemptId));
       return explicitAttemptId;
     }
 
-    const cachedAttemptId = readNumber(localStorage.getItem(attemptStorageKey));
+    const cachedAttemptId = options?.ignoreCache ? null : readNumber(localStorage.getItem(attemptStorageKey));
     if (cachedAttemptId && cachedAttemptId > 0) {
       return cachedAttemptId;
     }
 
-    const storedUser = getStoredStudentUser();
-    const parsedStudentId = readNumber(storedUser?.id);
     const createPayload: Record<string, unknown> = {
       quiz_id: Number(quizId),
     };
-    if (parsedStudentId) createPayload.student_id = parsedStudentId;
+    if (resolvedStudentId) createPayload.student_id = resolvedStudentId;
 
     try {
       const createResponse = await requestWithProxyFallback("/attempts", {
@@ -339,13 +499,35 @@ export default function StudentQuizAttemptPage() {
       // No-op, continue with fallbacks for existing open attempts.
     }
 
+    if (courseId) {
+      try {
+        const progressResponse = await requestWithProxyFallback(`/courses/${courseId}/assessment-progress`, {
+          method: "GET",
+          headers,
+          params: resolvedStudentId ? { student_id: resolvedStudentId } : undefined,
+        });
+        const match = extractAssessmentProgressRows(progressResponse.data).find((item) => {
+          const progressQuizId = readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) : null);
+          return progressQuizId === Number(quizId);
+        });
+        const progressAttemptId = match ? getAttemptIdFromProgress(match) : null;
+
+        if (progressAttemptId) {
+          localStorage.setItem(attemptStorageKey, String(progressAttemptId));
+          return progressAttemptId;
+        }
+      } catch {
+        // No-op.
+      }
+    }
+
     try {
       const listResponse = await requestWithProxyFallback("/attempts", {
         method: "GET",
         headers,
         params: {
           quiz_id: Number(quizId),
-          ...(parsedStudentId ? { student_id: parsedStudentId } : {}),
+          ...(resolvedStudentId ? { student_id: resolvedStudentId } : {}),
           per_page: 50,
         },
       });
@@ -353,18 +535,30 @@ export default function StudentQuizAttemptPage() {
       const match = attempts
         .map((item) => ({
           id: readNumber(item.id) ?? 0,
-          quiz_id: readNumber(item.quiz_id) ?? 0,
-          status: readString(item.status, ""),
+          quiz_id: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
+          student_id: readNumber(item.student_id) ?? (isRecord(item.student) ? readNumber(item.student.id) ?? 0 : 0),
+          status: readString(item.status, "") || readString(item.attempt_status, "") || readString(item.grading_status, ""),
         }))
-        .filter((item) => item.id > 0 && item.quiz_id === Number(quizId))
+        .filter(
+          (item) =>
+            item.id > 0 &&
+            item.quiz_id === Number(quizId) &&
+            (!resolvedStudentId || item.student_id === resolvedStudentId)
+        )
         .sort((a, b) => b.id - a.id)
         .find((item) => item.status === "in_progress") ??
         attempts
           .map((item) => ({
             id: readNumber(item.id) ?? 0,
             quiz_id: readNumber(item.quiz_id) ?? 0,
+            student_id: readNumber(item.student_id) ?? 0,
           }))
-          .filter((item) => item.id > 0 && item.quiz_id === Number(quizId))
+          .filter(
+            (item) =>
+              item.id > 0 &&
+              item.quiz_id === Number(quizId) &&
+              (!resolvedStudentId || item.student_id === resolvedStudentId)
+          )
           .sort((a, b) => b.id - a.id)[0];
 
       if (match?.id) {
@@ -384,37 +578,89 @@ export default function StudentQuizAttemptPage() {
       // No-op.
     }
 
-    // Backend in current setup often uses the same numeric id in /attempts/{id} that the UI route passes.
-    // This fallback allows direct question loading from GET /attempts/{quizId} when create/list endpoints don't return an id.
-    const numericQuizId = readNumber(quizId);
-    if (numericQuizId && numericQuizId > 0) {
-      localStorage.setItem(attemptStorageKey, String(numericQuizId));
-      return numericQuizId;
+    try {
+      const listResponse = await requestWithProxyFallback("/attempts", {
+        method: "GET",
+        headers,
+        params: { per_page: 200 },
+      });
+      const attempts = extractList(listResponse.data).filter(isRecord);
+      const strictMatch = attempts
+        .map((item) => ({
+          id: readNumber(item.id) ?? 0,
+          quiz_id: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
+          student_id: readNumber(item.student_id) ?? (isRecord(item.student) ? readNumber(item.student.id) ?? 0 : 0),
+          status: readString(item.status, "") || readString(item.attempt_status, "") || readString(item.grading_status, ""),
+        }))
+        .filter(
+          (item) =>
+            item.id > 0 &&
+            item.quiz_id === Number(quizId) &&
+            (!resolvedStudentId || item.student_id === resolvedStudentId)
+        );
+
+      const match =
+        strictMatch.sort((a, b) => b.id - a.id).find((item) => item.status === "in_progress") ??
+        strictMatch.sort((a, b) => b.id - a.id)[0] ??
+        attempts
+          .map((item) => ({
+            id: readNumber(item.id) ?? 0,
+            quiz_id: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
+            status: readString(item.status, "") || readString(item.attempt_status, "") || readString(item.grading_status, ""),
+          }))
+          .filter((item) => item.id > 0 && item.quiz_id === Number(quizId))
+          .sort((a, b) => b.id - a.id)
+          .find((item) => item.status === "in_progress") ??
+        attempts
+          .map((item) => ({
+            id: readNumber(item.id) ?? 0,
+            quiz_id: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
+          }))
+          .filter((item) => item.id > 0 && item.quiz_id === Number(quizId))
+          .sort((a, b) => b.id - a.id)[0];
+
+      if (match?.id) {
+        localStorage.setItem(attemptStorageKey, String(match.id));
+        return match.id;
+      }
+    } catch {
+      // No-op.
     }
 
     return null;
-  }, [attemptStorageKey, explicitAttemptId, headers, quizId]);
+  }, [attemptStorageKey, courseId, explicitAttemptId, headers, quizId, resolveStudentId]);
 
   const loadAttempt = useCallback(
-    async (attemptId: number) => {
+    async (attemptOrQuizId: number) => {
       if (!headers) throw new Error("missing_token");
 
-      const response = await requestWithProxyFallback(`/attempts/${attemptId}`, {
-        method: "GET",
-        headers,
-      });
-      const normalized = normalizeAttempt(response.data);
+      let normalized: AttemptDetails | null = null;
+
+      try {
+        const response = await requestWithProxyFallback(`/attempts/${attemptOrQuizId}`, {
+          method: "GET",
+          headers,
+        });
+        normalized = normalizeAttempt(response.data);
+      } catch (error) {
+        if (!axios.isAxiosError(error) || error.response?.status !== 404) {
+          throw error;
+        }
+
+        const quizResponse = await requestWithProxyFallback(`/quizzes/${quizId}`, {
+          method: "GET",
+          headers,
+        });
+        normalized = normalizeAttemptFromQuizPayload(quizResponse.data, attemptOrQuizId);
+      }
+
       if (!normalized || !normalized.id) {
         throw new Error("invalid_attempt_payload");
       }
 
-      localStorage.setItem(attemptStorageKey, String(normalized.id));
-      setAttempt(normalized);
-      setDrafts(getInitialDrafts(normalized.quiz.questions, normalized.answers, locale, fallbackLocale));
-      setQuestionError({});
-      setSavedByQuestion({});
+      hydrateAttempt(normalized);
     },
-    [attemptStorageKey, fallbackLocale, headers, locale]
+    [headers, hydrateAttempt, quizId]
   );
 
   useEffect(() => {
@@ -424,15 +670,22 @@ export default function StudentQuizAttemptPage() {
       setIsLoading(true);
       setErrorMessage(null);
       try {
-        const attemptId = await resolveAttemptId();
-        if (!attemptId) {
-          throw new Error("attempt_not_found");
-        }
-
         if (!cancelled) {
-          await loadAttempt(attemptId);
+          await loadWorkspace();
         }
       } catch (error) {
+        if (!cancelled) {
+          try {
+            const attemptId = await resolveAttemptId({ ignoreCache: true });
+            if (attemptId) {
+              await loadAttempt(attemptId);
+              setIsLoading(false);
+              return;
+            }
+          } catch {
+            // fall through to existing error handling
+          }
+        }
         if (cancelled) return;
         if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
           setErrorMessage(error.response.data.message);
@@ -451,7 +704,7 @@ export default function StudentQuizAttemptPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadAttempt, quizId, resolveAttemptId]);
+  }, [loadAttempt, loadWorkspace, quizId, resolveAttemptId]);
 
   const updateDraft = (questionId: number, patch: Partial<AnswerDraft>) => {
     setDrafts((current) => ({
@@ -567,7 +820,7 @@ export default function StudentQuizAttemptPage() {
           if (!text) return null;
           return { question_id: question.id, answer_text: { en: text } };
         })
-        .filter((item): item is Record<string, unknown> => item !== null);
+        .filter((item): item is SubmitAnswerPayload => item !== null);
 
       const submitPayload = { answers };
 
@@ -578,6 +831,7 @@ export default function StudentQuizAttemptPage() {
       });
       const nextQuery = new URLSearchParams({
         attempt_id: String(attempt.id),
+        pending_review: "1",
         ...(courseId ? { course_id: courseId } : {}),
       });
       router.replace(`/student/quizzes/${quizId}/grade?${nextQuery.toString()}`);
@@ -683,7 +937,7 @@ export default function StudentQuizAttemptPage() {
                               type="radio"
                               name={`q-${question.id}`}
                               checked={draft.selected_option_id === option.id}
-                              disabled={isTimeUp}
+                              disabled={isAttemptReadOnly}
                               onChange={() => updateDraft(question.id, { selected_option_id: option.id })}
                             />
                             <span>{getLocalizedValue(option.option_text, locale, fallbackLocale) || `Option #${option.id}`}</span>
@@ -699,7 +953,7 @@ export default function StudentQuizAttemptPage() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={isTimeUp}
+                        disabled={isAttemptReadOnly}
                         onClick={() => updateDraft(question.id, { boolean_answer: true })}
                         className={`rounded-xl border px-4 py-2 text-sm font-bold transition-colors ${draft.boolean_answer === true ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.02]"}`}
                       >
@@ -707,7 +961,7 @@ export default function StudentQuizAttemptPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={isTimeUp}
+                        disabled={isAttemptReadOnly}
                         onClick={() => updateDraft(question.id, { boolean_answer: false })}
                         className={`rounded-xl border px-4 py-2 text-sm font-bold transition-colors ${draft.boolean_answer === false ? "border-rose-500 bg-rose-500 text-white" : "border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.02]"}`}
                       >
@@ -719,7 +973,7 @@ export default function StudentQuizAttemptPage() {
                   {question.type === "short_answer" ? (
                     <textarea
                       value={draft.answer_text}
-                      disabled={isTimeUp}
+                      disabled={isAttemptReadOnly}
                       onChange={(event) => updateDraft(question.id, { answer_text: event.target.value })}
                       rows={4}
                       className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 dark:border-white/10 dark:bg-white/[0.02]"
@@ -734,7 +988,7 @@ export default function StudentQuizAttemptPage() {
                   <div className={`mt-4 flex items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
                     <button
                       type="button"
-                      disabled={isTimeUp || savingByQuestion[question.id]}
+                      disabled={isAttemptReadOnly || savingByQuestion[question.id]}
                       onClick={() => void saveAnswer(question)}
                       className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
                     >
@@ -757,7 +1011,7 @@ export default function StudentQuizAttemptPage() {
             <button
               type="button"
               onClick={() => void submitAttempt()}
-              disabled={isSubmittingAttempt || !attempt.quiz.questions.length}
+              disabled={isSubmittingAttempt || isAttemptReadOnly || !attempt.quiz.questions.length}
               className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-black uppercase tracking-wider text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-slate-900 dark:hover:bg-indigo-300"
             >
               {isSubmittingAttempt ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -765,6 +1019,11 @@ export default function StudentQuizAttemptPage() {
             </button>
             <span className="text-xs opacity-60">{attempt.status || "in_progress"}</span>
           </div>
+          {isTimeUp && !isAttemptReadOnly ? (
+            <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">
+              The timer has ended, but this attempt is still open, so you can finish and submit your answers.
+            </p>
+          ) : null}
         </section>
       ) : null}
     </div>

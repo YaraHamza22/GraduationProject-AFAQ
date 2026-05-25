@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, Clock, Loader2, PlayCircle, RefreshCw, Trophy } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiEndpoint, getStudentApiRequestUrl } from "@/features/student/studentApi";
-import { getStoredStudentUser, getStudentToken } from "@/features/student/studentSession";
+import { extractStudentUser, getStoredStudentId, getStudentToken, updateStoredStudentUser } from "@/features/student/studentSession";
 
 type LocalizedText = {
   en?: string;
@@ -61,19 +61,53 @@ function getLocalizedValue(value: unknown, locale: "en" | "ar", fallbackLocale: 
   return readString(value[fallbackLocale], "");
 }
 
+function unwrapApiPayload(payload: unknown): unknown {
+  let current = payload;
+
+  for (let depth = 0; depth < 6; depth += 1) {
+    if (!isRecord(current)) return current;
+    if (!("data" in current)) return current;
+
+    const next = current.data;
+    const looksLikeWrapper =
+      typeof current.status === "string" ||
+      typeof current.success === "boolean" ||
+      typeof current.message === "string" ||
+      typeof current.code === "number";
+
+    if (!looksLikeWrapper || next == null) return current;
+    current = next;
+  }
+
+  return current;
+}
+
 function parseList(payload: unknown) {
-  if (Array.isArray(payload)) return payload;
-  if (!isRecord(payload)) return [];
-  if (Array.isArray(payload.data)) return payload.data;
-  if (isRecord(payload.data) && Array.isArray(payload.data.data)) return payload.data.data;
+  const unwrapped = unwrapApiPayload(payload);
+  if (Array.isArray(unwrapped)) return unwrapped;
+  if (isRecord(unwrapped) && Array.isArray(unwrapped.data)) return unwrapped.data;
   return [];
 }
 
 function parseItem(payload: unknown): Record<string, unknown> | null {
-  if (!isRecord(payload)) return null;
-  if (isRecord(payload.data) && isRecord(payload.data.data)) return payload.data.data;
-  if (isRecord(payload.data)) return payload.data;
-  return payload;
+  const unwrapped = unwrapApiPayload(payload);
+  return isRecord(unwrapped) ? unwrapped : null;
+}
+
+function parseAssessmentProgressRows(payload: unknown) {
+  const item = parseItem(payload);
+  if (!item) return [];
+
+  if (Array.isArray(item.quizzes)) {
+    return item.quizzes.filter(isRecord);
+  }
+
+  const progress = isRecord(item.progress) ? item.progress : null;
+  if (progress && Array.isArray(progress.quizzes)) {
+    return progress.quizzes.filter(isRecord);
+  }
+
+  return [];
 }
 
 function isHtml404AxiosError(error: unknown) {
@@ -160,6 +194,27 @@ export default function StudentQuizzesPage() {
     };
   }, []);
 
+  const resolveStudentId = useCallback(async () => {
+    const storedId = getStoredStudentId();
+    if (!headers) return storedId;
+
+    try {
+      const response = await requestWithProxyFallback("/auth/profile", {
+        method: "GET",
+        headers,
+      });
+      const profile = extractStudentUser(response.data);
+      if (profile) {
+        updateStoredStudentUser(profile);
+        return readNumber(profile.id) ?? storedId;
+      }
+    } catch {
+      // Keep using the stored id when profile refresh fails.
+    }
+
+    return storedId;
+  }, [headers]);
+
   const loadQuizzes = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -204,7 +259,7 @@ export default function StudentQuizzesPage() {
             method: "GET",
             headers,
           });
-          const progressRows = parseList(progressResponse.data).filter(isRecord);
+          const progressRows = parseAssessmentProgressRows(progressResponse.data);
 
           const available = progressRows
             .map((row) => {
@@ -327,7 +382,7 @@ export default function StudentQuizzesPage() {
 
       // Final safety check: mark quizzes as taken and backfill attempt ids from attempts list.
       try {
-        const studentId = readNumber(getStoredStudentUser()?.id);
+        const studentId = await resolveStudentId();
         const attemptsResponse = await requestWithProxyFallback("/attempts", {
           method: "GET",
           headers,
@@ -342,12 +397,13 @@ export default function StudentQuizzesPage() {
           .map((item) => ({
             id: readNumber(item.id) ?? 0,
             quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
+            studentId: readNumber(item.student_id) ?? 0,
             status:
               readString(item.status, "") ||
               readString(item.attempt_status, "") ||
               readString(item.grading_status, ""),
           }))
-          .filter((item) => item.id > 0 && item.quizId > 0)
+          .filter((item) => item.id > 0 && item.quizId > 0 && (!studentId || item.studentId === studentId))
           .sort((a, b) => b.id - a.id);
 
         for (const row of normalizedAttempts) {
@@ -378,7 +434,7 @@ export default function StudentQuizzesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [fallbackLocale, headers, locale]);
+  }, [fallbackLocale, headers, locale, resolveStudentId]);
 
   useEffect(() => {
     void loadQuizzes();
@@ -397,7 +453,7 @@ export default function StudentQuizzesPage() {
       setStartingQuizId(quiz.id);
       setErrorMessage(null);
       try {
-        const studentId = readNumber(getStoredStudentUser()?.id);
+        const studentId = await resolveStudentId();
 
         if (quiz.courseId) {
           try {
@@ -405,8 +461,7 @@ export default function StudentQuizzesPage() {
               method: "GET",
               headers,
             });
-            const latestProgress = parseList(progressResponse.data)
-              .filter(isRecord)
+            const latestProgress = parseAssessmentProgressRows(progressResponse.data)
               .map((item) => ({
                 quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) : null),
                 attemptsLeft: readNumber(item.attempts_left) ?? 0,
@@ -449,8 +504,7 @@ export default function StudentQuizzesPage() {
               method: "GET",
               headers,
             });
-            const row = parseList(progressResponse.data)
-              .filter(isRecord)
+            const row = parseAssessmentProgressRows(progressResponse.data)
               .find((item) => (readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) : null)) === quiz.id);
             attemptId = row ? getAttemptIdFromProgress(row) : null;
           } catch {
@@ -475,9 +529,10 @@ export default function StudentQuizzesPage() {
               .map((item) => ({
                 id: readNumber(item.id) ?? 0,
                 quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
+                studentId: readNumber(item.student_id) ?? 0,
                 status: readString(item.status, ""),
               }))
-              .filter((item) => item.id > 0 && item.quizId === quiz.id)
+              .filter((item) => item.id > 0 && item.quizId === quiz.id && (!studentId || item.studentId === studentId))
               .sort((a, b) => b.id - a.id)
               .find((item) => item.status === "in_progress");
 
@@ -520,7 +575,7 @@ export default function StudentQuizzesPage() {
         setStartingQuizId(null);
       }
     },
-    [headers, router]
+    [headers, resolveStudentId, router]
   );
 
   const openGrade = useCallback(

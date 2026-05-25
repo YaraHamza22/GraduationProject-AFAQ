@@ -8,9 +8,10 @@ type NotificationBellProps = {
   getRequestUrl: (path: string) => string;
   token: string | null;
   isRTL?: boolean;
+  onNotificationClick?: (item: NotificationItem) => void;
 };
 
-type NotificationItem = {
+export type NotificationItem = {
   id: string;
   read_at: string | null;
   created_at?: string;
@@ -72,7 +73,12 @@ function formatDate(value?: string) {
   return new Date(value).toLocaleString();
 }
 
-export default function NotificationBell({ getRequestUrl, token, isRTL = false }: NotificationBellProps) {
+export default function NotificationBell({
+  getRequestUrl,
+  token,
+  isRTL = false,
+  onNotificationClick,
+}: NotificationBellProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isActionLoading, setIsActionLoading] = React.useState(false);
@@ -274,6 +280,8 @@ export default function NotificationBell({ getRequestUrl, token, isRTL = false }
                   key={item.id}
                   onClick={() => {
                     if (unread) void markOneAsRead(item.id);
+                    onNotificationClick?.(item);
+                    setIsOpen(false);
                   }}
                   className={`w-full rounded-lg border px-2.5 py-2 text-left transition ${
                     unread

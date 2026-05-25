@@ -71,8 +71,6 @@ const navItems = [
   { id: "dashboard", icon: LayoutDashboard, href: "/student", label: "std.dashboard" },
   { id: "courses", icon: BookOpen, href: "/student/courses", label: "std.courses" },
   { id: "quizzes", icon: FileText, href: "/student/quizzes", label: "std.quizzes" },
-  { id: "forum", icon: MessageSquare, href: "/student/forum", label: "Forum" },
-  { id: "chat", icon: MessagesSquare, href: "/student/chat", label: "Chatting" },
   { id: "certificates", icon: Award, href: "/student/certificates", label: "std.certificates" },
   { id: "profile", icon: UserCircle, href: "/student/profile", label: "nav.profile" },
 ];
@@ -111,11 +109,20 @@ export default function StudentNavbar() {
   const [expandedCourses, setExpandedCourses] = React.useState<Set<number>>(new Set());
   const [expandedUnits, setExpandedUnits] = React.useState<Set<number>>(new Set());
   const [isLoadingLearning, setIsLoadingLearning] = React.useState(false);
+  const [isCommunicationOpen, setIsCommunicationOpen] = React.useState(
+    pathname.startsWith("/student/chat") || pathname.startsWith("/student/forum")
+  );
 
   React.useEffect(() => {
     setMounted(true);
     fetchEnrolledCourses();
   }, []);
+
+  React.useEffect(() => {
+    if (pathname.startsWith("/student/chat") || pathname.startsWith("/student/forum")) {
+      setIsCommunicationOpen(true);
+    }
+  }, [pathname]);
 
   const fetchEnrolledCourses = async () => {
     try {
@@ -252,6 +259,63 @@ export default function StudentNavbar() {
             </Link>
           );
         })}
+
+        <div>
+          <button
+            type="button"
+            onClick={() => setIsCommunicationOpen((prev) => !prev)}
+            className={`relative flex w-full items-center gap-3 rounded-2xl px-3 py-3 lg:px-4 lg:py-4 transition-all duration-300 group ${
+              isRTL ? "flex-row-reverse justify-center lg:justify-start" : "flex-row justify-center lg:justify-start"
+            } ${
+              pathname.startsWith("/student/chat") || pathname.startsWith("/student/forum")
+                ? "bg-indigo-600/10 text-indigo-600 dark:text-white"
+                : "opacity-40 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/5"
+            }`}
+          >
+            {(pathname.startsWith("/student/chat") || pathname.startsWith("/student/forum")) && (
+              <motion.div
+                layoutId="activeNavStd"
+                className={`absolute ${isRTL ? "right-0 rounded-l-full" : "left-0 rounded-r-full"} w-1 h-8 bg-indigo-500`}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              />
+            )}
+            <MessagesSquare className="w-5 h-5 lg:w-6 lg:h-6 shrink-0 transition-colors duration-300" />
+            <span className="hidden lg:block font-semibold tracking-tight">Chatting</span>
+            <ChevronDown className={`hidden lg:block ml-auto h-4 w-4 transition-transform duration-300 ${isCommunicationOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {isCommunicationOpen ? (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className={`overflow-hidden ${isRTL ? "mr-4 border-r pr-2" : "ml-4 border-l pl-2"} border-slate-200 dark:border-white/5`}
+              >
+                <Link href="/student/chat">
+                  <div className={`mt-1 flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-all ${
+                    pathname.startsWith("/student/chat")
+                      ? "bg-indigo-600/10 text-indigo-600 dark:text-white"
+                      : "opacity-55 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/5"
+                  } ${isRTL ? "flex-row-reverse text-right" : ""}`}>
+                    <MessagesSquare className="h-4 w-4 shrink-0" />
+                    <span className="hidden lg:block">Chat</span>
+                  </div>
+                </Link>
+                <Link href="/student/forum">
+                  <div className={`mt-1 flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-all ${
+                    pathname.startsWith("/student/forum")
+                      ? "bg-indigo-600/10 text-indigo-600 dark:text-white"
+                      : "opacity-55 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/5"
+                  } ${isRTL ? "flex-row-reverse text-right" : ""}`}>
+                    <MessageSquare className="h-4 w-4 shrink-0" />
+                    <span className="hidden lg:block">Forum</span>
+                  </div>
+                </Link>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
 
         {/* My Learning Section */}
         <div className="pt-4 mt-4 border-t border-slate-200 dark:border-white/5">

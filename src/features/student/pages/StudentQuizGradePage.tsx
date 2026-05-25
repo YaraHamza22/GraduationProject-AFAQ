@@ -21,6 +21,18 @@ type GradeSnapshot = {
   updated_at: string | null;
 };
 
+type AttemptSnapshot = {
+  score: number | null;
+  status: string;
+  graded_at: string | null;
+  submitted_at: string | null;
+  updated_at: string | null;
+  quiz?: {
+    max_score?: number | string | null;
+    passing_score?: number | string | null;
+  } | null;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -103,6 +115,39 @@ function normalizeGrade(payload: unknown): GradeSnapshot | null {
   };
 }
 
+function normalizeGradeFromAttempt(payload: unknown): GradeSnapshot | null {
+  const item = extractItem(payload) as AttemptSnapshot | null;
+  if (!item) return null;
+
+  const score = readNumber(item.score);
+  const maxScore = readNumber(item.quiz?.max_score);
+  const passingScore = readNumber(item.quiz?.passing_score);
+  const percentage =
+    score != null && maxScore != null && maxScore > 0
+      ? Math.round((score / maxScore) * 100)
+      : null;
+  const status = readString(item.status, "unknown");
+  const normalizedStatus = status.toLowerCase();
+  const gradeAvailable =
+    normalizedStatus === "graded" ||
+    normalizedStatus === "passed" ||
+    normalizedStatus === "completed" ||
+    score != null;
+
+  return {
+    score,
+    max_score: maxScore,
+    passing_score: passingScore,
+    percentage,
+    status,
+    grade_available: gradeAvailable,
+    message: gradeAvailable ? null : "Your quiz will be graded and you will be notified when grading is complete.",
+    graded_at: readString(item.graded_at, "") || null,
+    submitted_at: readString(item.submitted_at, "") || null,
+    updated_at: readString(item.updated_at, "") || null,
+  };
+}
+
 function formatDate(value: string | null) {
   if (!value) return "--";
   const date = new Date(value);
@@ -119,6 +164,7 @@ export default function StudentQuizGradePage() {
   const quizId = String(params.quizId ?? "");
   const courseId = searchParams.get("course_id");
   const explicitAttemptId = readNumber(searchParams.get("attempt_id"));
+  const isPendingReview = searchParams.get("pending_review") === "1";
   const attemptStorageKey = useMemo(() => `student_quiz_attempt:${quizId}`, [quizId]);
 
   const [grade, setGrade] = useState<GradeSnapshot | null>(null);
@@ -135,6 +181,18 @@ export default function StudentQuizGradePage() {
     };
   }, []);
 
+  const loadAttemptFallback = useCallback(
+    async (resolvedAttemptId: number) => {
+      if (!headers) return null;
+      const response = await requestWithProxyFallback(`/attempts/${resolvedAttemptId}`, {
+        method: "GET",
+        headers,
+      });
+      return normalizeGradeFromAttempt(response.data);
+    },
+    [headers]
+  );
+
   const loadGrade = useCallback(async () => {
     setErrorMessage(null);
     setIsLoading(true);
@@ -142,7 +200,25 @@ export default function StudentQuizGradePage() {
       if (!headers) throw new Error("missing_token");
 
       const resolvedAttemptId = explicitAttemptId ?? readNumber(localStorage.getItem(attemptStorageKey));
-      if (!resolvedAttemptId) throw new Error("missing_attempt_id");
+      if (!resolvedAttemptId) {
+        if (isPendingReview) {
+          setAttemptId(null);
+          setGrade({
+            score: null,
+            max_score: null,
+            passing_score: null,
+            percentage: null,
+            status: "submitted",
+            grade_available: false,
+            message: "Your quiz will be graded and you will be notified when grading is complete.",
+            graded_at: null,
+            submitted_at: null,
+            updated_at: null,
+          });
+          return;
+        }
+        throw new Error("missing_attempt_id");
+      }
 
       const response = await requestWithProxyFallback(`/attempts/${resolvedAttemptId}/grade`, {
         method: "GET",
@@ -151,12 +227,76 @@ export default function StudentQuizGradePage() {
       const snapshot = normalizeGrade(response.data);
       if (!snapshot) throw new Error("invalid_grade_payload");
 
+      if (!snapshot.grade_available) {
+        const fallbackSnapshot = await loadAttemptFallback(resolvedAttemptId);
+        if (fallbackSnapshot?.grade_available) {
+          setAttemptId(resolvedAttemptId);
+          setGrade(fallbackSnapshot);
+          localStorage.setItem(attemptStorageKey, String(resolvedAttemptId));
+          return;
+        }
+      }
+
       setAttemptId(resolvedAttemptId);
       setGrade(snapshot);
       localStorage.setItem(attemptStorageKey, String(resolvedAttemptId));
     } catch (error) {
       if (error instanceof Error && error.message === "missing_attempt_id") {
         setErrorMessage("No attempt id found for this grade view.");
+      } else if (axios.isAxiosError(error) && error.response?.status === 405) {
+        if (explicitAttemptId) {
+          try {
+            const fallbackSnapshot = await loadAttemptFallback(explicitAttemptId);
+            if (fallbackSnapshot) {
+              setAttemptId(explicitAttemptId);
+              setGrade(fallbackSnapshot);
+              return;
+            }
+          } catch {
+            // Fall through to pending review snapshot.
+          }
+        }
+        setGrade({
+          score: null,
+          max_score: null,
+          passing_score: null,
+          percentage: null,
+          status: "submitted",
+          grade_available: false,
+          message: "Your quiz will be graded and you will be notified when grading is complete.",
+          graded_at: null,
+          submitted_at: null,
+          updated_at: null,
+        });
+      } else if (
+        isPendingReview &&
+        axios.isAxiosError(error) &&
+        [404, 422].includes(error.response?.status ?? 0)
+      ) {
+        if (explicitAttemptId) {
+          try {
+            const fallbackSnapshot = await loadAttemptFallback(explicitAttemptId);
+            if (fallbackSnapshot) {
+              setAttemptId(explicitAttemptId);
+              setGrade(fallbackSnapshot);
+              return;
+            }
+          } catch {
+            // Fall through to pending review snapshot.
+          }
+        }
+        setGrade({
+          score: null,
+          max_score: null,
+          passing_score: null,
+          percentage: null,
+          status: "submitted",
+          grade_available: false,
+          message: "Your quiz will be graded and you will be notified when grading is complete.",
+          graded_at: null,
+          submitted_at: null,
+          updated_at: null,
+        });
       } else if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
         setErrorMessage(error.response.data.message);
       } else {
@@ -165,7 +305,7 @@ export default function StudentQuizGradePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [attemptStorageKey, explicitAttemptId, headers]);
+  }, [attemptStorageKey, explicitAttemptId, headers, isPendingReview, loadAttemptFallback]);
 
   React.useEffect(() => {
     void loadGrade();

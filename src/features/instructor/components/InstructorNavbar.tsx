@@ -3,12 +3,14 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import axios from "axios";
 import { 
   LayoutDashboard, 
   BookOpen, 
+  ChevronDown,
   HelpCircle, 
+  MessageSquare,
   MessagesSquare,
   UserCircle, 
   LogOut,
@@ -22,6 +24,7 @@ import { useTheme } from "next-themes";
 import { getStudentApiRequestUrl } from "@/features/student/studentApi";
 import { clearStudentSession, getStudentToken } from "@/features/student/studentSession";
 import NotificationBell from "@/components/notifications/NotificationBell";
+import type { NotificationItem } from "@/components/notifications/NotificationBell";
 
 const SyrianFlag = () => (
   <svg width="20" height="14" viewBox="0 0 3 2" className="rounded-sm shadow-sm">
@@ -62,12 +65,17 @@ const USAFlag = () => (
   </svg>
 );
 
-const navItems = [
+type NavItem = {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+const navItems: NavItem[] = [
   { name: "nav.home", href: "/instructor", icon: LayoutDashboard },
   { name: "nav.courses", href: "/instructor/courses", icon: BookOpen },
   { name: "nav.quizzes", href: "/instructor/quizzes", icon: HelpCircle },
   { name: "Virtual Meet", href: "/instructor/virtual-meet", icon: Video },
-  { name: "Chatting", href: "/instructor/chat", icon: MessagesSquare },
   { name: "nav.profile", href: "/instructor/profile", icon: UserCircle },
 ];
 
@@ -78,10 +86,60 @@ export default function InstructorNavbar() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+  const [isCommunicationOpen, setIsCommunicationOpen] = React.useState(
+    pathname.startsWith("/instructor/chat") || pathname.startsWith("/instructor/forum")
+  );
 
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  React.useEffect(() => {
+    if (pathname.startsWith("/instructor/chat") || pathname.startsWith("/instructor/forum")) {
+      setIsCommunicationOpen(true);
+    }
+  }, [pathname]);
+
+  const handleNotificationClick = React.useCallback(
+    (item: NotificationItem) => {
+      const meta = item.data?.data ?? {};
+      const threadIdRaw =
+        meta.thread_id ??
+        meta.chat_thread_id ??
+        meta.threadId ??
+        meta.chatThreadId;
+      const studentIdRaw =
+        meta.student_id ??
+        meta.studentId ??
+        meta.user_id ??
+        meta.userId ??
+        meta.sender_id ??
+        meta.senderId ??
+        meta.participant_id ??
+        meta.participantId;
+
+      const threadId = Number(threadIdRaw);
+      const studentId = Number(studentIdRaw);
+      const params = new URLSearchParams();
+
+      if (Number.isFinite(threadId) && threadId > 0) {
+        params.set("thread_id", String(threadId));
+      }
+
+      if (Number.isFinite(studentId) && studentId > 0) {
+        params.set("student_id", String(studentId));
+      }
+
+      const query = params.toString();
+      if (query) {
+        router.push(`/instructor/chat?${query}`);
+        return;
+      }
+
+      router.push("/instructor/chat");
+    },
+    [router]
+  );
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -129,41 +187,98 @@ export default function InstructorNavbar() {
       {/* Nav Items */}
       <div className="flex-1 px-4 space-y-2">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
           return (
-            <Link key={item.name} href={item.href}>
-              <div className={`relative flex items-center gap-3 p-4 rounded-2xl transition-all duration-300 group ${
-                isActive 
-                ? "bg-indigo-600/10 text-indigo-600 dark:text-white" 
-                : "opacity-40 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/5"
-              }`}>
-                {isActive && (
-                  <motion.div 
-                    layoutId="activeNav"
-                    className="absolute left-0 w-1 h-8 bg-indigo-500 rounded-r-full"
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                  />
-                )}
-                <Icon className={`w-6 h-6 transition-colors duration-300 ${isActive ? "text-indigo-400" : "group-hover:text-indigo-300"}`} />
-                <span className="hidden md:block font-semibold tracking-tight">
-                  {t(item.name)}
-                </span>
-                
-                {isActive && (
-                   <motion.div 
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="ml-auto hidden md:block"
-                   >
-                     <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
-                   </motion.div>
-                )}
-              </div>
-            </Link>
+            <div key={item.name}>
+              <Link href={item.href}>
+                <div className={`relative flex items-center gap-3 p-4 rounded-2xl transition-all duration-300 group ${
+                  isActive 
+                  ? "border border-indigo-400/20 bg-linear-to-r from-indigo-500/14 via-cyan-500/8 to-transparent text-indigo-600 shadow-[0_12px_30px_rgba(79,70,229,0.12)] dark:text-white" 
+                  : "opacity-50 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/5"
+                }`}>
+                  {isActive && (
+                    <motion.div 
+                      layoutId="activeNav"
+                      className="absolute left-0 w-1 h-8 bg-indigo-500 rounded-r-full"
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    />
+                  )}
+                  <Icon className={`w-6 h-6 transition-colors duration-300 ${isActive ? "text-indigo-400" : "group-hover:text-indigo-300"}`} />
+                  <span className="hidden md:block font-semibold tracking-tight">
+                    {t(item.name)}
+                  </span>
+                  
+                  {isActive ? (
+                     <motion.div 
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="ml-auto hidden md:block"
+                     >
+                       <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)]" />
+                     </motion.div>
+                  ) : null}
+                </div>
+              </Link>
+            </div>
           );
         })}
+
+        <div>
+          <button
+            type="button"
+            onClick={() => setIsCommunicationOpen((prev) => !prev)}
+            className={`relative flex w-full items-center gap-3 p-4 rounded-2xl transition-all duration-300 group ${
+              pathname.startsWith("/instructor/chat") || pathname.startsWith("/instructor/forum")
+                ? "border border-indigo-400/20 bg-linear-to-r from-indigo-500/14 via-cyan-500/8 to-transparent text-indigo-600 shadow-[0_12px_30px_rgba(79,70,229,0.12)] dark:text-white"
+                : "opacity-50 hover:opacity-100 hover:bg-slate-50 dark:hover:bg-white/5"
+            }`}
+          >
+            {(pathname.startsWith("/instructor/chat") || pathname.startsWith("/instructor/forum")) && (
+              <motion.div
+                layoutId="activeNav"
+                className="absolute left-0 w-1 h-8 bg-indigo-500 rounded-r-full"
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              />
+            )}
+            <MessagesSquare className="w-6 h-6 transition-colors duration-300 text-indigo-400" />
+            <span className="hidden md:block font-semibold tracking-tight">Chatting</span>
+            <ChevronDown className={`ml-auto hidden md:block h-4 w-4 transition-transform duration-300 ${isCommunicationOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          <AnimatePresence initial={false}>
+            {isCommunicationOpen ? (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden ml-4 border-l border-indigo-500/10 pl-3"
+              >
+                <Link href="/instructor/chat">
+                  <div className={`mt-1 flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-all ${
+                    pathname.startsWith("/instructor/chat")
+                      ? "bg-indigo-600/10 text-indigo-600 dark:text-white"
+                      : "text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/5"
+                  }`}>
+                    <MessagesSquare className="h-4 w-4" />
+                    <span className="hidden md:block font-semibold">Chat</span>
+                  </div>
+                </Link>
+                <Link href="/instructor/forum">
+                  <div className={`mt-1 flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition-all ${
+                    pathname.startsWith("/instructor/forum")
+                      ? "bg-indigo-600/10 text-indigo-600 dark:text-white"
+                      : "text-slate-500 dark:text-white/40 hover:bg-slate-50 dark:hover:bg-white/5"
+                  }`}>
+                    <MessageSquare className="h-4 w-4" />
+                    <span className="hidden md:block font-semibold">Forum</span>
+                  </div>
+                </Link>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Toggles and Actions */}
@@ -176,6 +291,7 @@ export default function InstructorNavbar() {
             getRequestUrl={getStudentApiRequestUrl}
             token={getStudentToken()}
             isRTL={isRTL}
+            onNotificationClick={handleNotificationClick}
           />
         </div>
 

@@ -6,6 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { 
   LayoutDashboard, 
+  MessageSquare,
+  MessagesSquare,
   Users, 
   GraduationCap, 
   ShieldCheck, 
@@ -69,11 +71,35 @@ const navItems = [
   { name: "profile", href: "/admin/profile", icon: UserCircle, label: "nav.profile" },
 ];
 
-const managementItems = [
+type AdminNavChild = {
+  name: string;
+  href: string;
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+};
+
+type AdminNavItem = {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  children?: AdminNavChild[];
+};
+
+const managementItems: AdminNavItem[] = [
   { name: "Students", href: "/admin/students", icon: GraduationCap, label: "adm.students" },
   { name: "Courses", href: "/admin/courses", icon: BookOpen, label: "adm.courses" },
   { name: "Course Category", href: "/admin/course-categories", icon: Tags, label: "adm.course_category" },
   { name: "Virtual Meet", href: "/admin/virtual-meet", icon: Video, label: "Virtual Meet" },
+  {
+    name: "Chatting",
+    href: "/admin/forum",
+    icon: MessagesSquare,
+    label: "Chatting",
+    children: [
+      { name: "Forum", href: "/admin/forum", icon: MessageSquare, label: "Forum" },
+    ],
+  },
   {
     name: "Instructors",
     href: "/admin/instructors",

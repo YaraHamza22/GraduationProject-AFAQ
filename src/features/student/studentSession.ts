@@ -192,6 +192,45 @@ export function extractStudentRoleFromToken(token: string): string | null {
   return extractStudentRole(payload);
 }
 
+export function extractStudentIdFromToken(token: string): number | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload) {
+    return null;
+  }
+
+  const candidateKeys = ["id", "sub", "user_id", "student_id"];
+  for (const key of candidateKeys) {
+    const value = payload[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  const nestedUser = getNestedRecord(payload, "user");
+  if (nestedUser) {
+    for (const key of candidateKeys) {
+      const value = nestedUser[key];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 export function getStudentToken() {
   return readStorageValue(STUDENT_TOKEN_STORAGE_KEY);
 }
@@ -247,6 +286,27 @@ export function getStoredStudentRole() {
 
   const roleFromToken = extractStudentRoleFromToken(token);
   return roleFromToken ? normalizeRole(roleFromToken) : null;
+}
+
+export function getStoredStudentId() {
+  const user = getStoredStudentUser();
+  const directId = user?.id;
+  if (typeof directId === "number" && Number.isFinite(directId)) {
+    return directId;
+  }
+  if (typeof directId === "string" && directId.trim()) {
+    const parsed = Number(directId);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  const token = getStudentToken();
+  if (!token) {
+    return null;
+  }
+
+  return extractStudentIdFromToken(token);
 }
 
 export function updateStoredStudentUser(user: StudentSessionUser | null) {
