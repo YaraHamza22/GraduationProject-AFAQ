@@ -33,6 +33,10 @@ class QuizService {
     );
   }
 
+  Future<Response<Map<String, dynamic>>> getMeWithQuizzes() {
+    return _client.get<Map<String, dynamic>>(ApiEndpoints.meWithQuizzes);
+  }
+
   Future<Response<Map<String, dynamic>>> getAssessmentProgress(int courseId) {
     return _client.get<Map<String, dynamic>>(
       ApiEndpoints.courseAssessmentProgress(courseId),

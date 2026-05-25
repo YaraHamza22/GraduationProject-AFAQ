@@ -10,7 +10,15 @@ class StudentDashboardService {
 
   ApiClient get _client => _apiClient ?? ApiClient.instance;
 
-  Future<Response<Map<String, dynamic>>> getDashboard() {
-    return _client.get<Map<String, dynamic>>(ApiEndpoints.studentDashboard);
+  Future<Response<Map<String, dynamic>>> getDashboard({String locale = 'en'}) {
+    return _client.get<Map<String, dynamic>>(
+      ApiEndpoints.studentDashboard,
+      options: Options(
+        headers: {
+          'Accept-Language': locale,
+          'X-Locale': locale,
+        },
+      ),
+    );
   }
 }

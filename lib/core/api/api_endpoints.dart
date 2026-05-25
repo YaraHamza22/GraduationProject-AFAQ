@@ -7,6 +7,7 @@ class ApiEndpoints {
   static const profile = '/auth/profile';
 
   static const studentDashboard = '/student/dashboard';
+  static const meWithQuizzes = '/me/with-quizzes';
   static const myLearning = '/my-learning';
   static const enrollments = '/enrollments';
   static const courses = '/courses';
