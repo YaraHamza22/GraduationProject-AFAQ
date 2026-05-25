@@ -8,6 +8,15 @@ import '../../student/data/chat_service.dart';
 class InstructorChatService extends ChatService {
   const InstructorChatService({super.apiClient});
 
+  Future<Response<Map<String, dynamic>>> getInstructorStudentContacts({
+    int perPage = 200,
+  }) {
+    return client.get<Map<String, dynamic>>(
+      '/instructor/students',
+      queryParameters: {'per_page': perPage},
+    );
+  }
+
   Future<Response<Map<String, dynamic>>> getStudentContacts({
     int perPage = 200,
     bool useUsersEndpoint = false,

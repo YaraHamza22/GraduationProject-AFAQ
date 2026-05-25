@@ -130,6 +130,7 @@ class RealtimeClient {
       queryParameters: {
         ...uri.queryParameters,
         'token': token,
+        if (_sessionStore.userId != null) 'user_id': _sessionStore.userId.toString(),
       },
     );
   }

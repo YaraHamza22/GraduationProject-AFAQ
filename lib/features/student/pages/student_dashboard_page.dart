@@ -108,8 +108,23 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final stacked = constraints.maxWidth < 980;
-                        return Flex(
-                          direction: stacked ? Axis.vertical : Axis.horizontal,
+                        if (stacked) {
+                          return Column(
+                            children: [
+                              _CoursesPanel(
+                                title: studentText('recent_courses', lang),
+                                courses: _data?.recentCourses ?? const [],
+                              ),
+                              const SizedBox(height: 16),
+                              _ProgressPanel(
+                                title: studentText('progress_by_course', lang),
+                                rows: _data?.progressByCourse ?? const [],
+                              ),
+                            ],
+                          );
+                        }
+
+                        return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
@@ -118,7 +133,7 @@ class _StudentDashboardPageState extends State<StudentDashboardPage> {
                                 courses: _data?.recentCourses ?? const [],
                               ),
                             ),
-                            SizedBox(width: stacked ? 0 : 16, height: stacked ? 16 : 0),
+                            const SizedBox(width: 16),
                             Expanded(
                               child: _ProgressPanel(
                                 title: studentText('progress_by_course', lang),
