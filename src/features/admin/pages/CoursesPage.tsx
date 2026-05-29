@@ -676,7 +676,7 @@ export default function CoursesPage() {
                     </button>
                     <button 
                       type="button"
-                      onClick={() => router.push(`/admin/courses/${course.id}/units`)}
+                      onClick={() => router.push(`/admin/course-units?course_id=${course.id}`)}
                       className="col-span-2 inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-600 bg-indigo-600 px-3 py-2.5 text-[12px] font-bold text-white shadow-md shadow-indigo-500/25 transition-colors hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#151722]"
                     >
                       <Layers className="w-3.5 h-3.5 shrink-0" />

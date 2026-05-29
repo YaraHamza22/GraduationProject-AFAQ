@@ -1,6 +1,5 @@
 import StudentQuizAttemptPage from "@/features/student/pages/StudentQuizAttemptPage";
 
-export default function StudentQuizAttemptRoutePage() {
+export default function StudentQuizAttemptPageRoute() {
   return <StudentQuizAttemptPage />;
 }
-

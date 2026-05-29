@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
@@ -274,13 +274,13 @@ function getLessonQuizStorageKey(courseId: string, unitId: string) {
 }
 
 export default function UnitLessonsPage() {
-  const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isRTL, language } = useLanguage();
   const currentLocale = language as "en" | "ar";
 
-  const courseId = String(params.id || "");
-  const unitId = String(params.unitId || "");
+  const courseId = String(searchParams.get("course_id") || "");
+  const unitId = String(searchParams.get("unit_id") || "");
 
   const [courseTitle, setCourseTitle] = useState("");
   const [courseInstructorId, setCourseInstructorId] = useState<number | null>(null);
@@ -1302,7 +1302,7 @@ export default function UnitLessonsPage() {
       <div className="max-w-[1400px] mx-auto relative z-10">
         <button
           type="button"
-          onClick={() => router.push(`/admin/courses/${courseId}/units`)}
+          onClick={() => router.push(`/admin/course-units?course_id=${courseId}`)}
           className={`mb-8 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-white/50 hover:text-indigo-600 transition-colors ${isRTL ? "flex-row-reverse" : ""}`}
         >
           <ArrowLeft className={`w-4 h-4 ${isRTL ? "rotate-180" : ""}`} />

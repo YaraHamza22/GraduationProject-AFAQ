@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowLeft, CheckCircle2, Clock, Loader2, Save, Send } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiEndpoint, getStudentApiRequestUrl } from "@/features/student/studentApi";
@@ -330,11 +330,10 @@ async function requestWithProxyFallback<T>(path: string, config: Parameters<type
 
 export default function StudentQuizAttemptPage() {
   const { language, isRTL } = useLanguage();
-  const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const quizId = String(params.quizId ?? "");
+  const quizId = String(searchParams.get("quiz_id") ?? "");
   const courseId = searchParams.get("course_id");
   const explicitAttemptId = readNumber(searchParams.get("attempt_id"));
 
@@ -834,7 +833,8 @@ export default function StudentQuizAttemptPage() {
         pending_review: "1",
         ...(courseId ? { course_id: courseId } : {}),
       });
-      router.replace(`/student/quizzes/${quizId}/grade?${nextQuery.toString()}`);
+      nextQuery.set("quiz_id", quizId);
+      router.replace(`/student/quiz-grade?${nextQuery.toString()}`);
     } catch (error) {
       if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
         setErrorMessage(error.response.data.message);
@@ -863,7 +863,11 @@ export default function StudentQuizAttemptPage() {
   return (
     <div className="min-h-screen bg-(--background) p-8 text-(--foreground) md:p-12">
       <button
-        onClick={() => router.push(courseId ? `/student/quizzes/${quizId}?course_id=${courseId}` : `/student/quizzes/${quizId}`)}
+        onClick={() => {
+          const query = new URLSearchParams({ quiz_id: quizId });
+          if (courseId) query.set("course_id", courseId);
+          router.push(`/student/quiz?${query.toString()}`);
+        }}
         className={`mb-6 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold hover:bg-slate-100 dark:border-white/15 dark:hover:bg-white/5 ${isRTL ? "flex-row-reverse" : ""}`}
       >
         <ArrowLeft className={`h-4 w-4 ${isRTL ? "rotate-180" : ""}`} />

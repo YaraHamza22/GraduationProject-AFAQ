@@ -564,7 +564,8 @@ export default function StudentQuizzesPage() {
           query.set("attempt_id", String(attemptId));
         }
 
-        router.push(`/student/quizzes/${quiz.id}/attempt${query.toString() ? `?${query.toString()}` : ""}`);
+        query.set("quiz_id", String(quiz.id));
+        router.push(`/student/quiz-attempt${query.toString() ? `?${query.toString()}` : ""}`);
       } catch (error) {
         if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
           setErrorMessage(error.response.data.message);
@@ -589,7 +590,8 @@ export default function StudentQuizzesPage() {
         attempt_id: String(quiz.attemptId),
         ...(quiz.courseId ? { course_id: String(quiz.courseId) } : {}),
       });
-      router.push(`/student/quizzes/${quiz.id}/grade?${query.toString()}`);
+      query.set("quiz_id", String(quiz.id));
+      router.push(`/student/quiz-grade?${query.toString()}`);
     },
     [router]
   );

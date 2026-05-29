@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
@@ -111,9 +111,9 @@ function getErrorMessage(error: unknown, fallback: string) {
 export default function CourseUnitsPage() {
   const { isRTL, language } = useLanguage();
   const currentLocale = language as "en" | "ar";
-  const params = useParams();
   const router = useRouter();
-  const courseId = params.id as string;
+  const searchParams = useSearchParams();
+  const courseId = searchParams.get("course_id") ?? "";
 
   // Data State
   const [units, setUnits] = useState<Unit[]>([]);
@@ -437,7 +437,7 @@ export default function CourseUnitsPage() {
                     </button>
                     <button 
                       type="button"
-                      onClick={() => router.push(`/admin/courses/${courseId}/units/${unit.unit_id || unit.id}/lessons`)}
+                      onClick={() => router.push(`/admin/unit-lessons?course_id=${courseId}&unit_id=${unit.unit_id || unit.id}`)}
                       className="flex items-center gap-3 px-8 py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-[24px] font-black uppercase tracking-[0.2em] text-[11px] hover:scale-[1.05] active:scale-95 transition-all shadow-xl shadow-slate-900/20"
                     >
                       Explore Lessons

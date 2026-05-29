@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === 'production';
+const isNetlify = process.env.NETLIFY === "true";
+const useStaticExport = isProd && !isNetlify;
+const useGitHubPagesBasePath = isProd && !isNetlify;
 const defaultBackendOrigin = "https://afaaq-api.onrender.com";
 const apiVersionPrefix = "/api/v1";
 
@@ -26,8 +29,8 @@ function getBackendApiUrl() {
 
 const nextConfig: NextConfig = {
   // Only use export output for GitHub Pages production build
-  ...(isProd ? { output: "export" } : {}),
-  basePath: isProd ? "/GraduationProject-AFAQ" : "",
+  ...(useStaticExport ? { output: "export" } : {}),
+  basePath: useGitHubPagesBasePath ? "/GraduationProject-AFAQ" : "",
   images: {
     unoptimized: true,
   },

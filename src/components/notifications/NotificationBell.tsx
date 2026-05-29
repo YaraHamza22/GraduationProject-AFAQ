@@ -45,27 +45,29 @@ function parseNotifications(payload: unknown): NotificationItem[] {
       ? data.data
       : [];
 
-  return list
-    .map((entry) => {
-      if (!isRecord(entry)) return null;
-      const idRaw = entry.id;
-      const id = typeof idRaw === "string" || typeof idRaw === "number" ? String(idRaw) : "";
-      if (!id) return null;
+  const items: NotificationItem[] = [];
 
-      const dataBlock = isRecord(entry.data) ? entry.data : null;
-      const title = dataBlock && typeof dataBlock.title === "string" ? dataBlock.title : undefined;
-      const body = dataBlock && typeof dataBlock.body === "string" ? dataBlock.body : undefined;
-      const type = dataBlock && typeof dataBlock.type === "string" ? dataBlock.type : undefined;
-      const nested = dataBlock && isRecord(dataBlock.data) ? dataBlock.data : undefined;
+  for (const entry of list) {
+    if (!isRecord(entry)) continue;
+    const idRaw = entry.id;
+    const id = typeof idRaw === "string" || typeof idRaw === "number" ? String(idRaw) : "";
+    if (!id) continue;
 
-      return {
-        id,
-        read_at: typeof entry.read_at === "string" ? entry.read_at : null,
-        created_at: typeof entry.created_at === "string" ? entry.created_at : undefined,
-        data: { title, body, type, data: nested },
-      } satisfies NotificationItem;
-    })
-    .filter((row): row is NotificationItem => row !== null);
+    const dataBlock = isRecord(entry.data) ? entry.data : null;
+    const title = dataBlock && typeof dataBlock.title === "string" ? dataBlock.title : undefined;
+    const body = dataBlock && typeof dataBlock.body === "string" ? dataBlock.body : undefined;
+    const type = dataBlock && typeof dataBlock.type === "string" ? dataBlock.type : undefined;
+    const nested = dataBlock && isRecord(dataBlock.data) ? dataBlock.data : undefined;
+
+    items.push({
+      id,
+      read_at: typeof entry.read_at === "string" ? entry.read_at : null,
+      created_at: typeof entry.created_at === "string" ? entry.created_at : undefined,
+      data: { title, body, type, data: nested },
+    });
+  }
+
+  return items;
 }
 
 function formatDate(value?: string) {
@@ -87,7 +89,7 @@ export default function NotificationBell({
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   const headers = React.useMemo(() => {
-    if (!token) return null;
+    if (!token) return undefined;
     return {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,

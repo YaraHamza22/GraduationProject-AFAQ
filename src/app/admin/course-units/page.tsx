@@ -5,6 +5,6 @@ export const metadata = {
   description: "Manage units and lessons for the selected course.",
 };
 
-export default function Page() {
+export default function AdminCourseUnitsPage() {
   return <CourseUnitsPage />;
 }

@@ -24,6 +24,7 @@ type Message = { id: number; chat_thread_id: number; author_id: number | null; b
 type Participant = { user_id: number; role: string };
 type ContactProfile = { specialization?: string; bio?: string; years_of_experience?: number };
 type Contact = { id: number; name: string; email?: string; gender?: string; avatar_url?: string; profile?: ContactProfile };
+type ContactCandidate = { path: string; params?: Record<string, string | number | boolean | null | undefined> };
 
 type ChatWorkspaceProps = {
   viewerRole: ViewerRole;
@@ -264,7 +265,7 @@ export default function ChatWorkspace({ viewerRole }: ChatWorkspaceProps) {
     router.replace(next ? `?${next}` : window.location.pathname, { scroll: false });
   }, [router, searchParams]);
 
-  const contactCandidates = React.useMemo(() => {
+  const contactCandidates = React.useMemo<ContactCandidate[]>(() => {
     if (viewerRole === "student") {
       return [
         { path: "/student/instructors" },

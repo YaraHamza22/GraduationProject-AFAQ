@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowLeft, Clock, Loader2, PlayCircle, ShieldCheck } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiRequestUrl } from "@/features/student/studentApi";
@@ -58,13 +58,12 @@ function extractList(payload: unknown) {
 export default function StudentTakeQuizPage() {
   const { language, isRTL } = useLanguage();
   const router = useRouter();
-  const params = useParams();
   const searchParams = useSearchParams();
   const [quiz, setQuiz] = useState<QuizDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const quizId = String(params.quizId ?? "");
+  const quizId = String(searchParams.get("quiz_id") ?? "");
   const courseId = searchParams.get("course_id");
 
   const locale = language === "ar" ? "ar" : "en";
@@ -187,7 +186,11 @@ export default function StudentTakeQuizPage() {
           <div className={`mt-8 flex items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
             <button
               className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black uppercase tracking-wider text-white hover:bg-indigo-500 transition-colors"
-              onClick={() => router.push(`/student/quizzes/${quizId}/attempt${courseId ? `?course_id=${courseId}` : ""}`)}
+              onClick={() => {
+                const query = new URLSearchParams({ quiz_id: quizId });
+                if (courseId) query.set("course_id", courseId);
+                router.push(`/student/quiz-attempt?${query.toString()}`);
+              }}
             >
               <PlayCircle className="w-4 h-4" />
               {language === "ar" ? "بدء الاختبار" : "Start Quiz"}

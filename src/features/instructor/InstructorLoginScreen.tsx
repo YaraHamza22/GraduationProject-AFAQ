@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import type { AxiosResponse } from "axios";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -77,7 +78,7 @@ export default function InstructorLoginScreen() {
         throw new Error("Login endpoint is not configured.");
       }
 
-      let response: Awaited<ReturnType<typeof axios.post>> | null = null;
+      let response: AxiosResponse<unknown> | null = null;
       for (const loginUrl of loginCandidates) {
         try {
           response = await axios.post(loginUrl, payload, {
