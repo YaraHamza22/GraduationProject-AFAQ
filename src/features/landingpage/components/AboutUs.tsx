@@ -13,32 +13,32 @@ const stats = [
 
 export function AboutUs() {
   return (
-    <section id="about" className="relative overflow-hidden bg-[#f7f8fb] py-28 text-slate-900 md:py-32">
+    <section id="about" className="relative overflow-hidden bg-[#f7f8fb] py-20 text-slate-900 sm:py-24 md:py-28 lg:py-32">
       <div className="pointer-events-none absolute inset-0 opacity-50 [background:linear-gradient(rgba(15,23,42,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.06)_1px,transparent_1px)] [background-size:48px_48px]" />
       <div className="pointer-events-none absolute -left-20 top-0 h-80 w-80 rounded-full bg-cyan-200/40 blur-3xl" />
       <div className="pointer-events-none absolute -right-16 bottom-10 h-96 w-96 rounded-full bg-indigo-200/40 blur-3xl" />
 
-      <div className="relative z-10 mx-auto grid w-full max-w-7xl gap-12 px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
+      <div className="relative z-10 mx-auto grid w-full max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-12">
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.65, ease: "easeOut" }}
-          className="space-y-9"
+          className="space-y-7 sm:space-y-9"
         >
           <div className="inline-flex items-center gap-2 rounded-full border border-slate-300/80 bg-white/80 px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-600 shadow-sm">
             <Orbit className="h-4 w-4 text-cyan-600" />
             About Afaq
           </div>
 
-          <h3 className="max-w-2xl text-5xl font-black leading-[0.96] tracking-[-0.04em] text-slate-900 md:text-6xl">
+          <h3 className="max-w-2xl text-3xl font-black leading-[0.96] tracking-[-0.04em] text-slate-900 sm:text-4xl md:text-5xl lg:text-6xl">
             Built Like a
             <span className="block bg-gradient-to-r from-cyan-600 via-indigo-600 to-fuchsia-600 bg-clip-text text-transparent">
               Future-Ready Studio.
             </span>
           </h3>
 
-          <p className="max-w-2xl text-lg leading-8 text-slate-600">
+          <p className="max-w-2xl text-base leading-7 text-slate-600 sm:text-lg sm:leading-8">
             Afaq blends immersive simulation, mentorship, and product-level learning design. Every course is engineered
             to help students move from theory to confident execution in real-world environments.
           </p>
@@ -51,18 +51,18 @@ export function AboutUs() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.45, delay: index * 0.06 }}
-                className="group rounded-2xl border border-slate-200 bg-white/85 p-5 shadow-[0_16px_36px_-24px_rgba(15,23,42,0.4)] transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_22px_44px_-22px_rgba(79,70,229,0.35)]"
+                className="group rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-[0_16px_36px_-24px_rgba(15,23,42,0.4)] transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_22px_44px_-22px_rgba(79,70,229,0.35)] sm:p-5"
               >
                 <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition-colors group-hover:bg-indigo-50 group-hover:text-indigo-600">
                   <stat.icon className="h-5 w-5" />
                 </div>
-                <p className="text-3xl font-black tracking-tight text-slate-900">{stat.value}</p>
+                <p className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{stat.value}</p>
                 <p className="mt-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{stat.label}</p>
               </motion.div>
             ))}
           </div>
 
-          <button className="group inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-7 py-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-indigo-600">
+          <button className="group inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-6 py-4 text-sm font-black uppercase tracking-[0.14em] text-white transition hover:bg-indigo-600 sm:w-auto sm:justify-start sm:px-7">
             Explore Our Story
             <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
           </button>
@@ -75,7 +75,7 @@ export function AboutUs() {
           transition={{ duration: 0.7, ease: "easeOut" }}
           className="grid gap-4 sm:grid-cols-2 sm:grid-rows-[1.1fr_0.9fr] lg:mt-4"
         >
-          <div className="relative min-h-[380px] overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_30px_70px_-40px_rgba(15,23,42,0.45)] sm:col-span-2">
+          <div className="relative min-h-[260px] overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_30px_70px_-40px_rgba(15,23,42,0.45)] sm:col-span-2 sm:min-h-[380px]">
             <Image
               src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=1600"
               alt="Afaq Team"

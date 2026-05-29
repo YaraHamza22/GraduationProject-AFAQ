@@ -50,9 +50,9 @@ const pillars = [
 
 export function Features() {
   return (
-    <section className="relative py-32 bg-linear-to-b from-slate-50 to-white overflow-hidden">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="text-center max-w-3xl mx-auto mb-24">
+    <section id="programs" className="relative overflow-hidden bg-linear-to-b from-slate-50 to-white py-24 sm:py-28 lg:py-32">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="mx-auto mb-16 max-w-3xl text-center sm:mb-20 lg:mb-24">
           <motion.span
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
@@ -66,7 +66,7 @@ export function Features() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
-            className="text-4xl md:text-5xl font-black text-slate-900 mb-6 tracking-tight"
+            className="mb-6 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl md:text-5xl"
           >
             Core Pillars of <span className="text-indigo-600">Excellence</span>.
           </motion.h2>
@@ -75,13 +75,13 @@ export function Features() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.2 }}
-            className="text-slate-500 text-lg font-medium"
+            className="text-base font-medium text-slate-500 sm:text-lg"
           >
             We don&apos;t just teach. We transform. Discover the features that make our platform the horizon of modern education.
           </motion.p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+        <div className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-2 lg:grid-cols-3 lg:gap-8">
           {pillars.map((pillar, i) => (
             <motion.div
               key={pillar.title}
@@ -89,15 +89,15 @@ export function Features() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: i * 0.1 }}
-              className="group p-10 rounded-4xl bg-white border border-slate-100 hover:border-indigo-100 hover:shadow-2xl hover:shadow-indigo-500/5 transition-all duration-300"
+              className="group rounded-[2rem] border border-slate-100 bg-white p-6 transition-all duration-300 hover:border-indigo-100 hover:shadow-2xl hover:shadow-indigo-500/5 sm:p-8 lg:p-10"
             >
-              <div className={`w-16 h-16 ${pillar.bg} rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform duration-500`}>
-                <pillar.icon className={`w-8 h-8 ${pillar.color}`} />
+              <div className={`mb-6 flex h-14 w-14 items-center justify-center rounded-2xl ${pillar.bg} transition-transform duration-500 group-hover:scale-110 sm:mb-8 sm:h-16 sm:w-16`}>
+                <pillar.icon className={`h-7 w-7 sm:h-8 sm:w-8 ${pillar.color}`} />
               </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-4 group-hover:text-indigo-600 transition-colors">
+              <h3 className="mb-3 text-lg font-bold text-slate-900 transition-colors group-hover:text-indigo-600 sm:mb-4 sm:text-xl">
                 {pillar.title}
               </h3>
-              <p className="text-slate-500 leading-relaxed font-medium">{pillar.description}</p>
+              <p className="font-medium leading-7 text-slate-500">{pillar.description}</p>
             </motion.div>
           ))}
         </div>

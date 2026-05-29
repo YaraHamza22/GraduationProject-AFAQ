@@ -39,12 +39,12 @@ const courses = [
 
 export function CourseGrid() {
   return (
-    <section className="relative py-32 bg-slate-950 overflow-hidden">
+    <section id="courses" className="relative overflow-hidden bg-slate-950 py-24 sm:py-28 lg:py-32">
       {/* Background Decor */}
       <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-indigo-600/5 blur-[120px] rounded-full pointer-events-none" />
       
-      <div className="max-w-7xl mx-auto px-6 relative z-10">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-20">
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="mb-14 flex flex-col justify-between gap-6 md:mb-20 md:flex-row md:items-end md:gap-8">
           <div className="max-w-xl">
              <motion.span 
                initial={{ opacity: 0, y: 10 }}
@@ -59,7 +59,7 @@ export function CourseGrid() {
                whileInView={{ opacity: 1, y: 0 }}
                viewport={{ once: true }}
                transition={{ delay: 0.1 }}
-               className="text-4xl md:text-5xl font-black text-white leading-tight"
+               className="text-3xl font-black leading-tight text-white sm:text-4xl md:text-5xl"
              >
                Find Your Path in the <span className="text-gradient">Afaq</span> Ecosystem.
              </motion.h2>
@@ -69,14 +69,14 @@ export function CourseGrid() {
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
             transition={{ delay: 0.3 }}
-            className="px-6 py-3 rounded-xl border border-white/10 text-white hover:bg-white/5 transition-colors font-semibold flex items-center gap-2 group"
+            className="group inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-6 py-3 font-semibold text-white transition-colors hover:bg-white/5 sm:w-auto"
           >
             Browse All Courses
             <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
           </motion.button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8 lg:grid-cols-3">
           {courses.map((course, i) => (
             <motion.div
               key={course.title}
@@ -89,9 +89,9 @@ export function CourseGrid() {
               {/* Card Hover Glow */}
               <div className={`absolute -inset-0.5 bg-linear-to-r ${course.color} rounded-4xl blur opacity-0 group-hover:opacity-20 transition duration-500`} />
               
-              <div className="relative h-full bg-slate-900 border border-white/5 rounded-4xl overflow-hidden flex flex-col hover:border-white/10 transition-colors">
+              <div className="relative flex h-full flex-col overflow-hidden rounded-[2rem] border border-white/5 bg-slate-900 transition-colors hover:border-white/10 sm:rounded-4xl">
                 {/* Image Section */}
-                <div className="relative h-56 overflow-hidden">
+                <div className="relative h-52 overflow-hidden sm:h-56">
                   <Image 
                     src={course.image} 
                     alt={course.title}
@@ -108,17 +108,17 @@ export function CourseGrid() {
                 </div>
 
                 {/* Content Section */}
-                <div className="p-8 flex flex-col grow">
+                <div className="flex grow flex-col p-5 sm:p-8">
                   <div className="flex items-center gap-1 text-amber-400 mb-3">
                     <Star className="w-4 h-4 fill-current" />
                     <span className="text-sm font-bold ml-1">{course.rating}</span>
                   </div>
                   
-                  <h3 className="text-xl font-bold text-white mb-4 group-hover:text-indigo-400 transition-colors line-clamp-2">
+                  <h3 className="mb-4 line-clamp-2 text-lg font-bold text-white transition-colors group-hover:text-indigo-400 sm:text-xl">
                     {course.title}
                   </h3>
 
-                  <div className="mt-auto pt-6 border-t border-white/5 flex items-center justify-between">
+                  <div className="mt-auto flex flex-col gap-4 border-t border-white/5 pt-5 sm:flex-row sm:items-center sm:justify-between sm:pt-6">
                     <div className="flex items-center gap-3">
                       <Image
                         src={course.avatar}
@@ -130,9 +130,9 @@ export function CourseGrid() {
                         className="w-8 h-8 rounded-full border border-white/20"
                         alt={course.instructor}
                       />
-                      <span className="text-sm text-slate-400 font-medium">{course.instructor}</span>
+                      <span className="text-sm font-medium text-slate-400">{course.instructor}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-slate-500">
+                    <div className="flex items-center gap-1.5 text-slate-500 sm:justify-end">
                       <Users className="w-4 h-4" />
                       <span className="text-xs font-bold uppercase tracking-wider">{course.students}</span>
                     </div>
