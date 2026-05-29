@@ -382,9 +382,9 @@ export default function AdminQuizzesPage() {
   };
 
   return (
-    <div className={`p-6 md:p-10 min-h-screen bg-slate-50 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
+    <div className={`min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
       <div className="max-w-[1400px] mx-auto">
-        <header className={`flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 ${isRTL ? "md:flex-row-reverse" : ""}`}>
+        <header className={`mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end ${isRTL ? "md:flex-row-reverse" : ""}`}>
           <div>
             <div className={`flex items-center gap-2 text-indigo-500 font-bold uppercase tracking-[0.25em] text-[10px] mb-2 ${isRTL ? "flex-row-reverse" : ""}`}>
               <BookOpen className="w-3 h-3" />
@@ -392,11 +392,11 @@ export default function AdminQuizzesPage() {
             </div>
             <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tight">Admin Quizzes</h1>
           </div>
-          <div className={`flex items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
+          <div className={`flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center ${isRTL ? "sm:flex-row-reverse" : ""}`}>
             <button type="button" onClick={() => void loadData()} className="p-4 rounded-2xl bg-slate-100 dark:bg-[#11182B] border border-slate-200 dark:border-white/10">
               <RefreshCw className={`w-5 h-5 ${isLoading ? "animate-spin" : ""}`} />
             </button>
-            <button type="button" onClick={openWizard} className="inline-flex items-center gap-2 px-7 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">
+            <button type="button" onClick={openWizard} className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-7 py-4 font-bold text-white hover:bg-indigo-700 sm:w-auto">
               <Plus className="w-4 h-4" />
               Create Quiz
             </button>
@@ -441,7 +441,7 @@ export default function AdminQuizzesPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsWizardOpen(false)} className="absolute inset-0 bg-slate-950/70" />
 
-            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 18 }} className="relative w-full max-w-3xl rounded-3xl bg-white dark:bg-[#0A0F1D] border border-slate-200 dark:border-white/10 p-8 space-y-5 max-h-[90vh] overflow-y-auto">
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 18 }} className="relative max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 space-y-5 dark:border-white/10 dark:bg-[#0A0F1D] sm:p-8">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-black text-slate-900 dark:text-white">Create Quiz Wizard</h2>
                 <div className="text-xs font-black uppercase tracking-[0.2em] text-indigo-500">Step {wizardStep} / 2</div>
@@ -466,7 +466,7 @@ export default function AdminQuizzesPage() {
                   <input required value={quizForm.title} onChange={(e) => setQuizForm((p) => ({ ...p, title: e.target.value }))} placeholder="Quiz title" className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3" />
                   <textarea required rows={4} value={quizForm.description} onChange={(e) => setQuizForm((p) => ({ ...p, description: e.target.value }))} placeholder="Quiz description" className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3" />
                   <input type="number" min={1} value={quizForm.duration_minutes} onChange={(e) => setQuizForm((p) => ({ ...p, duration_minutes: e.target.value }))} className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3" />
-                  <div className="flex gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row">
                     <button type="button" onClick={() => setIsWizardOpen(false)} className="px-5 py-3 rounded-xl border border-slate-200 dark:border-white/10">Cancel</button>
                     <button type="submit" disabled={isSubmitting} className="px-5 py-3 rounded-xl bg-indigo-600 text-white font-bold inline-flex items-center gap-2">
                       {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
@@ -517,7 +517,7 @@ export default function AdminQuizzesPage() {
                     </label>
                   )}
 
-                  <div className="flex gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row">
                     <button type="button" onClick={() => setWizardStep(1)} className="px-5 py-3 rounded-xl border border-slate-200 dark:border-white/10">Back</button>
                     <button type="submit" disabled={isSubmitting} className="px-5 py-3 rounded-xl bg-indigo-600 text-white font-bold inline-flex items-center gap-2">
                       {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}

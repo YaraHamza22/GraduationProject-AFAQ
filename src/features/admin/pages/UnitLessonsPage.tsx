@@ -1296,7 +1296,7 @@ export default function UnitLessonsPage() {
   };
 
   return (
-    <div className={`p-6 md:p-10 min-h-screen bg-slate-50 dark:bg-transparent transition-colors duration-500 ${isRTL ? "text-right" : ""}`}>
+    <div className={`min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8 transition-colors duration-500 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
       <div className="fixed top-0 right-0 w-[700px] h-[700px] bg-indigo-500/5 blur-[140px] rounded-full pointer-events-none" />
       <div className="fixed bottom-0 left-0 w-[600px] h-[600px] bg-purple-500/5 blur-[140px] rounded-full pointer-events-none" />
       <div className="max-w-[1400px] mx-auto relative z-10">
@@ -1309,7 +1309,7 @@ export default function UnitLessonsPage() {
           Back To Units
         </button>
 
-        <header className={`flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 ${isRTL ? "md:flex-row-reverse" : ""}`}>
+        <header className={`mb-8 flex flex-col justify-between gap-6 md:flex-row md:items-end ${isRTL ? "md:flex-row-reverse" : ""}`}>
           <div>
             <div className={`flex items-center gap-2 text-indigo-500 font-bold uppercase tracking-[0.25em] text-[10px] mb-2 ${isRTL ? "flex-row-reverse" : ""}`}>
               <BookOpen className="w-3 h-3" />
@@ -1323,7 +1323,7 @@ export default function UnitLessonsPage() {
             </p>
           </div>
 
-          <div className={`flex items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
+          <div className={`flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center ${isRTL ? "sm:flex-row-reverse" : ""}`}>
             <button
               type="button"
               onClick={() => void loadData()}
@@ -1334,7 +1334,7 @@ export default function UnitLessonsPage() {
             <button
               type="button"
               onClick={openCreateModal}
-              className="inline-flex items-center gap-2 px-7 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base transition-colors shadow-2xl shadow-indigo-500/30"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-7 py-4 text-base font-bold text-white shadow-2xl shadow-indigo-500/30 transition-colors hover:bg-indigo-700 sm:w-auto"
             >
               <Plus className="w-4 h-4" />
               Add Lesson
@@ -2102,7 +2102,7 @@ export default function UnitLessonsPage() {
 
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-10">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 md:p-10">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -2118,10 +2118,10 @@ export default function UnitLessonsPage() {
               initial={{ opacity: 0, scale: 0.95, y: 50 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 50 }}
-              className="relative w-full h-full md:h-auto md:max-h-[90vh] md:max-w-4xl bg-white dark:bg-[#0A0F1D] md:rounded-[56px] overflow-hidden shadow-2xl border-t md:border border-slate-200 dark:border-white/10"
+              className="relative h-full w-full overflow-hidden border-t border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0A0F1D] sm:h-auto sm:max-h-[92vh] sm:max-w-4xl sm:rounded-[32px] sm:border md:rounded-[56px]"
             >
               <form onSubmit={handleSubmit} className="flex flex-col h-full md:max-h-[90vh]">
-                <header className={`p-8 md:p-12 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-slate-50/50 dark:bg-white/2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                <header className={`flex items-start justify-between border-b border-slate-100 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/2 sm:items-center sm:p-8 md:p-12 ${isRTL ? "flex-row-reverse" : ""}`}>
                   <div>
                     <div className={`flex items-center gap-2 text-indigo-500 font-black uppercase tracking-[0.3em] text-[10px] mb-3 ${isRTL ? "flex-row-reverse" : ""}`}>
                       <Settings className="w-3 h-3" />
@@ -2143,7 +2143,7 @@ export default function UnitLessonsPage() {
                   </button>
                 </header>
 
-                <div className="p-8 md:p-12 space-y-10 overflow-y-auto custom-scrollbar">
+                <div className="custom-scrollbar space-y-8 overflow-y-auto p-5 sm:p-8 md:p-12 md:space-y-10">
                   {isFetchingLesson && (
                     <div className="rounded-[20px] border border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 px-5 py-4 text-sm font-bold inline-flex items-center gap-3">
                       <Loader2 className="w-5 h-5 animate-spin" />
@@ -2286,7 +2286,7 @@ export default function UnitLessonsPage() {
                   )}
                 </div>
 
-                <footer className={`p-8 md:p-12 border-t border-slate-100 dark:border-white/5 flex flex-col sm:flex-row gap-4 bg-slate-50/50 dark:bg-white/2 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
+                <footer className={`flex flex-col gap-4 border-t border-slate-100 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/2 sm:flex-row sm:p-8 md:p-12 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
                   <button
                     type="button"
                     onClick={() => {

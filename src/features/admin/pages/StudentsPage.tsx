@@ -420,7 +420,7 @@ export default function StudentsManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_78%_-8%,#dbeafe_0%,#f8fafc_42%,#eef2ff_100%)] p-6 dark:bg-[radial-gradient(circle_at_78%_-8%,#172554_0%,#020617_42%,#0f172a_100%)]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_78%_-8%,#dbeafe_0%,#f8fafc_42%,#eef2ff_100%)] p-4 sm:p-6 lg:p-8 dark:bg-[radial-gradient(circle_at_78%_-8%,#172554_0%,#020617_42%,#0f172a_100%)]">
       <div className="mx-auto max-w-[1650px] space-y-5 text-slate-900 dark:text-slate-100">
         <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
@@ -431,27 +431,27 @@ export default function StudentsManagement() {
             <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-900 dark:text-white">Students Workspace</h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">All IDs are automatic from selected rows.</p>
           </div>
-          <div className={`flex flex-wrap items-center gap-2 ${isRTL ? "justify-end" : ""}`}>
-            <div className="group relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 dark:text-slate-500" />
+          <div className={`flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center ${isRTL ? "sm:justify-end" : ""}`}>
+            <div className="group relative w-full sm:w-auto">
+              <Search className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 dark:text-slate-500 ${isRTL ? "right-3" : "left-3"}`} />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search students..."
-                className="h-10 w-72 rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-900 outline-none ring-indigo-500/20 transition focus:ring-4 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500"
+                className={`h-10 w-full rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 outline-none ring-indigo-500/20 transition focus:ring-4 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500 sm:w-72 ${isRTL ? "pr-9 pl-3 text-right" : "pl-9 pr-3"}`}
               />
             </div>
             <button
               onClick={() => void loadStudents(true)}
               disabled={loading || busy || refreshing}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:border-indigo-500 dark:hover:text-indigo-300"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-slate-700 transition hover:border-indigo-300 hover:text-indigo-600 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:border-indigo-500 dark:hover:text-indigo-300 sm:w-auto"
             >
               {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Refresh
             </button>
             <button
               onClick={openCreate}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-white transition hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500 sm:w-auto"
             >
               <Plus className="h-4 w-4" />
               Add Student
@@ -467,7 +467,7 @@ export default function StudentsManagement() {
             {loading ? "Loading..." : `${filteredStudents.length} students`}
           </div>
           <div className="overflow-x-auto">
-            <table className={`min-w-full ${isRTL ? "text-right" : "text-left"}`}>
+            <table className={`min-w-[860px] w-full ${isRTL ? "text-right" : "text-left"}`}>
               <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:bg-slate-900/90 dark:text-slate-400">
                 <tr>
                   <th className="px-4 py-3">Student</th>
@@ -520,15 +520,15 @@ export default function StudentsManagement() {
 
       <AnimatePresence>
         {modalOpen ? (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-slate-950/60 p-6">
-            <div className="mx-auto max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
+            <div className="mx-auto max-h-[92vh] max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-700">
                 <h2 className="text-xl font-black text-slate-900 dark:text-white">{mode === "create" ? "Create Student" : "Update Student"}</h2>
                 <button onClick={() => setModalOpen(false)} className="text-slate-600 transition hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              <form onSubmit={(e) => void submit(e)} className="grid gap-3 p-5 md:grid-cols-2">
+              <form onSubmit={(e) => void submit(e)} className="grid max-h-[calc(92vh-72px)] gap-3 overflow-y-auto p-5 md:grid-cols-2">
                 {(["name", "email", "password", "password_confirmation", "phone", "date_of_birth", "address", "country", "specialization", "joined_at"] as (keyof FormState)[]).map((key) => (
                   <div key={key}>
                     <label className="mb-1 block text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{key}</label>
@@ -581,8 +581,8 @@ export default function StudentsManagement() {
 
       <AnimatePresence>
         {detailOpen ? (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-slate-950/40">
-            <div className={`h-full w-full max-w-lg border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 ${isRTL ? "mr-auto border-r" : "ml-auto border-l"}`}>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-sm">
+            <div className={`h-full w-full max-w-full border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:max-w-lg ${isRTL ? "mr-auto border-r" : "ml-auto border-l"}`}>
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                 <p className="text-sm font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300">{detailMode}</p>
                 <button onClick={() => setDetailOpen(false)} className="text-slate-600 dark:text-slate-300">

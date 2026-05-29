@@ -494,13 +494,13 @@ export default function CoursesPage() {
   };
 
   return (
-    <div className={`p-6 md:p-10 min-h-screen bg-slate-50 dark:bg-transparent transition-colors duration-500 ${isRTL ? "text-right" : ""}`}>
+    <div className={`min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8 transition-colors duration-500 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
       {/* Background Glow */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-500/5 blur-[120px] rounded-full pointer-events-none" />
       
       <div className="max-w-[1600px] mx-auto relative z-10">
         {/* Header */}
-        <header className={`flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-16 ${isRTL ? "lg:flex-row-reverse text-right" : ""}`}>
+        <header className={`mb-12 flex flex-col justify-between gap-6 lg:flex-row lg:items-center ${isRTL ? "lg:flex-row-reverse text-right" : ""}`}>
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
             <div className={`flex items-center gap-2 text-indigo-500 font-black uppercase tracking-[0.3em] text-[10px] mb-3 ${isRTL ? "flex-row-reverse" : ""}`}>
               <Layout className="w-3 h-3" />
@@ -514,7 +514,7 @@ export default function CoursesPage() {
             </p>
           </motion.div>
 
-          <div className={`flex flex-wrap items-center gap-4 ${isRTL ? "flex-row-reverse" : ""}`}>
+          <div className={`flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center ${isRTL ? "sm:flex-row-reverse" : ""}`}>
             <button 
               onClick={() => void loadData()}
               className="p-4 md:p-5 rounded-2xl md:rounded-[24px] bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-white/60 hover:bg-slate-50 dark:hover:bg-white/10 transition-all shadow-sm active:scale-90"
@@ -523,7 +523,7 @@ export default function CoursesPage() {
             </button>
             <button 
               onClick={openCreateModal}
-              className="flex-1 md:flex-none flex items-center justify-center gap-3 px-8 py-4 md:py-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl md:rounded-[24px] font-black uppercase tracking-widest text-[10px] md:text-[11px] shadow-2xl shadow-indigo-500/30 transition-all hover:-translate-y-1 active:scale-95 whitespace-nowrap"
+              className="flex w-full items-center justify-center gap-3 whitespace-nowrap rounded-2xl bg-indigo-600 px-8 py-4 text-[10px] font-black uppercase tracking-widest text-white shadow-2xl shadow-indigo-500/30 transition-all hover:-translate-y-1 hover:bg-indigo-700 active:scale-95 md:w-auto md:rounded-[24px] md:py-5 md:text-[11px]"
             >
               <Plus className="w-4 h-4 md:w-5 md:h-5" />
               Add New Course
@@ -695,7 +695,7 @@ export default function CoursesPage() {
       {/* Modal */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-10">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 md:p-10">
             <motion.div 
               initial={{ opacity: 0 }} 
               animate={{ opacity: 1 }} 
@@ -708,11 +708,11 @@ export default function CoursesPage() {
               initial={{ opacity: 0, scale: 0.95, y: 50 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 50 }}
-              className="relative w-full h-full md:h-auto md:max-h-[90vh] md:max-w-6xl 2xl:max-w-7xl bg-white dark:bg-[#0A0F1D] md:rounded-[64px] overflow-hidden shadow-[0_100px_150px_-30px_rgba(0,0,0,0.5)] border-t md:border border-slate-200 dark:border-white/10"
+              className="relative h-full w-full overflow-hidden border-t border-slate-200 bg-white shadow-[0_100px_150px_-30px_rgba(0,0,0,0.5)] dark:border-white/10 dark:bg-[#0A0F1D] sm:h-auto sm:max-h-[92vh] sm:rounded-[32px] sm:border md:max-w-6xl md:rounded-[64px] 2xl:max-w-7xl"
             >
               <div className="flex flex-col h-full md:max-h-[90vh]">
                 {/* Modal Header */}
-                <header className={`p-8 md:p-12 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-slate-50/50 dark:bg-white/2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                <header className={`flex items-start justify-between border-b border-slate-100 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/2 sm:items-center sm:p-8 md:p-12 ${isRTL ? "flex-row-reverse" : ""}`}>
                   <div>
                     <div className={`flex items-center gap-2 text-indigo-500 font-black uppercase tracking-[0.3em] text-[10px] mb-3 ${isRTL ? "flex-row-reverse" : ""}`}>
                       <Settings className="w-3 h-3" />
@@ -761,7 +761,7 @@ export default function CoursesPage() {
                 </nav>
 
                 {/* Form Content */}
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 md:p-12 custom-scrollbar">
+                <form onSubmit={handleSubmit} className="custom-scrollbar flex-1 overflow-y-auto p-5 sm:p-8 md:p-12">
                   {activeTab === "basic" && (
                     <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-10">
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
@@ -1013,7 +1013,7 @@ export default function CoursesPage() {
                 </form>
 
                 {/* Modal Footer */}
-                <footer className={`p-8 md:p-12 border-t border-slate-100 dark:border-white/5 flex flex-col sm:flex-row gap-4 bg-slate-50/50 dark:bg-white/2 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
+                <footer className={`flex flex-col gap-4 border-t border-slate-100 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/2 sm:flex-row sm:p-8 md:p-12 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
                   <button 
                     type="button"
                     onClick={() => setIsModalOpen(false)}

@@ -22,8 +22,8 @@ const managers = [
 export default function ManagersManagement() {
   const { t, isRTL } = useLanguage();
   return (
-    <div className={`p-8 md:p-12 relative min-h-screen bg-slate-50 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
-      <header className="mb-12 relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div className={`relative min-h-screen bg-slate-50 p-4 sm:p-6 md:p-8 lg:p-10 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
+      <header className="relative z-10 mb-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
         <div className={isRTL ? "text-right" : "text-left"}>
           <div className={`flex items-center gap-2 text-indigo-500 font-extrabold uppercase tracking-[0.3em] text-[10px] mb-2 ${isRTL ? "flex-row-reverse" : ""}`}>
             <ShieldCheck className="w-3 h-3" />
@@ -34,19 +34,19 @@ export default function ManagersManagement() {
           </h1>
         </div>
         
-        <button className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-indigo-600/20 transition-all active:scale-95">
+        <button className="flex w-full items-center gap-2 rounded-2xl bg-indigo-600 px-6 py-4 text-xs font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-600/20 transition-all hover:bg-indigo-500 active:scale-95 sm:w-auto sm:justify-center">
             <Plus className="w-4 h-4" /> {isRTL ? "إضافة مدير" : "Add Manager"}
         </button>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10 font-bold">
+      <div className="relative z-10 grid grid-cols-1 gap-4 font-bold md:grid-cols-2 lg:gap-6">
         {managers.map((manager, idx) => (
           <motion.div
             key={manager.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1 }}
-            className="group p-8 rounded-[48px] bg-white dark:bg-white/3 border border-slate-200 dark:border-white/5 relative overflow-hidden transition-all hover:border-indigo-500/30 hover:shadow-2xl hover:shadow-indigo-500/5 shadow-sm dark:shadow-none backdrop-blur-3xl"
+            className="group relative overflow-hidden rounded-[32px] border border-slate-200 bg-white p-5 shadow-sm transition-all backdrop-blur-3xl hover:border-indigo-500/30 hover:shadow-2xl hover:shadow-indigo-500/5 dark:border-white/5 dark:bg-white/3 dark:shadow-none sm:p-6 lg:rounded-[40px] lg:p-8"
           >
             <div className={`flex justify-between items-start mb-8 ${isRTL ? "flex-row-reverse" : ""}`}>
                 <div className={`flex items-center gap-4 ${isRTL ? "flex-row-reverse text-right" : ""}`}>

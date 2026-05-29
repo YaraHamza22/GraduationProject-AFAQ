@@ -148,7 +148,7 @@ export default function AdminProfilePage() {
   const profileId = getDisplayValue(profile?.id, isRTL ? "غير متوفر" : "Unavailable");
 
   return (
-    <div className={`relative min-h-screen bg-slate-50 p-8 md:p-12 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
+    <div className={`relative min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
       <div className="absolute right-0 top-0 h-[420px] w-[420px] rounded-full bg-indigo-500/5 blur-[110px]" />
 
       <header className="relative z-10 mb-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
@@ -191,9 +191,9 @@ export default function AdminProfilePage() {
           animate={{ opacity: 1, y: 0 }}
           className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.03] dark:shadow-none"
         >
-          <div className="border-b border-slate-200 bg-linear-to-r from-indigo-500/10 via-white to-sky-500/10 p-8 dark:border-white/10 dark:from-indigo-500/10 dark:via-white/[0.03] dark:to-sky-500/10">
-            <div className={`flex items-center gap-6 ${isRTL ? "flex-row-reverse" : ""}`}>
-              <div className="flex h-24 w-24 items-center justify-center rounded-[2rem] bg-linear-to-br from-indigo-600 to-sky-500 text-3xl font-black text-white shadow-xl shadow-indigo-600/20">
+          <div className="border-b border-slate-200 bg-linear-to-r from-indigo-500/10 via-white to-sky-500/10 p-5 dark:border-white/10 dark:from-indigo-500/10 dark:via-white/[0.03] dark:to-sky-500/10 sm:p-8">
+            <div className={`flex flex-col items-start gap-5 sm:flex-row sm:items-center ${isRTL ? "sm:flex-row-reverse" : ""}`}>
+              <div className="flex h-20 w-20 items-center justify-center rounded-[2rem] bg-linear-to-br from-indigo-600 to-sky-500 text-2xl font-black text-white shadow-xl shadow-indigo-600/20 sm:h-24 sm:w-24 sm:text-3xl">
                 {getProfileInitials(profile)}
               </div>
               <div className={isRTL ? "text-right" : ""}>
@@ -210,7 +210,7 @@ export default function AdminProfilePage() {
             </div>
           </div>
 
-          <div className="grid gap-4 p-8 md:grid-cols-2">
+          <div className="grid gap-4 p-5 sm:p-8 md:grid-cols-2">
             <div className="rounded-[1.6rem] border border-slate-200 bg-slate-50 p-5 dark:border-white/10 dark:bg-white/[0.03]">
               <div className={`flex items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
                 <UserCircle className="h-5 w-5 text-indigo-500" />

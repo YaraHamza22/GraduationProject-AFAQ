@@ -263,7 +263,7 @@ export default function CourseUnitsPage() {
   };
 
   return (
-    <div className={`p-4 md:p-12 2xl:p-20 min-h-screen bg-slate-50 dark:bg-transparent transition-colors duration-500 ${isRTL ? "text-right" : ""}`}>
+    <div className={`min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8 2xl:p-12 transition-colors duration-500 dark:bg-transparent ${isRTL ? "text-right" : ""}`}>
       {/* Background Glow */}
       <div className="fixed top-0 right-0 w-[800px] h-[800px] bg-indigo-500/5 blur-[150px] rounded-full pointer-events-none" />
       <div className="fixed bottom-0 left-0 w-[600px] h-[600px] bg-purple-500/5 blur-[150px] rounded-full pointer-events-none" />
@@ -272,7 +272,7 @@ export default function CourseUnitsPage() {
         {/* Breadcrumbs / Back */}
         <button 
           onClick={() => router.push("/admin/courses")}
-          className={`flex items-center gap-3 text-slate-400 hover:text-indigo-500 transition-all mb-12 group ${isRTL ? "flex-row-reverse" : ""}`}
+          className={`group mb-8 flex items-center gap-3 text-slate-400 transition-all hover:text-indigo-500 md:mb-12 ${isRTL ? "flex-row-reverse" : ""}`}
         >
           <div className="p-2 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 group-hover:border-indigo-500/50 transition-all shadow-sm">
             <ChevronLeft className={`w-5 h-5 transition-transform group-hover:-translate-x-1 ${isRTL ? "rotate-180 group-hover:translate-x-1" : ""}`} />
@@ -281,13 +281,13 @@ export default function CourseUnitsPage() {
         </button>
 
         {/* Header */}
-        <header className={`flex flex-col xl:flex-row xl:items-end justify-between gap-10 mb-16 md:mb-24 ${isRTL ? "xl:flex-row-reverse" : ""}`}>
+        <header className={`mb-12 flex flex-col justify-between gap-8 xl:flex-row xl:items-end ${isRTL ? "xl:flex-row-reverse" : ""}`}>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <div className={`flex items-center gap-3 text-indigo-500 font-black uppercase tracking-[0.4em] text-[10px] md:text-[12px] mb-4 ${isRTL ? "flex-row-reverse" : ""}`}>
               <BookOpen className="w-4 h-4" />
               Architectural Layer
             </div>
-            <h1 className="text-5xl md:text-7xl 2xl:text-8xl font-black tracking-tighter text-slate-900 dark:text-white leading-[0.9]">
+            <h1 className="text-4xl font-black leading-[0.9] tracking-tighter text-slate-900 dark:text-white sm:text-5xl md:text-6xl 2xl:text-8xl">
               Curriculum <br />
               <span className="text-transparent bg-clip-text bg-linear-to-r from-indigo-500 via-purple-500 to-pink-500">Inventory</span>
             </h1>
@@ -304,7 +304,7 @@ export default function CourseUnitsPage() {
             )}
           </motion.div>
 
-          <div className={`flex flex-wrap items-center gap-4 md:gap-6 ${isRTL ? "flex-row-reverse" : ""}`}>
+          <div className={`flex w-full flex-col gap-4 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center md:gap-6 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
             <button 
               onClick={() => void loadData()}
               className="p-5 md:p-6 rounded-[28px] bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-white/60 hover:bg-slate-50 dark:hover:bg-indigo-500/10 hover:text-indigo-500 transition-all shadow-xl shadow-slate-900/5"
@@ -313,7 +313,7 @@ export default function CourseUnitsPage() {
             </button>
             <button 
               onClick={openCreateModal}
-              className="flex items-center gap-4 px-8 md:px-12 py-5 md:py-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[28px] font-black uppercase tracking-[0.2em] text-[11px] md:text-[12px] shadow-2xl shadow-indigo-500/40 transition-all hover:-translate-y-2 active:scale-95"
+              className="flex w-full items-center justify-center gap-4 rounded-[24px] bg-indigo-600 px-8 py-5 text-[11px] font-black uppercase tracking-[0.2em] text-white shadow-2xl shadow-indigo-500/40 transition-all hover:-translate-y-2 hover:bg-indigo-700 active:scale-95 sm:w-auto md:rounded-[28px] md:px-12 md:py-6 md:text-[12px]"
             >
               <Plus className="w-5 h-5" />
               Initialize Unit
@@ -454,15 +454,15 @@ export default function CourseUnitsPage() {
       {/* Modal */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-10">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 md:p-10">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-slate-950/80 backdrop-blur-xl" />
             
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 50 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 50 }}
-              className="relative w-full h-full md:h-auto md:max-h-[90vh] md:max-w-4xl bg-white dark:bg-[#0A0F1D] md:rounded-[56px] overflow-hidden shadow-2xl border-t md:border border-slate-200 dark:border-white/10"
+              className="relative h-full w-full overflow-hidden border-t border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0A0F1D] sm:h-auto sm:max-h-[92vh] sm:max-w-4xl sm:rounded-[32px] sm:border md:rounded-[56px]"
             >
               <form onSubmit={handleSubmit} className="flex flex-col h-full md:max-h-[90vh]">
-                <header className={`p-8 md:p-12 border-b border-slate-100 dark:border-white/5 flex justify-between items-center bg-slate-50/50 dark:bg-white/2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                <header className={`flex items-start justify-between border-b border-slate-100 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/2 sm:items-center sm:p-8 md:p-12 ${isRTL ? "flex-row-reverse" : ""}`}>
                   <div>
                     <div className={`flex items-center gap-2 text-indigo-500 font-black uppercase tracking-[0.3em] text-[10px] mb-3 ${isRTL ? "flex-row-reverse" : ""}`}>
                       <Settings className="w-3 h-3" />
@@ -477,7 +477,7 @@ export default function CourseUnitsPage() {
                   </button>
                 </header>
 
-                <div className="p-8 md:p-12 space-y-10 overflow-y-auto custom-scrollbar">
+                <div className="custom-scrollbar space-y-8 overflow-y-auto p-5 sm:p-8 md:p-12 md:space-y-10">
                   {/* Title Fields */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-10">
                     <div className="space-y-4">
@@ -567,7 +567,7 @@ export default function CourseUnitsPage() {
                   </div>
                 </div>
 
-                <footer className={`p-8 md:p-12 border-t border-slate-100 dark:border-white/5 flex flex-col sm:flex-row gap-4 bg-slate-50/50 dark:bg-white/2 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
+                <footer className={`flex flex-col gap-4 border-t border-slate-100 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/2 sm:flex-row sm:p-8 md:p-12 ${isRTL ? "sm:flex-row-reverse" : ""}`}>
                   <button type="button" onClick={() => setIsModalOpen(false)}
                     className="px-10 py-5 rounded-[24px] md:rounded-[32px] border-2 border-slate-200 dark:border-white/10 font-black uppercase tracking-widest text-[11px] text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 transition-all">
                     Abort Entry

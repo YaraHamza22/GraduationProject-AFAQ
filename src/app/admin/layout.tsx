@@ -67,9 +67,13 @@ export default function AdminLayout({
   }
 
   return (
-    <div className="flex bg-slate-50 dark:bg-[#020617] min-h-screen transition-colors duration-300">
+    <div className="relative flex min-h-screen bg-slate-50 transition-colors duration-300 dark:bg-[#020617]">
       {!isLoginPage && <AdminNavbar />}
-      <main className={`flex-1 transition-all duration-300 ${isLoginPage ? "p-0" : (isRTL ? "md:mr-64 mr-20" : "md:ml-64 ml-20")}`}>
+      <main
+        className={`min-w-0 flex-1 transition-all duration-300 ${
+          isLoginPage ? "p-0" : `${isRTL ? "lg:mr-64" : "lg:ml-64"} pt-20 lg:pt-0`
+        }`}
+      >
         {children}
       </main>
     </div>

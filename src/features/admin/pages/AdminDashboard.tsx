@@ -408,13 +408,13 @@ export default function AdminDashboard() {
   }, [dashboard]);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_20%_10%,#e0f2fe_0%,#f8fafc_40%,#ecfeff_100%)] p-6 md:p-10 dark:bg-[radial-gradient(circle_at_20%_10%,#0b1220_0%,#060a13_45%,#030711_100%)]">
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_20%_10%,#e0f2fe_0%,#f8fafc_40%,#ecfeff_100%)] p-4 sm:p-6 lg:p-8 dark:bg-[radial-gradient(circle_at_20%_10%,#0b1220_0%,#060a13_45%,#030711_100%)]">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -top-32 right-[-10%] h-[380px] w-[380px] rounded-full bg-cyan-500/15 blur-[120px] dark:bg-cyan-400/20" />
         <div className="absolute bottom-[-12%] left-[-10%] h-[360px] w-[360px] rounded-full bg-emerald-500/10 blur-[120px] dark:bg-indigo-500/20" />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-[1500px] space-y-6">
+      <div className="relative z-10 mx-auto max-w-[1500px] space-y-5 sm:space-y-6">
         <header className={`flex flex-col gap-4 md:flex-row md:items-center md:justify-between ${isRTL ? "md:flex-row-reverse" : ""}`}>
           <div className={isRTL ? "text-right" : ""}>
             <p className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-cyan-700 dark:text-cyan-200">
@@ -511,7 +511,7 @@ export default function AdminDashboard() {
             </Section>
 
             <Section title="Course Analytics">
-              <div className="mb-4 grid grid-cols-2 gap-3">
+              <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700 dark:bg-slate-800/80">
                   <p className="text-xs text-slate-500 dark:text-slate-400">Total Courses</p>
                   <p className="text-xl font-black text-slate-900 dark:text-slate-100">{dashboard.course_analytics.popularity_report.total_courses}</p>
