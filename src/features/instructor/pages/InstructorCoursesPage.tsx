@@ -690,14 +690,14 @@ export default function InstructorCoursesPage() {
   }, [courses, language, search]);
 
   return (
-    <div className="p-8 md:p-12 min-h-screen bg-(--background) text-(--foreground)">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+    <div className="min-h-screen bg-(--background) p-4 sm:p-6 lg:p-8 text-(--foreground)">
+      <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-4xl md:text-5xl font-black tracking-tight">{t("nav.courses")}</h1>
           <p className="opacity-50 mt-2">Loaded from GET /my-courses and GET /my-courses/:course.</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <button
             onClick={() => void loadCourses()}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2 text-sm font-bold hover:border-indigo-400/60"
@@ -741,7 +741,7 @@ export default function InstructorCoursesPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2 space-y-4">
           {isLoading ? (
             <div className="rounded-3xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-8 text-sm opacity-60">
@@ -851,7 +851,7 @@ export default function InstructorCoursesPage() {
                   placeholder="Description (EN)"
                   className="h-10 w-full rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 text-sm outline-none focus:border-indigo-400"
                 />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <input
                     value={unitForm.unitOrder}
                     onChange={(event) => setUnitForm((prev) => ({ ...prev, unitOrder: event.target.value }))}
@@ -1020,8 +1020,8 @@ export default function InstructorCoursesPage() {
       </div>
 
       {selectedCourseId && selectedUnitId && isLessonModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-violet-300/30 bg-[linear-gradient(145deg,#050a1f_0%,#0a1231_45%,#070f2c_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm sm:p-4">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-violet-300/30 bg-[linear-gradient(145deg,#050a1f_0%,#0a1231_45%,#070f2c_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
             <div className="flex items-start justify-between border-b border-white/10 px-5 py-4 md:px-6 md:py-5">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-300/90">Lesson Builder</p>

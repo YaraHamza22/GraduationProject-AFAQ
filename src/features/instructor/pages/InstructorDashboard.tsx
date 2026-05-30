@@ -84,7 +84,7 @@ export default function InstructorDashboard() {
   };
 
   return (
-    <div className="flex-1 p-8 md:p-12 bg-(--background) min-h-screen text-(--foreground) overflow-hidden relative transition-colors duration-300">
+    <div className="relative min-h-screen overflow-hidden bg-(--background) p-4 sm:p-6 lg:p-8 text-(--foreground) transition-colors duration-300">
       {/* Abstract Background Blobs */}
       <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-indigo-600/5 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/2" />
       <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-purple-600/5 blur-[100px] rounded-full translate-y-1/2 -translate-x-1/2" />
@@ -96,12 +96,12 @@ export default function InstructorDashboard() {
       ) : null}
 
       {/* Header */}
-      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+      <div className="relative z-10 mb-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
         <div>
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-4xl md:text-5xl font-black tracking-tighter mb-2"
+            className="mb-2 text-3xl font-black tracking-tighter sm:text-4xl md:text-5xl"
           >
             {t("dash.welcome")} <span className="bg-clip-text text-transparent bg-linear-to-r from-indigo-500 to-purple-500 dark:from-indigo-400 dark:to-purple-400">Dr. Sarah</span> 👋
           </motion.h1>
@@ -111,7 +111,7 @@ export default function InstructorDashboard() {
         <motion.button 
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-4 rounded-2xl font-bold shadow-[0_10px_20px_rgba(79,70,229,0.3)] transition-all w-fit"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-6 py-4 font-bold text-white shadow-[0_10px_20px_rgba(79,70,229,0.3)] transition-all hover:bg-indigo-500 sm:w-fit"
         >
           <Plus className="w-5 h-5" />
           {t("dash.create")}
@@ -143,7 +143,7 @@ export default function InstructorDashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
+      <div className="relative z-10 grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
         {/* Main Section: Courses */}
         <div className="lg:col-span-2 space-y-8">
             <div className="flex items-center justify-between">

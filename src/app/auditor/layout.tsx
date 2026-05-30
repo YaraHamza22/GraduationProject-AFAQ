@@ -34,7 +34,7 @@ export default function AuditorLayout({ children }: { children: React.ReactNode 
   return (
     <div className={`min-h-screen bg-[#f7f8fb] text-slate-950 transition-colors dark:bg-[#020617] dark:text-white ${isRTL ? "rtl" : "ltr"}`}>
       <AuditorNavbar />
-      <main className={`min-h-screen transition-all duration-300 ${isRTL ? "mr-20 lg:mr-72" : "ml-20 lg:ml-72"}`}>{children}</main>
+      <main className={`min-h-screen pt-20 transition-all duration-300 lg:pt-0 ${isRTL ? "lg:mr-72" : "lg:ml-72"}`}>{children}</main>
     </div>
   );
 }

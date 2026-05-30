@@ -298,7 +298,7 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
 
   return (
     <div className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-[1500px] flex-col gap-6">
+      <div className="mx-auto flex max-w-[1500px] flex-col gap-5 sm:gap-6">
         <motion.header initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
             <div className="mb-3 flex items-center gap-2">
@@ -311,7 +311,7 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
             <button
               type="button"
               onClick={() => void loadAll()}
@@ -477,7 +477,7 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
 
                     <div className="p-5">
                       <p className="text-xs font-black uppercase tracking-widest text-slate-400">Submit review</p>
-                      <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                         {verdicts.map((item) => (
                           <button
                             key={item.value}

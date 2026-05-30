@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   BookOpen,
+  ChevronDown,
   Clock,
   Edit3,
   FileText,
@@ -110,6 +111,8 @@ type FormState = {
   lesson_order: string;
 };
 
+type QuizableType = "course" | "lesson" | "unit";
+
 type QuizCreateFormState = {
   titleEn: string;
   titleAr: string;
@@ -118,7 +121,7 @@ type QuizCreateFormState = {
   maxScore: string;
   passingScore: string;
   status: "draft" | "published";
-  quizableType: "course";
+  quizableType: QuizableType;
   autoGradeEnabled: boolean;
   durationMinutes: string;
 };
@@ -147,7 +150,7 @@ const initialQuizCreateForm: QuizCreateFormState = {
   maxScore: "",
   passingScore: "",
   status: "draft",
-  quizableType: "course",
+  quizableType: "unit",
   autoGradeEnabled: true,
   durationMinutes: "",
 };
@@ -235,8 +238,29 @@ function normalizeRequired(value: unknown) {
   return false;
 }
 
+function normalizeLessonType(value: unknown): "lecture" | "video" | "interactive" | "reading" {
+  const lessonType = typeof value === "string" ? value.toLowerCase() : "";
+  if (lessonType === "lecture" || lessonType === "video" || lessonType === "interactive" || lessonType === "reading") {
+    return lessonType;
+  }
+  if (lessonType === "document") return "reading";
+  if (lessonType === "quiz") return "interactive";
+  return "video";
+}
+
 function getLessonId(lesson: Lesson) {
   return lesson.lesson_id || lesson.id;
+}
+
+function getLessonRenderKey(lesson: Lesson, index: number) {
+  const lessonId = getLessonId(lesson);
+  if (lessonId !== undefined && lessonId !== null && String(lessonId).trim() !== "") {
+    return String(lessonId);
+  }
+
+  const unitLessonId = getLessonUnitId(lesson);
+  const fallbackTitle = getLocalizedValue(lesson.title, "en") || getLocalizedValue(lesson.title, "ar") || "lesson";
+  return `${String(unitLessonId || "unit")}:${fallbackTitle}:${index}`;
 }
 
 function getLessonUnitId(lesson: Lesson) {
@@ -271,6 +295,24 @@ function getAssignedInstructorIdFromList(items: unknown[]) {
 
 function getLessonQuizStorageKey(courseId: string, unitId: string) {
   return `lesson-quiz-map:${courseId}:${unitId}`;
+}
+
+function resolveQuizableId(quizableType: QuizableType, courseId: string, unitId: string, lessonId: string | number) {
+  if (quizableType === "lesson") return Number(lessonId);
+  if (quizableType === "unit") return Number(unitId);
+  return Number(courseId);
+}
+
+function resolveQuizableLabel(quizableType: QuizableType, courseId: string, unitId: string, lessonId: string | number) {
+  if (quizableType === "lesson") {
+    return `Lesson #${lessonId}`;
+  }
+
+  if (quizableType === "unit") {
+    return `Unit #${unitId}`;
+  }
+
+  return `Course #${courseId}`;
 }
 
 export default function UnitLessonsPage() {
@@ -531,13 +573,14 @@ export default function UnitLessonsPage() {
     const res = await axios.get(getAdminApiRequestUrl(QUIZZES_API_PATH), {
       headers: getHeaders(currentLocale),
       params: {
-        quizable_type: "course",
+        quizable_type: "unit",
+        quizable_id: Number(unitId),
         type: "quiz",
         course_id: Number(courseId),
       },
     });
     return extractList(res.data) as Quiz[];
-  }, [courseId, currentLocale, getHeaders]);
+  }, [courseId, currentLocale, getHeaders, unitId]);
 
   useEffect(() => {
     if (courseId && unitId) void loadData();
@@ -617,7 +660,7 @@ export default function UnitLessonsPage() {
       setForm({
         title: getLocalizedValue(merged.title, currentLocale),
         description: getLocalizedValue(merged.description, currentLocale),
-        lesson_type: merged.lesson_type || "video",
+        lesson_type: normalizeLessonType(merged.lesson_type),
         is_required: normalizeRequired(merged.is_required),
         actual_duration_minutes: String(merged.actual_duration_minutes ?? 30),
         lesson_order: merged.lesson_order ? String(merged.lesson_order) : "",
@@ -627,7 +670,7 @@ export default function UnitLessonsPage() {
       setForm({
         title: getLocalizedValue(lesson.title, currentLocale),
         description: getLocalizedValue(lesson.description, currentLocale),
-        lesson_type: lesson.lesson_type || "video",
+        lesson_type: normalizeLessonType(lesson.lesson_type),
         is_required: normalizeRequired(lesson.is_required),
         actual_duration_minutes: String(lesson.actual_duration_minutes ?? 30),
         lesson_order: lesson.lesson_order ? String(lesson.lesson_order) : "",
@@ -647,7 +690,7 @@ export default function UnitLessonsPage() {
         unit_id: Number(unitId),
         title: form.title.trim(),
         description: form.description.trim(),
-        lesson_type: form.lesson_type,
+        lesson_type: normalizeLessonType(form.lesson_type),
         is_required: form.is_required ? 1 : 0,
         actual_duration_minutes: Number(form.actual_duration_minutes),
         ...(form.lesson_order.trim() ? { lesson_order: Number(form.lesson_order) } : {}),
@@ -680,7 +723,7 @@ export default function UnitLessonsPage() {
           await axios.post(getAdminApiRequestUrl(LESSONS_API_PATH), payload, { headers: getHeaders(currentLocale) });
         }
         setSuccessMessage("Lesson created successfully.");
-        if (form.lesson_type === "quiz") {
+        if (normalizeLessonType(form.lesson_type) === "interactive") {
           const createdQuiz = await createQuiz();
           if (createdQuiz) {
             const createdQuizId = getQuizId(createdQuiz);
@@ -697,7 +740,7 @@ export default function UnitLessonsPage() {
           headers: getHeaders(currentLocale),
         });
         setSuccessMessage("Lesson updated successfully.");
-        if (form.lesson_type === "quiz") {
+        if (normalizeLessonType(form.lesson_type) === "interactive") {
           const lessonKey = String(getLessonId(editingLesson));
           const existing = lessonQuizMap[lessonKey]?.[0];
           if (existing) {
@@ -798,7 +841,7 @@ export default function UnitLessonsPage() {
       const quizDescriptionEn = getLocalizedValue((existingQuiz as Record<string, unknown>).description, "en");
       const quizDescriptionAr = getLocalizedValue((existingQuiz as Record<string, unknown>).description, "ar");
       setQuizModalMode("update");
-      setQuizCreateForm({
+    setQuizCreateForm({
         titleEn: quizTitleEn,
         titleAr: quizTitleAr,
         descriptionEn: quizDescriptionEn,
@@ -806,7 +849,9 @@ export default function UnitLessonsPage() {
         maxScore: String(existingQuiz.max_score ?? 100),
         passingScore: String(existingQuiz.passing_score ?? 60),
         status: existingQuiz.status === "draft" ? "draft" : "published",
-        quizableType: "course",
+        quizableType: existingQuiz.quizable_type === "course" || existingQuiz.quizable_type === "lesson" || existingQuiz.quizable_type === "unit"
+          ? existingQuiz.quizable_type
+          : "unit",
         autoGradeEnabled: Boolean(existingQuiz.auto_grade_enabled ?? true),
         durationMinutes: String(existingQuiz.duration_minutes ?? lesson.actual_duration_minutes ?? 30),
       });
@@ -840,6 +885,7 @@ export default function UnitLessonsPage() {
       const lessonId = getLessonId(selectedLessonForQuiz);
       let activeQuiz: Quiz | null = null;
       const fallbackTitle = getLocalizedValue(selectedLessonForQuiz.title, currentLocale) || `Lesson ${lessonId}`;
+      const resolvedQuizableId = resolveQuizableId(quizCreateForm.quizableType, courseId, unitId, lessonId);
       const payload = {
         title: {
           en: quizCreateForm.titleEn.trim() || fallbackTitle,
@@ -857,7 +903,7 @@ export default function UnitLessonsPage() {
         course_id: Number(courseId),
         courseId: Number(courseId),
         quizable_type: quizCreateForm.quizableType,
-        quizable_id: Number(courseId),
+        quizable_id: resolvedQuizableId,
         auto_grade_enabled: quizCreateForm.autoGradeEnabled,
         duration_minutes: Number(quizCreateForm.durationMinutes || 30),
       };
@@ -1398,8 +1444,8 @@ export default function UnitLessonsPage() {
           <div className="grid grid-cols-1 gap-4">
             {filteredLessons
               .sort((a, b) => (a.lesson_order ?? 0) - (b.lesson_order ?? 0))
-              .map((lesson) => (
-                <div key={String(getLessonId(lesson))} className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#11182B] p-6 md:p-7 hover:border-indigo-500/30 transition-all">
+              .map((lesson, index) => (
+                <div key={getLessonRenderKey(lesson, index)} className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#11182B] p-6 md:p-7 hover:border-indigo-500/30 transition-all">
                   {(() => {
                     const lessonKey = String(getLessonId(lesson));
                     const lessonQuizzes = lessonQuizMap[lessonKey] || [];
@@ -1873,24 +1919,41 @@ export default function UnitLessonsPage() {
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                <select
-                  value={quizCreateForm.status}
-                  onChange={(e) => setQuizCreateForm((prev) => ({ ...prev, status: e.target.value as "draft" | "published" }))}
-                  className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3"
-                >
-                  <option value="published">published</option>
-                  <option value="draft">draft</option>
-                </select>
-                <input
-                  value={quizCreateForm.quizableType}
-                  readOnly
-                  className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/10 px-4 py-3 text-slate-500"
-                />
-                <input
-                  value={`Course #${courseId}`}
-                  readOnly
-                  className="w-full rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/10 px-4 py-3 text-slate-500"
-                />
+                <div className="relative">
+                  <select
+                    value={quizCreateForm.status}
+                    onChange={(e) => setQuizCreateForm((prev) => ({ ...prev, status: e.target.value as "draft" | "published" }))}
+                    className="w-full appearance-none cursor-pointer rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3 pr-11 font-semibold text-slate-900 dark:text-white"
+                  >
+                    <option value="published">Published</option>
+                    <option value="draft">Draft</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-white/60" />
+                </div>
+                <div className="relative">
+                  <select
+                    value={quizCreateForm.quizableType}
+                    onChange={(e) => setQuizCreateForm((prev) => ({ ...prev, quizableType: e.target.value as QuizableType }))}
+                    className="w-full appearance-none cursor-pointer rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 px-4 py-3 pr-11 font-semibold text-slate-900 capitalize dark:text-white"
+                  >
+                    <option value="lesson">Lesson</option>
+                    <option value="unit">Unit</option>
+                    <option value="course">Course</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-white/60" />
+                </div>
+                <div className="relative">
+                  <select
+                    value={quizCreateForm.quizableType}
+                    disabled
+                    className="w-full appearance-none rounded-xl border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/10 px-4 py-3 pr-11 font-semibold text-slate-900 dark:text-white disabled:cursor-default disabled:opacity-100"
+                  >
+                    <option value="course">{resolveQuizableLabel("course", courseId, unitId, getLessonId(selectedLessonForQuiz))}</option>
+                    <option value="unit">{resolveQuizableLabel("unit", courseId, unitId, getLessonId(selectedLessonForQuiz))}</option>
+                    <option value="lesson">{resolveQuizableLabel("lesson", courseId, unitId, getLessonId(selectedLessonForQuiz))}</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-white/60" />
+                </div>
               </div>
               <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-white/80">
                 <input
@@ -2181,8 +2244,8 @@ export default function UnitLessonsPage() {
                         >
                           <option value="video" className="dark:bg-[#0A0F1D]">Video</option>
                           <option value="lecture" className="dark:bg-[#0A0F1D]">Lecture</option>
-                          <option value="quiz" className="dark:bg-[#0A0F1D]">Quiz</option>
-                          <option value="document" className="dark:bg-[#0A0F1D]">Document</option>
+                          <option value="interactive" className="dark:bg-[#0A0F1D]">Interactive</option>
+                          <option value="reading" className="dark:bg-[#0A0F1D]">Reading</option>
                         </select>
                       </div>
                     </div>
