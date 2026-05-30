@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 
-import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
 import '../../student/data/chat_realtime_service.dart';
 import '../../student/data/chat_service.dart';

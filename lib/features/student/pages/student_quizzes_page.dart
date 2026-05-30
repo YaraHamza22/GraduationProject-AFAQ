@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app.dart';
+import '../../../core/session/session_store.dart';
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/toast/afaq_toast.dart';
 import '../../../core/widgets/afaq_panel.dart';
@@ -8,6 +9,8 @@ import '../data/courses_service.dart';
 import '../data/quiz_attempt_service.dart';
 import '../data/quiz_service.dart';
 import 'student_page_shared.dart';
+import 'student_quiz_attempt_page.dart';
+import 'student_quiz_grade_page.dart';
 
 class StudentQuizzesPage extends StatefulWidget {
   const StudentQuizzesPage({super.key});
@@ -32,6 +35,46 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
     _load();
   }
 
+  bool _isPublishedQuiz(Map<String, dynamic> quiz) {
+    final status = readString(quiz['status']).toLowerCase();
+    return status == 'published' || quiz['is_published'] == true;
+  }
+
+  bool _isTakenStatus(String status) {
+    final normalized = status.toLowerCase();
+    return normalized == 'submitted' ||
+        normalized == 'graded' ||
+        normalized == 'passed' ||
+        normalized == 'completed' ||
+        normalized == 'pending_review' ||
+        normalized == 'under_review' ||
+        normalized == 'awaiting_grading';
+  }
+
+  List<Map<String, dynamic>> _parseAssessmentProgressRows(
+    Map<String, dynamic> payload,
+  ) {
+    final direct = asListOfMaps(payload['quizzes']);
+    if (direct.isNotEmpty) return direct;
+    final progress = asMap(payload['progress']);
+    return asListOfMaps(progress?['quizzes']);
+  }
+
+  int _attemptIdFromProgress(Map<String, dynamic> row) {
+    final attempt = asMap(row['attempt']);
+    for (final value in [
+      row['attempt_id'],
+      row['current_attempt_id'],
+      row['active_attempt_id'],
+      row['in_progress_attempt_id'],
+      attempt?['id'],
+    ]) {
+      final parsed = readInt(value);
+      if (parsed > 0) return parsed;
+    }
+    return 0;
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -39,57 +82,87 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
     });
 
     try {
+      final lang = localeNotifier.value.languageCode;
       final enrollmentsResponse = await _coursesService.getEnrollments();
       final enrollments = unwrapDataList(enrollmentsResponse.data);
-      final quizzes = <_QuizRow>[];
 
+      final enrolledCourses = <_CourseEntry>[];
       for (final enrollment in enrollments) {
         final course = asMap(enrollment['course']);
         final courseId = readInt(course?['id'] ?? enrollment['course_id']);
         if (courseId == 0) continue;
-        final courseTitle = readString(
-          course?['title'],
-          fallback: 'Course #$courseId',
+        enrolledCourses.add(
+          _CourseEntry(
+            id: courseId,
+            title: localizedValue(
+              course?['title_translations'],
+              lang,
+              fallback: readString(course?['title'], fallback: 'Course #$courseId'),
+            ),
+          ),
         );
+      }
 
+      final uniqueCourses = {
+        for (final course in enrolledCourses) course.id: course,
+      }.values.toList(growable: false);
+
+      final merged = <_QuizRow>[];
+      for (final course in uniqueCourses) {
         try {
-          final availability = await _quizService.getQuizAvailability(courseId);
-          final availabilityMap = unwrapDataMap(availability.data);
+          final availabilityResponse = await _quizService.getQuizAvailability(
+            course.id,
+          );
+          final availabilityMap = unwrapDataMap(availabilityResponse.data);
           final hasQuiz = availabilityMap['has_quiz'] == true;
-          if (!hasQuiz) continue;
+          final isEnrolled = availabilityMap['is_enrolled'] != false;
+          final quizzesCount = readInt(availabilityMap['quizzes_count']);
+          if (!isEnrolled || !hasQuiz || quizzesCount <= 0) continue;
 
-          final progress = await _quizService.getAssessmentProgress(courseId);
-          final progressMap = unwrapDataMap(progress.data);
-          final rows = asListOfMaps(progressMap['quizzes']);
+          final progressResponse = await _quizService.getAssessmentProgress(
+            course.id,
+          );
+          final rows = _parseAssessmentProgressRows(
+            unwrapDataMap(progressResponse.data),
+          );
 
           for (final row in rows) {
             final quizId = readInt(row['quiz_id'] ?? asMap(row['quiz'])?['id']);
             if (quizId == 0) continue;
 
             try {
-              final details = await _quizService.getQuiz(quizId);
-              final detailsMap = unwrapDataMap(details.data);
-              quizzes.add(
+              final detailsResponse = await _quizService.getQuiz(quizId);
+              final details = unwrapDataMap(detailsResponse.data);
+              if (!_isPublishedQuiz(details)) continue;
+
+              final attemptsLeft = readInt(row['attempts_left'], fallback: -1);
+              final isPassed = row['is_passed'] == true;
+              final attemptId = _attemptIdFromProgress(row);
+              final status = readString(
+                row['status'] ?? row['attempt_status'] ?? row['grading_status'],
+              );
+              merged.add(
                 _QuizRow(
-                  id: quizId,
+                  id: readInt(details['id'], fallback: quizId),
                   title: localizedValue(
-                    detailsMap['title'],
-                    localeNotifier.value.languageCode,
+                    details['title'],
+                    lang,
                     fallback: 'Quiz #$quizId',
                   ),
                   description: localizedValue(
-                    detailsMap['description'],
-                    localeNotifier.value.languageCode,
+                    details['description'],
+                    lang,
                     fallback: 'No description.',
                   ),
-                  courseId: courseId,
-                  courseTitle: courseTitle,
-                  durationMinutes: readInt(detailsMap['duration_minutes']),
-                  attemptsLeft: readInt(row['attempts_left'], fallback: -1),
-                  isPassed: row['is_passed'] == true,
-                  attemptId: readInt(row['attempt_id'], fallback: 0),
-                  isTaken: readString(row['status']).toLowerCase() == 'submitted' ||
-                      row['is_passed'] == true,
+                  courseId: course.id,
+                  courseTitle: course.title,
+                  durationMinutes: readInt(details['duration_minutes']),
+                  attemptsLeft: attemptsLeft,
+                  isPassed: isPassed,
+                  attemptId: attemptId,
+                  isTaken: isPassed ||
+                      (attemptsLeft == 0 && attemptsLeft != -1) ||
+                      _isTakenStatus(status),
                 ),
               );
             } catch (_) {
@@ -101,11 +174,125 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
         }
       }
 
+      if (merged.isEmpty) {
+        for (final course in uniqueCourses) {
+          try {
+            final response = await _quizService.getQuizzes(
+              courseId: course.id,
+              perPage: 100,
+            );
+            final rows = unwrapDataList(response.data);
+            for (final quiz in rows) {
+              if (!_isPublishedQuiz(quiz)) continue;
+              final id = readInt(quiz['id']);
+              if (id == 0) continue;
+              merged.add(
+                _QuizRow(
+                  id: id,
+                  title: localizedValue(
+                    quiz['title'],
+                    lang,
+                    fallback: 'Quiz #$id',
+                  ),
+                  description: localizedValue(
+                    quiz['description'],
+                    lang,
+                    fallback: 'No description.',
+                  ),
+                  courseId: course.id,
+                  courseTitle: course.title,
+                  durationMinutes: readInt(quiz['duration_minutes']),
+                  attemptsLeft: -1,
+                  isPassed: false,
+                  attemptId: 0,
+                  isTaken: false,
+                ),
+              );
+            }
+          } catch (_) {
+            continue;
+          }
+        }
+      }
+
+      if (merged.isEmpty) {
+        try {
+          final response = await _quizService.getQuizzes(perPage: 100);
+          final rows = unwrapDataList(response.data);
+          for (final quiz in rows) {
+            if (!_isPublishedQuiz(quiz)) continue;
+            final id = readInt(quiz['id']);
+            if (id == 0) continue;
+            final courseId = readInt(quiz['course_id'] ?? quiz['quizable_id']);
+            merged.add(
+              _QuizRow(
+                id: id,
+                title: localizedValue(
+                  quiz['title'],
+                  lang,
+                  fallback: 'Quiz #$id',
+                ),
+                description: localizedValue(
+                  quiz['description'],
+                  lang,
+                  fallback: 'No description.',
+                ),
+                courseId: courseId,
+                courseTitle: courseId == 0 ? 'Course' : 'Course #$courseId',
+                durationMinutes: readInt(quiz['duration_minutes']),
+                attemptsLeft: -1,
+                isPassed: false,
+                attemptId: 0,
+                isTaken: false,
+              ),
+            );
+          }
+        } catch (_) {
+          // Keep empty state.
+        }
+      }
+
+      var deduped = {
+        for (final quiz in merged) quiz.id: quiz,
+      }.values.toList(growable: false);
+
+      try {
+        final attemptsResponse = await _attemptService.getAttempts(
+          studentId: SessionStore.instance.userId,
+          perPage: 200,
+        );
+        final attempts = unwrapDataList(attemptsResponse.data);
+        final latestByQuiz = <int, Map<String, dynamic>>{};
+
+        for (final item in attempts) {
+          final quizId = readInt(item['quiz_id'] ?? asMap(item['quiz'])?['id']);
+          final attemptId = readInt(item['id']);
+          if (quizId == 0 || attemptId == 0) continue;
+          latestByQuiz.putIfAbsent(quizId, () => item);
+        }
+
+        deduped = deduped.map((quiz) {
+          final latest = latestByQuiz[quiz.id];
+          if (latest == null) return quiz;
+          final status = readString(
+            latest['status'] ??
+                latest['attempt_status'] ??
+                latest['grading_status'],
+          );
+          return quiz.copyWith(
+            attemptId: quiz.attemptId != 0
+                ? quiz.attemptId
+                : readInt(latest['id']),
+            isTaken: quiz.isTaken || _isTakenStatus(status),
+          );
+        }).toList(growable: false);
+      } catch (_) {
+        // Keep deduped values.
+      }
+
       if (!mounted) return;
       setState(() {
-        _quizzes = {
-          for (final quiz in quizzes) quiz.id: quiz,
-        }.values.toList(growable: false);
+        _quizzes = deduped;
         _loading = false;
       });
     } catch (error) {
@@ -118,26 +305,116 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
   }
 
   Future<void> _startQuiz(_QuizRow quiz) async {
-    setState(() => _busyQuizId = quiz.id);
-    try {
-      final response = await _attemptService.createAttempt(quizId: quiz.id);
-      final attempt = unwrapDataMap(response.data);
-      final attemptId = readInt(attempt['id']);
-      if (attemptId != 0) {
-        await _attemptService.startAttempt(attemptId);
-      }
-      if (!mounted) return;
+    if (quiz.isTaken ||
+        quiz.isPassed ||
+        (quiz.attemptsLeft >= 0 && quiz.attemptsLeft <= 0)) {
       AfaqToast.show(
         context,
-        message: 'Attempt #$attemptId is ready for ${quiz.title}.',
-        type: AfaqToastType.success,
+        message: 'This quiz is already completed and cannot be taken again.',
+        type: AfaqToastType.error,
       );
-      await _load();
+      return;
+    }
+
+    setState(() => _busyQuizId = quiz.id);
+    try {
+      int attemptId = quiz.attemptId;
+
+      if (attemptId == 0) {
+        try {
+          final createResponse = await _attemptService.createAttempt(
+            quizId: quiz.id,
+            studentId: SessionStore.instance.userId,
+          );
+          attemptId = readInt(unwrapDataMap(createResponse.data)['id']);
+        } catch (_) {
+          // Keep fallback flow.
+        }
+      }
+
+      if (attemptId == 0 && quiz.courseId != 0) {
+        try {
+          final progressResponse = await _quizService.getAssessmentProgress(
+            quiz.courseId,
+          );
+          final rows = _parseAssessmentProgressRows(
+            unwrapDataMap(progressResponse.data),
+          );
+          final match = rows.where((row) {
+            final quizId = readInt(row['quiz_id'] ?? asMap(row['quiz'])?['id']);
+            return quizId == quiz.id;
+          }).cast<Map<String, dynamic>>().toList(growable: false);
+          if (match.isNotEmpty) {
+            final row = match.first;
+            final attemptsLeft = readInt(row['attempts_left'], fallback: -1);
+            final blocked = row['is_passed'] == true ||
+                (attemptsLeft >= 0 && attemptsLeft <= 0) ||
+                _isTakenStatus(readString(row['status']));
+            if (blocked) {
+              throw StateError(
+                'This quiz is already completed and cannot be taken again.',
+              );
+            }
+            attemptId = _attemptIdFromProgress(row);
+          }
+        } catch (error) {
+          if (error is StateError) rethrow;
+        }
+      }
+
+      if (attemptId == 0) {
+        final attemptsResponse = await _attemptService.getAttempts(
+          studentId: SessionStore.instance.userId,
+          quizId: quiz.id,
+          perPage: 50,
+        );
+        final attempts = unwrapDataList(attemptsResponse.data);
+        for (final item in attempts) {
+          final status = readString(
+            item['status'] ??
+                item['attempt_status'] ??
+                item['grading_status'],
+          );
+          if (status == 'in_progress') {
+            attemptId = readInt(item['id']);
+            break;
+          }
+        }
+        if (attemptId == 0 && attempts.isNotEmpty) {
+          attemptId = readInt(attempts.first['id']);
+        }
+      }
+
+      if (attemptId == 0) {
+        throw StateError('Could not start quiz attempt.');
+      }
+
+      try {
+        await _attemptService.startAttempt(attemptId);
+      } catch (_) {
+        // Ignore already-started state.
+      }
+
+      if (!mounted) return;
+      final completed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => StudentQuizAttemptPage(
+            quizId: quiz.id,
+            courseId: quiz.courseId,
+            attemptId: attemptId,
+            quizTitle: quiz.title,
+          ),
+        ),
+      );
+
+      if (completed == true && mounted) {
+        await _load();
+      }
     } catch (error) {
       if (!mounted) return;
       AfaqToast.show(
         context,
-        message: error.toString(),
+        message: error.toString().replaceFirst('Bad state: ', ''),
         type: AfaqToastType.error,
       );
     } finally {
@@ -147,45 +424,28 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
     }
   }
 
-  Future<void> _showGrade(_QuizRow quiz) async {
+  Future<void> _openGrade(_QuizRow quiz) async {
     if (quiz.attemptId == 0) {
       AfaqToast.show(
         context,
-        message: 'No attempt found for this quiz.',
+        message: 'No attempt was found for this quiz grade.',
         type: AfaqToastType.error,
       );
       return;
     }
 
-    try {
-      final response = await _attemptService.getGrade(quiz.attemptId);
-      final grade = unwrapDataMap(response.data);
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: Text(quiz.title),
-            content: Text(
-              'Score: ${readString(grade['score'], fallback: '--')}\n'
-              'Status: ${readString(grade['status'], fallback: 'graded')}',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      );
-    } catch (error) {
-      if (!mounted) return;
-      AfaqToast.show(
-        context,
-        message: error.toString(),
-        type: AfaqToastType.error,
-      );
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => StudentQuizGradePage(
+          quizId: quiz.id,
+          courseId: quiz.courseId,
+          attemptId: quiz.attemptId,
+          quizTitle: quiz.title,
+        ),
+      ),
+    );
+    if (mounted) {
+      await _load();
     }
   }
 
@@ -218,6 +478,7 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
                       ),
                       itemBuilder: (context, index) {
                         final quiz = _quizzes[index];
+                        final isBusy = _busyQuizId == quiz.id;
                         return AfaqPanel(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,9 +493,8 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
                               const SizedBox(height: 8),
                               Text(
                                 quiz.title,
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                ),
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w900),
                               ),
                               const SizedBox(height: 8),
                               Text(
@@ -248,25 +508,30 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
                                 spacing: 8,
                                 runSpacing: 8,
                                 children: [
-                                  _QuizChip(label: '${quiz.durationMinutes} min'),
+                                  _QuizChip(
+                                    label: '${quiz.durationMinutes} min',
+                                  ),
                                   _QuizChip(
                                     label: quiz.attemptsLeft >= 0
                                         ? 'Left ${quiz.attemptsLeft}'
-                                        : 'Open',
+                                        : '--',
                                   ),
                                   _QuizChip(
-                                    label: quiz.isPassed ? 'Passed' : 'Pending',
+                                    label: quiz.isTaken ? 'Taken' : 'Ready',
+                                    tone: quiz.isTaken
+                                        ? AfaqColors.emerald500
+                                        : AfaqColors.primary,
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 16),
                               FilledButton.icon(
-                                onPressed: _busyQuizId == quiz.id
+                                onPressed: isBusy
                                     ? null
                                     : quiz.isTaken
-                                        ? () => _showGrade(quiz)
+                                        ? () => _openGrade(quiz)
                                         : () => _startQuiz(quiz),
-                                icon: _busyQuizId == quiz.id
+                                icon: isBusy
                                     ? const SizedBox(
                                         width: 16,
                                         height: 16,
@@ -281,9 +546,7 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
                                             : Icons.play_circle_fill_rounded,
                                       ),
                                 label: Text(
-                                  quiz.isTaken
-                                      ? studentText('view_grade', lang)
-                                      : studentText('start_quiz', lang),
+                                  quiz.isTaken ? 'Taken' : studentText('start_quiz', lang),
                                 ),
                               ),
                             ],
@@ -293,6 +556,16 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
                     ),
     );
   }
+}
+
+class _CourseEntry {
+  const _CourseEntry({
+    required this.id,
+    required this.title,
+  });
+
+  final int id;
+  final String title;
 }
 
 class _QuizRow {
@@ -319,26 +592,50 @@ class _QuizRow {
   final bool isPassed;
   final int attemptId;
   final bool isTaken;
+
+  _QuizRow copyWith({
+    int? attemptId,
+    bool? isTaken,
+  }) {
+    return _QuizRow(
+      id: id,
+      title: title,
+      description: description,
+      courseId: courseId,
+      courseTitle: courseTitle,
+      durationMinutes: durationMinutes,
+      attemptsLeft: attemptsLeft,
+      isPassed: isPassed,
+      attemptId: attemptId ?? this.attemptId,
+      isTaken: isTaken ?? this.isTaken,
+    );
+  }
 }
 
 class _QuizChip extends StatelessWidget {
-  const _QuizChip({required this.label});
+  const _QuizChip({
+    required this.label,
+    this.tone = AfaqColors.slate500,
+  });
 
   final String label;
+  final Color tone;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AfaqColors.slate100.withValues(alpha: .8),
+        color: tone.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tone.withValues(alpha: .18)),
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
+          color: tone,
         ),
       ),
     );

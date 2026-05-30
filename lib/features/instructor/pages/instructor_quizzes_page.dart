@@ -372,14 +372,15 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                           style: const TextStyle(color: AfaqColors.slate500),
                         ),
                         const SizedBox(height: 16),
-                        Row(
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
                           children: [
                             FilledButton.icon(
                               onPressed: () => _openAddQuestion(quiz),
                               icon: const Icon(Icons.add_task_outlined),
                               label: const Text('Add Question'),
                             ),
-                            const SizedBox(width: 10),
                             OutlinedButton.icon(
                               onPressed: () => _deleteQuiz(quiz),
                               icon: const Icon(Icons.delete_outline),
@@ -429,7 +430,7 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                                         Text(attempt.studentName),
                                         const SizedBox(height: 4),
                                         Text(
-                                          '${attempt.status} • score ${attempt.scoreLabel}',
+                                          '${attempt.status} - score ${attempt.scoreLabel}',
                                           style: const TextStyle(color: AfaqColors.slate500),
                                         ),
                                       ],

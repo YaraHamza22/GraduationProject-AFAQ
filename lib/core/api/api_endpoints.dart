@@ -18,6 +18,7 @@ class ApiEndpoints {
   static const notifications = '/notifications';
   static const notificationsUnreadCount = '/notifications/unread-count';
   static const chatUnreadCount = '/chat-threads/unread-count';
+  static const studentInstructors = '/student/instructors';
   static const instructors = '/instructors';
   static const users = '/users';
   static const superAdminCourses = '/super-admin/courses';
@@ -80,12 +81,18 @@ class ApiEndpoints {
   static String forumThreadPosts(int threadId) {
     return '/forum-threads/$threadId/posts';
   }
+  static String pinForumThread(int threadId) => '/forum-threads/$threadId/pin';
+  static String lockForumThread(int threadId) => '/forum-threads/$threadId/lock';
 
   static String forumPost(int postId) => '/forum-posts/$postId';
   static String reactToForumPost(int postId) => '/forum-posts/$postId/react';
   static String reportForumPost(int postId) => '/forum-posts/$postId/report';
 
   static String chatThread(int threadId) => '/chat-threads/$threadId';
+  static String studentInstructor(int instructorId) {
+    return '/student/instructors/$instructorId';
+  }
+
   static String chatParticipants(int threadId) {
     return '/chat-threads/$threadId/participants';
   }

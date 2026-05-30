@@ -7,8 +7,26 @@ class ForumService {
   const ForumService({ApiClient? apiClient}) : _apiClient = apiClient;
 
   final ApiClient? _apiClient;
+  static final Map<String, Future<Response<Map<String, dynamic>>>> _inFlightPosts =
+      {};
+  static final Map<String, Response<Map<String, dynamic>>> _cachedPosts = {};
 
   ApiClient get _client => _apiClient ?? ApiClient.instance;
+
+  static void _invalidateThreadPostsCache(int threadId) {
+    final prefix = '$threadId:';
+    _inFlightPosts.removeWhere((key, _) => key.startsWith(prefix));
+    _cachedPosts.removeWhere((key, _) => key.startsWith(prefix));
+  }
+
+  static Map<String, dynamic>? getCachedPostsPayload({
+    required int threadId,
+    int page = 1,
+    int perPage = 20,
+  }) {
+    final response = _cachedPosts['$threadId:$page:$perPage'];
+    return response?.data;
+  }
 
   Future<Response<Map<String, dynamic>>> getThreads({
     int page = 1,
@@ -24,10 +42,16 @@ class ForumService {
     required String title,
     required String body,
     required int courseId,
+    String category = 'general',
   }) {
     return _client.post<Map<String, dynamic>>(
       ApiEndpoints.forumThreads,
-      data: {'title': title, 'body': body, 'course_id': courseId},
+      data: {
+        'title': title,
+        'body': body,
+        'course_id': courseId,
+        'category': category,
+      },
     );
   }
 
@@ -36,10 +60,16 @@ class ForumService {
     required String title,
     required String body,
     required int courseId,
+    String category = 'general',
   }) {
     return _client.put<Map<String, dynamic>>(
       ApiEndpoints.forumThread(threadId),
-      data: {'title': title, 'body': body, 'course_id': courseId},
+      data: {
+        'title': title,
+        'body': body,
+        'course_id': courseId,
+        'category': category,
+      },
     );
   }
 
@@ -47,15 +77,62 @@ class ForumService {
     return _client.delete<void>(ApiEndpoints.forumThread(threadId));
   }
 
+  Future<Response<Map<String, dynamic>>> pinThread(int threadId) {
+    return _client.post<Map<String, dynamic>>(
+      ApiEndpoints.pinForumThread(threadId),
+      data: const {},
+    );
+  }
+
+  Future<Response<Map<String, dynamic>>> lockThread(int threadId) {
+    return _client.post<Map<String, dynamic>>(
+      ApiEndpoints.lockForumThread(threadId),
+      data: const {},
+    );
+  }
+
   Future<Response<Map<String, dynamic>>> getPosts({
     required int threadId,
     int page = 1,
     int perPage = 20,
+    bool forceRefresh = false,
   }) {
-    return _client.get<Map<String, dynamic>>(
-      ApiEndpoints.forumThreadPosts(threadId),
-      queryParameters: {'page': page, 'per_page': perPage},
-    );
+    final requestKey = '$threadId:$page:$perPage';
+    if (!forceRefresh) {
+      final cached = _cachedPosts[requestKey];
+      if (cached != null) return Future.value(cached);
+    }
+
+    if (!forceRefresh) {
+      final active = _inFlightPosts[requestKey];
+      if (active != null) return active;
+    }
+
+    final future = _client
+        .get<Map<String, dynamic>>(
+          ApiEndpoints.forumThreadPosts(threadId),
+          queryParameters: {'page': page, 'per_page': perPage},
+        )
+        .then((response) {
+          _cachedPosts[requestKey] = response;
+          return response;
+        })
+        .whenComplete(() => _inFlightPosts.remove(requestKey));
+
+    _inFlightPosts[requestKey] = future;
+    return future;
+  }
+
+  Future<void> warmPostsCache({
+    required int threadId,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    try {
+      await getPosts(threadId: threadId, page: page, perPage: perPage);
+    } catch (_) {
+      // Ignore background warm-up failures.
+    }
   }
 
   Future<Response<Map<String, dynamic>>> createPost({
@@ -63,6 +140,7 @@ class ForumService {
     required String body,
     int? parentId,
   }) {
+    _invalidateThreadPostsCache(threadId);
     return _client.post<Map<String, dynamic>>(
       ApiEndpoints.forumThreadPosts(threadId),
       data: {'body': body, 'parent_id': parentId},

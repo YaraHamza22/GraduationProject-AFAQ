@@ -27,10 +27,15 @@ class ChatService {
   Future<Response<Map<String, dynamic>>> createThread({
     required String title,
     int? courseId,
+    List<int>? participantIds,
   }) {
     return client.post<Map<String, dynamic>>(
       ApiEndpoints.chatThreads,
-      data: {'title': title, 'course_id': courseId},
+      data: {
+        'title': title,
+        'course_id': courseId,
+        if (participantIds != null) 'participant_ids': participantIds,
+      },
     );
   }
 
@@ -99,24 +104,18 @@ class ChatService {
     return client.delete<void>(ApiEndpoints.chatMessage(messageId));
   }
 
-  Future<Response<Map<String, dynamic>>> getInstructorContacts({
-    int perPage = 200,
-    bool useUsersEndpoint = false,
-    bool superAdmin = false,
-  }) {
-    final endpoint = switch ((useUsersEndpoint, superAdmin)) {
-      (false, false) => ApiEndpoints.instructors,
-      (true, false) => ApiEndpoints.users,
-      (false, true) => ApiEndpoints.superAdminInstructors,
-      (true, true) => ApiEndpoints.superAdminUsers,
-    };
-
+  Future<Response<Map<String, dynamic>>> getStudentInstructorContacts() {
     return client.get<Map<String, dynamic>>(
-      endpoint,
-      queryParameters: {
-        'per_page': perPage,
-        if (useUsersEndpoint) 'role': 'instructor',
-      },
+      ApiEndpoints.studentInstructors,
+      queryParameters: const <String, dynamic>{},
+    );
+  }
+
+  Future<Response<Map<String, dynamic>>> getStudentInstructorContact(
+    int instructorId,
+  ) {
+    return client.get<Map<String, dynamic>>(
+      ApiEndpoints.studentInstructor(instructorId),
     );
   }
 }

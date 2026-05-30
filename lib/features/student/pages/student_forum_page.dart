@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 
 import '../../../app/app.dart';
+import '../../../core/session/session_store.dart';
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/toast/afaq_toast.dart';
 import '../../../core/widgets/afaq_panel.dart';
@@ -18,9 +20,23 @@ class _StudentForumPageState extends State<StudentForumPage> {
   final _service = const ForumService();
 
   bool _loading = true;
+  bool _openingThread = false;
   String? _error;
   List<_ForumThread> _threads = const [];
   List<_ForumCourseOption> _courseOptions = const [];
+
+  String _displayAuthor(_ForumPost post) {
+    final currentUserId = SessionStore.instance.userId;
+    if (currentUserId != null && post.authorId == currentUserId) {
+      final normalized = post.author.trim().toLowerCase();
+      if (normalized.isEmpty ||
+          normalized == 'user' ||
+          normalized.startsWith('user #')) {
+        return 'You';
+      }
+    }
+    return post.author.trim().isEmpty ? 'You' : post.author;
+  }
 
   @override
   void initState() {
@@ -50,6 +66,10 @@ class _StudentForumPageState extends State<StudentForumPage> {
             .toList(growable: false);
         _loading = false;
       });
+
+      for (final thread in _threads.take(6)) {
+        unawaited(_service.warmPostsCache(threadId: thread.id, perPage: 100));
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -146,11 +166,65 @@ class _StudentForumPageState extends State<StudentForumPage> {
     }
   }
 
+  Future<void> _toggleThreadPin(_ForumThread thread) async {
+    try {
+      await _service.pinThread(thread.id);
+      if (!mounted) return;
+      AfaqToast.show(
+        context,
+        message: 'Thread ${thread.isPinned ? 'unpinned' : 'pinned'} successfully.',
+        type: AfaqToastType.success,
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      AfaqToast.show(
+        context,
+        message: error.toString(),
+        type: AfaqToastType.error,
+      );
+    }
+  }
+
+  Future<void> _toggleThreadLock(_ForumThread thread) async {
+    try {
+      await _service.lockThread(thread.id);
+      if (!mounted) return;
+      AfaqToast.show(
+        context,
+        message: 'Thread ${thread.isLocked ? 'unlocked' : 'locked'} successfully.',
+        type: AfaqToastType.success,
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      AfaqToast.show(
+        context,
+        message: error.toString(),
+        type: AfaqToastType.error,
+      );
+    }
+  }
+
   Future<void> _openThread(_ForumThread thread) async {
+    if (_openingThread) return;
+    _openingThread = true;
     final bodyController = TextEditingController();
     List<_ForumPost> posts = const [];
     bool loadingPosts = true;
     String? postError;
+    StateSetter? modalSetState;
+
+    final cachedPayload = ForumService.getCachedPostsPayload(
+      threadId: thread.id,
+      perPage: 100,
+    );
+    if (cachedPayload != null) {
+      posts = unwrapDataList(cachedPayload)
+          .map(_ForumPost.fromMap)
+          .toList(growable: false);
+      loadingPosts = false;
+    }
 
     Future<void> loadPosts(StateSetter setModalState) async {
       setModalState(() {
@@ -158,7 +232,11 @@ class _StudentForumPageState extends State<StudentForumPage> {
         postError = null;
       });
       try {
-        final response = await _service.getPosts(threadId: thread.id, perPage: 100);
+        final response = await _service.getPosts(
+          threadId: thread.id,
+          perPage: 100,
+          forceRefresh: true,
+        );
         posts = unwrapDataList(response.data)
             .map(_ForumPost.fromMap)
             .toList(growable: false);
@@ -171,116 +249,166 @@ class _StudentForumPageState extends State<StudentForumPage> {
       }
     }
 
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (modalContext, setModalState) {
-            if (loadingPosts && posts.isEmpty && postError == null) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                loadPosts(setModalState);
-              });
-            }
+    Future<void> startInitialLoad() async {
+      if (posts.isNotEmpty) {
+        if (modalSetState != null) {
+          modalSetState!(() {});
+        }
+        return;
+      }
+      try {
+        final response = await _service.getPosts(
+          threadId: thread.id,
+          perPage: 100,
+        );
+        posts = unwrapDataList(response.data)
+            .map(_ForumPost.fromMap)
+            .toList(growable: false);
+        loadingPosts = false;
+        postError = null;
+      } catch (error) {
+        loadingPosts = false;
+        postError = error.toString();
+      }
 
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(modalContext).viewInsets.bottom + 20,
-              ),
-              child: SizedBox(
-                height: MediaQuery.sizeOf(modalContext).height * .78,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      thread.title,
-                      style: Theme.of(modalContext).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
+      if (modalSetState != null) {
+        modalSetState!(() {});
+      }
+    }
+
+    final initialLoadFuture = startInitialLoad();
+
+    if (!mounted) return;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (sheetContext) {
+          return StatefulBuilder(
+            builder: (modalContext, setModalState) {
+              modalSetState = setModalState;
+
+              return Padding(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                  bottom: MediaQuery.of(modalContext).viewInsets.bottom + 20,
+                ),
+                child: SizedBox(
+                  height: MediaQuery.sizeOf(modalContext).height * .78,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        thread.title,
+                        style: Theme.of(modalContext).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      thread.body,
-                      style: const TextStyle(color: AfaqColors.slate500),
-                    ),
-                    const SizedBox(height: 16),
-                    Expanded(
-                      child: loadingPosts
-                          ? const Center(child: CircularProgressIndicator())
-                          : postError != null
-                              ? Center(child: Text(postError!))
-                              : ListView.separated(
-                                  itemCount: posts.length,
-                                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                                  itemBuilder: (itemContext, index) {
-                                    final post = posts[index];
-                                    return Container(
-                                      padding: const EdgeInsets.all(14),
-                                      decoration: BoxDecoration(
-                                        color: AfaqColors.slate100.withValues(alpha: .55),
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            post.author,
-                                            style: const TextStyle(fontWeight: FontWeight.w800),
-                                          ),
-                                          const SizedBox(height: 6),
-                                          Text(post.body),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: bodyController,
-                            decoration: const InputDecoration(
-                              hintText: 'Write a reply',
+                      const SizedBox(height: 8),
+                      Text(
+                        thread.body,
+                        style: const TextStyle(color: AfaqColors.slate500),
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: loadingPosts
+                            ? const Center(child: CircularProgressIndicator())
+                            : postError != null
+                                ? Center(child: Text(postError!))
+                                : ListView.separated(
+                                    itemCount: posts.length,
+                                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                                    itemBuilder: (itemContext, index) {
+                                      final post = posts[index];
+                                      return Container(
+                                        padding: const EdgeInsets.all(14),
+                                        decoration: BoxDecoration(
+                                          color: AfaqColors.slate100.withValues(alpha: .55),
+                                          borderRadius: BorderRadius.circular(18),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _displayAuthor(post),
+                                              style: const TextStyle(fontWeight: FontWeight.w800),
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Text(post.body),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: bodyController,
+                              decoration: const InputDecoration(
+                                hintText: 'Write a reply',
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
+                          const SizedBox(width: 12),
                         FilledButton(
                           onPressed: () async {
+                            final text = bodyController.text.trim();
+                            if (text.isEmpty) return;
+
                             try {
                               await _service.createPost(
                                 threadId: thread.id,
-                                body: bodyController.text.trim(),
+                                body: text,
                               );
+                              if (!mounted) return;
+
+                              final optimisticAuthor = 'You';
                               bodyController.clear();
+                              setModalState(() {
+                                posts = [
+                                  ...posts,
+                                  _ForumPost(
+                                    authorId: SessionStore.instance.userId ?? 0,
+                                    author: optimisticAuthor,
+                                    body: text,
+                                  ),
+                                ];
+                                loadingPosts = false;
+                                postError = null;
+                              });
+
                               await loadPosts(setModalState);
                             } catch (error) {
                               if (!mounted) return;
                               AfaqToast.show(
-                                this.context,
-                                message: error.toString(),
-                                type: AfaqToastType.error,
-                              );
-                            }
-                          },
-                          child: const Text('Send'),
-                        ),
-                      ],
-                    ),
-                  ],
+                                  context,
+                                  message: error.toString(),
+                                  type: AfaqToastType.error,
+                                );
+                              }
+                            },
+                            child: const Text('Send'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
-        );
-      },
-    );
+              );
+            },
+          );
+        },
+      );
+      await initialLoadFuture;
+    } finally {
+      modalSetState = null;
+      _openingThread = false;
+    }
   }
 
   @override
@@ -327,14 +455,67 @@ class _StudentForumPageState extends State<StudentForumPage> {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                thread.title,
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w900,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      if (thread.isPinned)
+                                        _ForumChip(
+                                          label: 'Pinned',
+                                          background: AfaqColors.sky400.withValues(alpha: .16),
+                                          foreground: AfaqColors.sky400,
+                                        ),
+                                      if (thread.isLocked)
+                                        _ForumChip(
+                                          label: 'Locked',
+                                          background: AfaqColors.amber500.withValues(alpha: .14),
+                                          foreground: AfaqColors.amber500,
+                                        ),
+                                    ],
+                                  ),
+                                  if (thread.isPinned || thread.isLocked)
+                                    const SizedBox(height: 8),
+                                  Text(
+                                    thread.title,
+                                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const Icon(Icons.chevron_right_rounded),
+                            PopupMenuButton<String>(
+                              onSelected: (value) async {
+                                if (value == 'pin') {
+                                  await _toggleThreadPin(thread);
+                                } else if (value == 'lock') {
+                                  await _toggleThreadLock(thread);
+                                } else if (value == 'open') {
+                                  await _openThread(thread);
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                PopupMenuItem<String>(
+                                  value: 'pin',
+                                  child: Text(thread.isPinned ? 'Unpin' : 'Pin'),
+                                ),
+                                PopupMenuItem<String>(
+                                  value: 'lock',
+                                  child: Text(thread.isLocked ? 'Unlock' : 'Lock'),
+                                ),
+                                const PopupMenuItem<String>(
+                                  value: 'open',
+                                  child: Text('Open'),
+                                ),
+                              ],
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(Icons.more_vert_rounded),
+                              ),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -372,6 +553,8 @@ class _ForumThread {
     required this.body,
     required this.courseTitle,
     required this.postsCount,
+    required this.isPinned,
+    required this.isLocked,
   });
 
   final int id;
@@ -379,6 +562,8 @@ class _ForumThread {
   final String body;
   final String courseTitle;
   final int postsCount;
+  final bool isPinned;
+  final bool isLocked;
 
   factory _ForumThread.fromMap(Map<String, dynamic> map) {
     final course = asMap(map['course']);
@@ -391,6 +576,8 @@ class _ForumThread {
         fallback: 'Course',
       ),
       postsCount: readInt(map['posts_count']),
+      isPinned: readInt(map['is_pinned']) == 1,
+      isLocked: readInt(map['is_locked']) == 1,
     );
   }
 }
@@ -414,38 +601,79 @@ class _ForumCourseOption {
 
 class _ForumPost {
   const _ForumPost({
+    required this.authorId,
     required this.author,
     required this.body,
   });
 
+  final int authorId;
   final String author;
   final String body;
 
   factory _ForumPost.fromMap(Map<String, dynamic> map) {
     final user = asMap(map['user']);
+    final authorUser = asMap(map['author']);
+    final student = asMap(map['student']);
+    final profile = asMap(map['profile']);
+    final author = readString(
+      user?['name'] ??
+          user?['username'] ??
+          authorUser?['name'] ??
+          authorUser?['username'] ??
+          student?['name'] ??
+          student?['username'] ??
+          profile?['name'] ??
+          profile?['username'] ??
+          map['author_name'] ??
+          map['author_username'] ??
+          map['user_name'] ??
+          map['username'],
+      fallback: '',
+    );
+
     return _ForumPost(
-      author: readString(user?['name'], fallback: 'User'),
+      authorId: readInt(
+        map['author_id'] ??
+            map['user_id'] ??
+            user?['id'] ??
+            authorUser?['id'] ??
+            student?['id'] ??
+            profile?['id'],
+      ),
+      author: author.isNotEmpty
+          ? author
+          : 'User${readInt(map['user_id']) != 0 ? ' #${readInt(map['user_id'])}' : ''}',
       body: readString(map['body'], fallback: ''),
     );
   }
 }
 
 class _ForumChip extends StatelessWidget {
-  const _ForumChip({required this.label});
+  const _ForumChip({
+    required this.label,
+    this.background,
+    this.foreground,
+  });
 
   final String label;
+  final Color? background;
+  final Color? foreground;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AfaqColors.slate100.withValues(alpha: .8),
+        color: background ?? AfaqColors.slate100.withValues(alpha: .8),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
       ),
     );
   }

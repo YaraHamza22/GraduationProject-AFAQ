@@ -67,51 +67,70 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
                   : LayoutBuilder(
                       builder: (context, constraints) {
                         final stacked = constraints.maxWidth < 980;
+                        final summaryCard = AfaqPanel(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CircleAvatar(
+                                radius: 34,
+                                child: Text(
+                                  _profile!.initials,
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _profile!.name,
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(_profile!.email),
+                            ],
+                          ),
+                        );
+                        final detailsCard = AfaqPanel(
+                          child: LayoutBuilder(
+                            builder: (context, panelConstraints) {
+                              final tileWidth = stacked
+                                  ? panelConstraints.maxWidth
+                                  : ((panelConstraints.maxWidth - 16) / 2).clamp(220.0, 420.0);
+                              return Wrap(
+                                spacing: 16,
+                                runSpacing: 16,
+                                children: [
+                                  _ProfileTile(label: 'Phone', value: _profile!.phone, width: tileWidth),
+                                  _ProfileTile(label: 'Gender', value: _profile!.gender, width: tileWidth),
+                                  _ProfileTile(
+                                    label: 'Date of Birth',
+                                    value: _profile!.dateOfBirth,
+                                    width: tileWidth,
+                                  ),
+                                  _ProfileTile(
+                                    label: 'Address',
+                                    value: _profile!.address,
+                                    width: panelConstraints.maxWidth,
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        );
+
                         return Flex(
                           direction: stacked ? Axis.vertical : Axis.horizontal,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: AfaqPanel(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 34,
-                                      child: Text(
-                                        _profile!.initials,
-                                        style: Theme.of(context).textTheme.titleLarge,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      _profile!.name,
-                                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(_profile!.email),
-                                  ],
-                                ),
-                              ),
-                            ),
+                            if (stacked)
+                              summaryCard
+                            else
+                              Expanded(child: summaryCard),
                             SizedBox(width: stacked ? 0 : 16, height: stacked ? 16 : 0),
-                            Expanded(
-                              flex: 2,
-                              child: AfaqPanel(
-                                child: Wrap(
-                                  spacing: 16,
-                                  runSpacing: 16,
-                                  children: [
-                                    _ProfileTile(label: 'Phone', value: _profile!.phone),
-                                    _ProfileTile(label: 'Gender', value: _profile!.gender),
-                                    _ProfileTile(label: 'Date of Birth', value: _profile!.dateOfBirth),
-                                    _ProfileTile(label: 'Address', value: _profile!.address, wide: true),
-                                  ],
-                                ),
-                              ),
-                            ),
+                            if (stacked)
+                              detailsCard
+                            else
+                              Expanded(flex: 2, child: detailsCard),
                           ],
                         );
                       },
@@ -163,17 +182,17 @@ class _ProfileTile extends StatelessWidget {
   const _ProfileTile({
     required this.label,
     required this.value,
-    this.wide = false,
+    required this.width,
   });
 
   final String label;
   final String value;
-  final bool wide;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: wide ? double.infinity : 260,
+      width: width,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
