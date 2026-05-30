@@ -2,11 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../app/app.dart';
+import '../../../core/api/api_client.dart';
+import '../../../core/api/api_endpoints.dart';
 import '../../../core/errors/app_exception.dart';
 import '../../../core/session/session_store.dart';
-import '../../../core/widgets/afaq_panel.dart';
 import '../../student/data/forum_service.dart';
+import '../data/instructor_chat_service.dart';
 import '../data/instructor_courses_service.dart';
+import '../data/instructor_profile_service.dart';
 import 'instructor_page_shared.dart';
 
 class InstructorForumPage extends StatefulWidget {
@@ -19,6 +22,8 @@ class InstructorForumPage extends StatefulWidget {
 class _InstructorForumPageState extends State<InstructorForumPage> {
   final _forumService = const ForumService();
   final _coursesService = const InstructorCoursesService();
+  final _chatService = const InstructorChatService();
+  final _profileService = const InstructorProfileService();
   final _searchController = TextEditingController();
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
@@ -45,6 +50,7 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
   final Map<int, bool> _loadingPosts = <int, bool>{};
   final Map<int, String> _draftByThread = <int, String>{};
   final Set<int> _likedPosts = <int>{};
+  final Map<int, String> _authorNames = <int, String>{};
 
   int? _editingPostId;
   int? _reportingPostId;
@@ -89,25 +95,25 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
       final results = await Future.wait([
         _forumService.getThreads(perPage: _threadPagination.perPage),
         _loadCoursesFromFrontendSources(),
+        _loadAuthorDirectory(),
       ]);
       if (!mounted) return;
 
       final threadPayload =
           (results[0] as Response<Map<String, dynamic>>).data;
-      final threads = unwrapInstructorList(threadPayload)
+      final parsedThreads = _parseThreadCollection(threadPayload);
+      final threads = parsedThreads.rows
           .map(_ForumThreadRow.fromMap)
           .toList(growable: false);
-      final root = unwrapInstructorMap(threadPayload);
-      final pagination = _ForumPagination.fromMap(
-        instructorMap(root['pagination']) ??
-            instructorMap(instructorMap(root['data'])?['pagination']),
-      );
 
       setState(() {
         _threads = threads;
-        _threadPagination = pagination;
+        _threadPagination = parsedThreads.pagination;
         _loading = false;
       });
+      for (final thread in threads) {
+        _primeThreadPosts(thread.id);
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -127,7 +133,7 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
     for (final load in loaders) {
       try {
         final payload = await load();
-        final list = unwrapInstructorList(payload)
+        final list = _parseCourseRows(payload)
             .map(_ForumCourseRow.fromMap)
             .where((item) => item.id != 0)
             .toList(growable: false);
@@ -144,6 +150,82 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
     _courses = const [];
     _selectedCourseId = null;
     return <String, dynamic>{};
+  }
+
+  Future<Map<int, String>> _loadAuthorDirectory() async {
+    final names = <int, String>{};
+
+    try {
+      final profileResponse = await _profileService.getProfile();
+      final root = instructorMap(profileResponse.data) ?? <String, dynamic>{};
+      final profile = instructorMap(root['profile']) ?? root;
+      final user = instructorMap(profile['user']) ?? profile;
+      final id = instructorInt(user['id'] ?? profile['id']);
+      final name = instructorString(
+        user['name'] ?? user['username'] ?? profile['name'] ?? profile['username'],
+      ).trim();
+      if (id != 0 && name.isNotEmpty) {
+        names[id] = name;
+      }
+    } catch (_) {
+      // Keep going if profile lookup is unavailable.
+    }
+
+    final loaders = <Future<Response<Map<String, dynamic>>> Function()>[
+      () => _chatService.getInstructorStudentContacts(perPage: 200),
+      () => ApiClient.instance.get<Map<String, dynamic>>(
+            ApiEndpoints.users,
+            queryParameters: {'per_page': 200},
+          ),
+      () => _chatService.getStudentContacts(perPage: 200, useUsersEndpoint: true),
+      () => _chatService.getStudentContacts(perPage: 200),
+    ];
+
+    for (final load in loaders) {
+      try {
+        final response = await load();
+        final rows = unwrapInstructorList(response.data);
+        for (final row in rows) {
+          final user = instructorMap(row['user']);
+          final student = instructorMap(row['student']);
+          final instructor = instructorMap(row['instructor']);
+          final base = user ?? student ?? instructor ?? row;
+          final id = instructorInt(
+            base['id'] ??
+                base['user_id'] ??
+                base['student_id'] ??
+                base['instructor_id'] ??
+                row['id'] ??
+                row['user_id'],
+          );
+          final name = instructorString(
+            base['name'] ?? base['full_name'] ?? base['username'] ?? row['name'],
+          ).trim();
+          if (id != 0 && name.isNotEmpty && name.toLowerCase() != 'user') {
+            names[id] = name;
+          }
+        }
+        if (names.isNotEmpty) {
+          break;
+        }
+      } catch (_) {
+        // Try the next source.
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _authorNames
+          ..clear()
+          ..addAll(names);
+      });
+    } else {
+      _authorNames
+        ..clear()
+        ..addAll(names);
+    }
+
+    return names;
   }
 
   List<_ForumThreadRow> get _filteredThreads {
@@ -278,6 +360,10 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
 
   Future<void> _toggleThreadPosts(_ForumThreadRow thread) async {
     final isOpen = _expandedThreads.contains(thread.id);
+    debugPrint(
+      '[InstructorForum] toggleThreadPosts threadId=${thread.id} '
+      'title="${thread.title}" isOpen=$isOpen cached=${_postsByThread.containsKey(thread.id)}',
+    );
     setState(() {
       if (isOpen) {
         _expandedThreads.remove(thread.id);
@@ -287,11 +373,83 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
     });
 
     if (!isOpen && !_postsByThread.containsKey(thread.id)) {
+      final hydratedFromCache = _hydrateThreadPostsFromCache(thread.id);
+      if (hydratedFromCache) {
+        return;
+      }
       await _loadPosts(thread.id);
     }
   }
 
-  Future<void> _loadPosts(int threadId, {int page = 1}) async {
+  bool _hydrateThreadPostsFromCache(int threadId, {int page = 1}) {
+    final cachedPayload = ForumService.getCachedPostsPayload(
+      threadId: threadId,
+      page: page,
+      perPage: 20,
+    );
+    if (cachedPayload == null) {
+      return false;
+    }
+
+    final parsed = _parsePostCollection(cachedPayload);
+    final rows = parsed.rows
+        .map(_ForumPostRow.fromMap)
+        .where((item) => item.id != 0)
+        .toList(growable: false);
+    if (rows.isEmpty) {
+      return false;
+    }
+
+    debugPrint(
+      '[InstructorForum] hydrateThreadPostsFromCache '
+      'threadId=$threadId rows=${rows.length} '
+      'page=${parsed.pagination.currentPage}/${parsed.pagination.totalPages}',
+    );
+
+    if (mounted) {
+      setState(() {
+        _postsByThread[threadId] = rows;
+        _postPaginationByThread[threadId] = parsed.pagination;
+        _loadingPosts[threadId] = false;
+      });
+    } else {
+      _postsByThread[threadId] = rows;
+      _postPaginationByThread[threadId] = parsed.pagination;
+      _loadingPosts[threadId] = false;
+    }
+    return true;
+  }
+
+  Future<void> _primeThreadPosts(int threadId, {int page = 1}) async {
+    if (_postsByThread.containsKey(threadId) || _loadingPosts[threadId] == true) {
+      return;
+    }
+    try {
+      final response = await _forumService.getPosts(
+        threadId: threadId,
+        page: page,
+        perPage: 20,
+      );
+      final parsed = _parsePostCollection(response.data);
+      final rows = parsed.rows
+          .map(_ForumPostRow.fromMap)
+          .where((item) => item.id != 0)
+          .toList(growable: false);
+      if (!mounted || rows.isEmpty) return;
+      setState(() {
+        _postsByThread[threadId] = rows;
+        _postPaginationByThread[threadId] = parsed.pagination;
+      });
+      debugPrint(
+        '[InstructorForum] primeThreadPosts threadId=$threadId rows=${rows.length}',
+      );
+    } catch (error) {
+      debugPrint('[InstructorForum] primeThreadPosts:error threadId=$threadId error=$error');
+    }
+  }
+
+  Future<void> _loadPosts(int threadId, {int page = 1, bool forceRefresh = false}) async {
+    debugPrint('[InstructorForum] loadPosts:start threadId=$threadId page=$page');
     setState(() {
       _loadingPosts[threadId] = true;
       _error = null;
@@ -302,28 +460,59 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
         threadId: threadId,
         page: page,
         perPage: 20,
-        forceRefresh: true,
+        forceRefresh: forceRefresh,
       );
       final payload = response.data;
-      final root = unwrapInstructorMap(payload);
-      final rows = unwrapInstructorList(payload)
+      debugPrint(
+        '[InstructorForum] loadPosts:response '
+        'threadId=$threadId '
+        'postKeys=${instructorMap(payload)?.keys.toList()}',
+      );
+      var parsed = _parsePostCollection(payload);
+      if (parsed.rows.isEmpty) {
+        debugPrint(
+          '[InstructorForum] loadPosts:posts-empty threadId=$threadId '
+          'checking thread detail payload fallback',
+        );
+        final threadResponse = await _forumService.getThread(threadId);
+        final threadPayload = threadResponse.data;
+        final threadMap = _parseThreadDetail(threadPayload);
+        parsed = _parsePostCollection(
+          _threadEmbeddedPostsPayload(
+            postsPayload: payload,
+            threadPayload: threadPayload,
+          ),
+        );
+        if (!mounted) return;
+        if (threadMap != null) {
+          _threads = _threads
+              .map((thread) => thread.id == threadId ? _ForumThreadRow.fromMap(threadMap) : thread)
+              .toList(growable: false);
+        }
+      }
+      debugPrint(
+        '[InstructorForum] loadPosts:parsed '
+        'threadId=$threadId rows=${parsed.rows.length} '
+        'page=${parsed.pagination.currentPage}/${parsed.pagination.totalPages} '
+        'total=${parsed.pagination.total}',
+      );
+      final rows = parsed.rows
           .map(_ForumPostRow.fromMap)
           .where((item) => item.id != 0)
           .toList(growable: false);
-      final pagination = _ForumPagination.fromMap(
-        instructorMap(root['pagination']) ??
-            instructorMap(instructorMap(root['data'])?['pagination']),
-      );
       if (!mounted) return;
       setState(() {
         _postsByThread[threadId] = rows;
-        _postPaginationByThread[threadId] = pagination;
+        _postPaginationByThread[threadId] = parsed.pagination;
+        _loadingPosts[threadId] = false;
       });
     } catch (error) {
+      debugPrint('[InstructorForum] loadPosts:error threadId=$threadId error=$error');
       if (!mounted) return;
       setState(() => _error = _friendlyError(error));
     } finally {
       if (mounted) {
+        debugPrint('[InstructorForum] loadPosts:done threadId=$threadId');
         setState(() => _loadingPosts[threadId] = false);
       }
     }
@@ -346,6 +535,7 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
       await _loadPosts(
         thread.id,
         page: _postPaginationByThread[thread.id]?.currentPage ?? 1,
+        forceRefresh: true,
       );
       if (!mounted) return;
       setState(() => _ok = 'Forum post created successfully.');
@@ -369,7 +559,11 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
 
     try {
       await _forumService.updatePost(postId: postId, body: body);
-      await _loadPosts(threadId, page: _postPaginationByThread[threadId]?.currentPage ?? 1);
+      await _loadPosts(
+        threadId,
+        page: _postPaginationByThread[threadId]?.currentPage ?? 1,
+        forceRefresh: true,
+      );
       if (!mounted) return;
       setState(() {
         _editingPostId = null;
@@ -393,7 +587,11 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
 
     try {
       await _forumService.deletePost(postId);
-      await _loadPosts(threadId, page: _postPaginationByThread[threadId]?.currentPage ?? 1);
+      await _loadPosts(
+        threadId,
+        page: _postPaginationByThread[threadId]?.currentPage ?? 1,
+        forceRefresh: true,
+      );
       if (!mounted) return;
       setState(() => _ok = 'Forum post deleted successfully.');
     } catch (error) {
@@ -413,7 +611,11 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
 
     try {
       await _forumService.reactToPost(postId: postId, reaction: 'like');
-      await _loadPosts(threadId, page: _postPaginationByThread[threadId]?.currentPage ?? 1);
+      await _loadPosts(
+        threadId,
+        page: _postPaginationByThread[threadId]?.currentPage ?? 1,
+        forceRefresh: true,
+      );
       if (!mounted) return;
       setState(() {
         _likedPosts.add(postId);
@@ -440,7 +642,11 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
         reason: _reportReason,
         description: _reportDetails.trim(),
       );
-      await _loadPosts(threadId, page: _postPaginationByThread[threadId]?.currentPage ?? 1);
+      await _loadPosts(
+        threadId,
+        page: _postPaginationByThread[threadId]?.currentPage ?? 1,
+        forceRefresh: true,
+      );
       if (!mounted) return;
       setState(() {
         _reportingPostId = null;
@@ -468,14 +674,7 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
       child: Container(
         width: double.infinity,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [
-              Color(0xFF0D1324),
-              Color(0xFF151B31),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: const Color(0xFF050816),
           borderRadius: BorderRadius.circular(32),
           boxShadow: [
             BoxShadow(
@@ -527,46 +726,35 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
 
   Widget _buildHeaderBar() {
     return Wrap(
-      spacing: 14,
-      runSpacing: 14,
+      spacing: 16,
+      runSpacing: 16,
+      alignment: WrapAlignment.spaceBetween,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 220, maxWidth: 620),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Discussion Control Center',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                    ),
+        Text(
+          'Instructor Forum',
+          style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'Moderate threads, publish updates, and manage replies from one polished workspace.',
-                style: TextStyle(color: Color(0xFF97A2BE), height: 1.4),
-              ),
-            ],
-          ),
         ),
         FilledButton.icon(
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF232B43),
-            foregroundColor: Colors.white,
+            backgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF0A1020),
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w900),
           ),
           onPressed: _loading ? null : _load,
           icon: _loading
               ? const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0A1020)),
                 )
               : const Icon(Icons.refresh_rounded),
-          label: const Text('Refresh'),
+          label: const Text('REFRESH'),
         ),
       ],
     );
@@ -594,9 +782,12 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
   }
 
   Widget _buildComposerPanel() {
-    return AfaqPanel(
-      dark: true,
-      radius: 28,
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF12162A),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+      ),
       padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -607,11 +798,6 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
                 ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Use the same instructor forum workflow as the frontend: choose a course, set the category, and publish.',
-            style: TextStyle(color: Color(0xFF99A2BC), height: 1.4),
           ),
           const SizedBox(height: 16),
           _buildDarkDropdown<int>(
@@ -666,6 +852,7 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
                   backgroundColor: const Color(0xFF0991B2),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: _savingThread ? null : _saveThread,
                 icon: _savingThread
@@ -675,7 +862,7 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : Icon(_editingThreadId == null ? Icons.add : Icons.save_outlined),
-                label: Text(_editingThreadId == null ? 'Create Thread' : 'Save Changes'),
+                label: Text(_editingThreadId == null ? 'Save' : 'Save'),
               ),
               if (_editingThreadId != null)
                 OutlinedButton(
@@ -695,9 +882,12 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
   }
 
   Widget _buildThreadsPanel(List<_ForumThreadRow> threads) {
-    return AfaqPanel(
-      dark: true,
-      radius: 28,
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF12162A),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+      ),
       padding: const EdgeInsets.all(18),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -817,14 +1007,18 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
     final posts = _postsByThread[thread.id] ?? const <_ForumPostRow>[];
     final postPagination =
         _postPaginationByThread[thread.id] ?? const _ForumPagination();
+    debugPrint(
+      '[InstructorForum] buildThreadCard threadId=${thread.id} '
+      'expanded=$expanded loading=${_loadingPosts[thread.id] == true} posts=${posts.length}',
+    );
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF13182D),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+        color: const Color(0xFF13182A),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: .07)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -860,12 +1054,12 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
                     const SizedBox(height: 6),
                     Text(
                       '${thread.courseTitle} | Updated ${thread.updatedAtLabel}',
-                      style: const TextStyle(color: Color(0xFF838CA7), fontSize: 13),
+                      style: const TextStyle(color: Color(0xFF8D93A8), fontSize: 13),
                     ),
                     const SizedBox(height: 14),
                     Text(
                       thread.body,
-                      style: const TextStyle(color: Color(0xFFF4F7FF), fontSize: 16, height: 1.5),
+                      style: const TextStyle(color: Colors.white, fontSize: 16, height: 1.5),
                     ),
                   ],
                 ),
@@ -924,10 +1118,11 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
             alignment: Alignment.centerRight,
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF252B3E),
+                backgroundColor: Colors.white.withValues(alpha: .10),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
               ),
               onPressed: () => _toggleThreadPosts(thread),
               icon: const Icon(Icons.chat_bubble_outline_rounded),
@@ -938,9 +1133,9 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: Colors.white.withValues(alpha: .08)),
               ),
               child: Column(
@@ -958,8 +1153,9 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
                       final button = FilledButton.icon(
                         style: FilledButton.styleFrom(
                           backgroundColor: const Color(0xFF0991B2),
-                          minimumSize: Size(compactComposer ? constraints.maxWidth : 140, 56),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          minimumSize: Size(compactComposer ? constraints.maxWidth : 120, 48),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          textStyle: const TextStyle(fontWeight: FontWeight.w800),
                         ),
                         onPressed: thread.isLocked || _busyThreadId == thread.id
                             ? null
@@ -970,7 +1166,7 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
                                 height: 18,
                                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                               )
-                            : const Icon(Icons.add_rounded),
+                            : const Icon(Icons.add_rounded, size: 18),
                         label: const Text('Add Post'),
                       );
 
@@ -1002,9 +1198,9 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: .02),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white.withValues(alpha: .14), style: BorderStyle.solid),
                       ),
                       child: const Text(
                         'No posts.',
@@ -1073,14 +1269,16 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
   Widget _buildPostCard(_ForumThreadRow thread, _ForumPostRow post) {
     final editing = _editingPostId == post.id;
     final reporting = _reportingPostId == post.id;
+    final isMine = post.authorId != 0 && post.authorId == (SessionStore.instance.userId ?? -1);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      margin: EdgeInsets.only(left: post.isReply ? 18 : 0),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: .08)),
-        color: const Color(0xFF12182A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: .07)),
+        color: Colors.transparent,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1118,6 +1316,37 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
               ],
             ),
           ] else ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  _forumAuthorLabel(post, isMine: isMine),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (post.isReply)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF24314E),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'Reply',
+                      style: TextStyle(
+                        color: Color(0xFFAFC7FF),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Text(
               post.body,
               style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.45),
@@ -1248,6 +1477,21 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
     );
   }
 
+  String _forumAuthorLabel(_ForumPostRow post, {required bool isMine}) {
+    final mapped = _authorNames[post.authorId]?.trim() ?? '';
+    final raw = post.author.trim();
+    if (mapped.isNotEmpty && mapped.toLowerCase() != 'user') {
+      return mapped;
+    }
+    if (raw.isNotEmpty && raw.toLowerCase() != 'user') {
+      return raw;
+    }
+    if (isMine) {
+      return _authorNames[SessionStore.instance.userId ?? 0] ?? 'You';
+    }
+    return post.authorId != 0 ? 'User #${post.authorId}' : 'User';
+  }
+
   Widget _postAction({
     required String label,
     required IconData icon,
@@ -1372,6 +1616,231 @@ class _InstructorForumPageState extends State<InstructorForumPage> {
     if (value.isEmpty) return '';
     return '${value[0].toUpperCase()}${value.substring(1)}';
   }
+
+  _ParsedForumCollection _parseThreadCollection(dynamic payload) {
+    final root = instructorMap(payload) ?? <String, dynamic>{};
+    final directData = root['data'];
+    final directMap = instructorMap(directData);
+
+    final rows = directData is List
+        ? instructorList(directData)
+        : directMap?['data'] is List
+            ? instructorList(directMap?['data'])
+            : const <Map<String, dynamic>>[];
+
+    final normalizedRows = rows
+        .map((row) => <String, dynamic>{
+              'id': instructorInt(row['id']),
+              'course_id': instructorInt(row['course_id']),
+              'author_id': instructorInt(row['author_id']),
+              'title': instructorString(
+                row['title'],
+                fallback: 'Thread #${instructorInt(row['id'])}',
+              ),
+              'body': instructorString(row['body']),
+              'category': instructorString(row['category'], fallback: 'general'),
+              'is_pinned': instructorInt(row['is_pinned']),
+              'is_locked': instructorInt(row['is_locked']),
+              'updated_at': instructorString(row['updated_at']),
+              'posts_count': instructorInt(row['posts_count']),
+              'course': instructorMap(row['course']),
+              'course_title': instructorString(row['course_title']),
+            })
+        .where((row) => instructorInt(row['id']) != 0)
+        .toList(growable: false);
+
+    final pagination = _ForumPagination.fromMap(
+      instructorMap(root['pagination']) ??
+          instructorMap(directMap?['pagination']),
+    );
+
+    return _ParsedForumCollection(rows: normalizedRows, pagination: pagination);
+  }
+
+  Map<String, dynamic>? _parseThreadDetail(dynamic payload) {
+    final root = instructorMap(payload) ?? <String, dynamic>{};
+    final map = instructorMap(root['data']) ?? root;
+    final id = instructorInt(map['id']);
+    if (id == 0) return null;
+
+    return <String, dynamic>{
+      'id': id,
+      'course_id': instructorInt(map['course_id']),
+      'author_id': instructorInt(
+        map['author_id'] ??
+            map['user_id'] ??
+            instructorMap(map['author'])?['id'] ??
+            instructorMap(map['user'])?['id'],
+      ),
+      'title': instructorString(
+        map['title'],
+        fallback: 'Thread #$id',
+      ),
+      'body': instructorString(map['body']),
+      'category': instructorString(map['category'], fallback: 'general'),
+      'is_pinned': instructorInt(map['is_pinned']),
+      'is_locked': instructorInt(map['is_locked']),
+      'updated_at': instructorString(map['updated_at']),
+      'posts_count': instructorInt(map['posts_count']),
+      'course': instructorMap(map['course']),
+      'course_title': instructorString(map['course_title']),
+    };
+  }
+
+  dynamic _threadEmbeddedPostsPayload({
+    required dynamic postsPayload,
+    required dynamic threadPayload,
+  }) {
+    final threadRoot = instructorMap(threadPayload) ?? <String, dynamic>{};
+    final threadData = instructorMap(threadRoot['data']) ?? threadRoot;
+
+    final embeddedPosts = threadData['posts'] ??
+        threadData['forum_posts'] ??
+        threadData['children'] ??
+        threadData['replies'];
+
+    debugPrint(
+      '[InstructorForum] embeddedPayload '
+      'threadKeys=${threadData.keys.toList()} '
+      'embeddedType=${embeddedPosts.runtimeType}',
+    );
+
+    if (embeddedPosts == null) {
+      return postsPayload;
+    }
+
+    final postsRoot = instructorMap(postsPayload) ?? <String, dynamic>{};
+    final pagination = instructorMap(postsRoot['pagination']) ??
+        instructorMap(instructorMap(postsRoot['data'])?['pagination']);
+
+    return <String, dynamic>{
+      'data': embeddedPosts,
+      if (pagination != null) 'pagination': pagination,
+    };
+  }
+
+  _ParsedForumCollection _parsePostCollection(dynamic payload) {
+    final root = instructorMap(payload) ?? <String, dynamic>{};
+    final directData = root['data'];
+    final directMap = instructorMap(directData);
+    final directRows = directData is List
+        ? instructorList(directData)
+        : directMap?['data'] is List
+            ? instructorList(directMap?['data'])
+            : const <Map<String, dynamic>>[];
+    final rows = directRows.isNotEmpty ? directRows : _extractPostRows(root);
+    debugPrint(
+      '[InstructorForum] parsePostCollection '
+      'rootKeys=${root.keys.toList()} directRows=${directRows.length} extractedRows=${rows.length}',
+    );
+
+    final normalizedRows = rows
+        .map((row) => <String, dynamic>{
+              'id': instructorInt(row['id']),
+              'forum_thread_id': instructorInt(row['forum_thread_id']),
+              'parent_id': instructorInt(row['parent_id']),
+              'body': instructorString(row['body']),
+              'created_at': instructorString(row['created_at']),
+              'updated_at': instructorString(row['updated_at']),
+              'user': instructorMap(row['user']),
+              'author': instructorMap(row['author']),
+              'student': instructorMap(row['student']),
+              'profile': instructorMap(row['profile']),
+              'author_id': instructorInt(
+                row['author_id'] ??
+                    row['user_id'] ??
+                    instructorMap(row['user'])?['id'] ??
+                    instructorMap(row['author'])?['id'] ??
+                    instructorMap(row['student'])?['id'] ??
+                    instructorMap(row['profile'])?['id'],
+              ),
+              'author_name': instructorString(
+                row['author_name'] ??
+                    row['user_name'] ??
+                    instructorMap(row['user'])?['name'] ??
+                    instructorMap(row['author'])?['name'] ??
+                    instructorMap(row['student'])?['name'] ??
+                    instructorMap(row['profile'])?['name'],
+              ),
+            })
+        .where((row) => instructorInt(row['id']) != 0)
+        .toList(growable: false);
+
+    final pagination = _ForumPagination.fromMap(
+      instructorMap(root['pagination']) ??
+          instructorMap(directMap?['pagination']) ??
+          instructorMap(instructorMap(root['data'])?['pagination']) ??
+          instructorMap(instructorMap(root['posts'])?['pagination']),
+    );
+
+    return _ParsedForumCollection(rows: normalizedRows, pagination: pagination);
+  }
+
+  List<Map<String, dynamic>> _extractPostRows(dynamic payload) {
+    final queue = <dynamic>[payload];
+    final rows = <Map<String, dynamic>>[];
+    final seenIds = <int>{};
+
+    while (queue.isNotEmpty) {
+      final current = queue.removeAt(0);
+
+      if (current is List) {
+        queue.addAll(current);
+        continue;
+      }
+
+      final map = instructorMap(current);
+      if (map == null) {
+        continue;
+      }
+
+      final id = instructorInt(map['id']);
+      final looksLikePost = id != 0 &&
+          (map.containsKey('body') ||
+              map.containsKey('forum_thread_id') ||
+              map.containsKey('parent_id'));
+      if (looksLikePost && seenIds.add(id)) {
+        rows.add(map);
+      }
+
+      for (final key in const [
+        'data',
+        'posts',
+        'children',
+        'replies',
+        'reply_posts',
+        'sub_threads',
+        'sub_posts',
+      ]) {
+        final value = map[key];
+        if (value is List || value is Map) {
+          queue.add(value);
+        }
+      }
+    }
+
+    return rows;
+  }
+
+  List<Map<String, dynamic>> _parseCourseRows(dynamic payload) {
+    final root = instructorMap(payload) ?? <String, dynamic>{};
+    final directData = root['data'];
+    final directMap = instructorMap(directData);
+    final rows = directData is List
+        ? instructorList(directData)
+        : directMap?['data'] is List
+            ? instructorList(directMap?['data'])
+            : const <Map<String, dynamic>>[];
+
+    return rows
+        .map((row) => <String, dynamic>{
+              'id': instructorInt(row['id']),
+              'title': instructorString(row['title'], fallback: 'Course'),
+              'title_translations': instructorMap(row['title_translations']),
+            })
+        .where((row) => instructorInt(row['id']) != 0)
+        .toList(growable: false);
+  }
 }
 
 class _ForumThreadRow {
@@ -1401,7 +1870,7 @@ class _ForumThreadRow {
   final bool isLocked;
   final String updatedAt;
 
-  String get updatedAtLabel => updatedAt.isEmpty ? '--' : updatedAt;
+  String get updatedAtLabel => _friendlyDateTimeLabel(updatedAt);
 
   factory _ForumThreadRow.fromMap(Map<String, dynamic> map) {
     final course = instructorMap(map['course']);
@@ -1433,19 +1902,53 @@ class _ForumThreadRow {
 class _ForumPostRow {
   const _ForumPostRow({
     required this.id,
+    required this.authorId,
+    required this.author,
+    required this.parentId,
     required this.body,
     required this.updatedAt,
   });
 
   final int id;
+  final int authorId;
+  final String author;
+  final int parentId;
   final String body;
   final String updatedAt;
 
-  String get updatedAtLabel => updatedAt.isEmpty ? '--' : updatedAt;
+  String get updatedAtLabel => _friendlyDateTimeLabel(updatedAt);
+  bool get isReply => parentId != 0;
 
   factory _ForumPostRow.fromMap(Map<String, dynamic> map) {
+    final user = instructorMap(map['user']);
+    final author = instructorMap(map['author']);
+    final student = instructorMap(map['student']);
+    final profile = instructorMap(map['profile']);
+
     return _ForumPostRow(
       id: instructorInt(map['id']),
+      authorId: instructorInt(
+        map['author_id'] ??
+            map['user_id'] ??
+            user?['id'] ??
+            author?['id'] ??
+            student?['id'] ??
+            profile?['id'],
+      ),
+      author: instructorString(
+        map['author_name'] ??
+            map['user_name'] ??
+            user?['name'] ??
+            user?['username'] ??
+            author?['name'] ??
+            author?['username'] ??
+            student?['name'] ??
+            student?['username'] ??
+            profile?['name'] ??
+            profile?['username'],
+        fallback: 'User',
+      ),
+      parentId: instructorInt(map['parent_id']),
       body: instructorString(map['body']),
       updatedAt: instructorString(map['updated_at'] ?? map['created_at']),
     );
@@ -1468,6 +1971,35 @@ class _ForumCourseRow {
       ),
     );
   }
+}
+
+String _friendlyDateTimeLabel(String raw) {
+  if (raw.trim().isEmpty) return '--';
+  final value = DateTime.tryParse(raw.trim());
+  if (value == null) return raw;
+
+  const months = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  final local = value.toLocal();
+  final month = months[local.month - 1];
+  final day = local.day.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final suffix = local.hour >= 12 ? 'PM' : 'AM';
+  return '$month $day, ${local.year} $hour12:$minute $suffix';
 }
 
 class _ForumPagination {
@@ -1494,4 +2026,14 @@ class _ForumPagination {
       totalPages: instructorInt(map?['total_pages'], fallback: 1),
     );
   }
+}
+
+class _ParsedForumCollection {
+  const _ParsedForumCollection({
+    required this.rows,
+    required this.pagination,
+  });
+
+  final List<Map<String, dynamic>> rows;
+  final _ForumPagination pagination;
 }

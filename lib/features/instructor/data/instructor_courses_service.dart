@@ -15,6 +15,13 @@ class InstructorCoursesService {
     return _client.get<Map<String, dynamic>>(ApiEndpoints.myCourses);
   }
 
+  Future<Response<Map<String, dynamic>>> getAssignedCourses(int instructorId) {
+    return _client.get<Map<String, dynamic>>(
+      ApiEndpoints.instructorCourses(instructorId),
+      options: instructorLocaleOptions(),
+    );
+  }
+
   Future<Response<Map<String, dynamic>>> getCourse(int courseId) {
     return _client.get<Map<String, dynamic>>(
       ApiEndpoints.myCourse(courseId),

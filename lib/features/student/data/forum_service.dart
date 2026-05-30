@@ -73,6 +73,10 @@ class ForumService {
     );
   }
 
+  Future<Response<Map<String, dynamic>>> getThread(int threadId) {
+    return _client.get<Map<String, dynamic>>(ApiEndpoints.forumThread(threadId));
+  }
+
   Future<Response<void>> deleteThread(int threadId) {
     return _client.delete<void>(ApiEndpoints.forumThread(threadId));
   }

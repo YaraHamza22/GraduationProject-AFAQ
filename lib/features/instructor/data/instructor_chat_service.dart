@@ -8,11 +8,13 @@ class InstructorChatService extends ChatService {
   const InstructorChatService({super.apiClient});
 
   Future<Response<Map<String, dynamic>>> getInstructorStudentContacts({
-    int perPage = 200,
+    int? perPage,
   }) {
     return client.get<Map<String, dynamic>>(
       '/instructor/students',
-      queryParameters: {'per_page': perPage},
+      queryParameters: {
+        if (perPage != null) 'per_page': perPage,
+      },
     );
   }
 

@@ -93,6 +93,10 @@ class ApiEndpoints {
     return '/student/instructors/$instructorId';
   }
 
+  static String instructorCourses(int instructorId) {
+    return '/instructors/$instructorId/courses';
+  }
+
   static String chatParticipants(int threadId) {
     return '/chat-threads/$threadId/participants';
   }

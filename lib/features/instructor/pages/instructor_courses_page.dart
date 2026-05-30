@@ -6,6 +6,7 @@ import '../../../core/toast/afaq_toast.dart';
 import '../../../core/widgets/afaq_panel.dart';
 import '../data/instructor_courses_service.dart';
 import '../data/instructor_lessons_service.dart';
+import '../data/instructor_profile_service.dart';
 import 'instructor_page_shared.dart';
 
 class InstructorCoursesPage extends StatefulWidget {
@@ -18,6 +19,7 @@ class InstructorCoursesPage extends StatefulWidget {
 class _InstructorCoursesPageState extends State<InstructorCoursesPage> {
   final _coursesService = const InstructorCoursesService();
   final _lessonsService = const InstructorLessonsService();
+  final _profileService = const InstructorProfileService();
 
   bool _loading = true;
   bool _unitsLoading = false;
@@ -56,7 +58,15 @@ class _InstructorCoursesPageState extends State<InstructorCoursesPage> {
     });
 
     try {
-      final response = await _coursesService.getMyCourses();
+      final profileResponse = await _profileService.getProfile();
+      final profile = instructorMap(profileResponse.data) ?? const <String, dynamic>{};
+      final instructorId = instructorInt(
+        profile['id'] ?? profile['user_id'] ?? profile['instructor_id'],
+      );
+
+      final response = instructorId > 0
+          ? await _coursesService.getAssignedCourses(instructorId)
+          : await _coursesService.getMyCourses();
       if (!mounted) return;
       setState(() {
         _courses = unwrapInstructorList(response.data)
