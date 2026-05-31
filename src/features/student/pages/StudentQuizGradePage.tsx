@@ -25,6 +25,7 @@ type AttemptSnapshot = {
   score: number | null;
   status: string;
   graded_at: string | null;
+  graded_by?: number | null;
   submitted_at: string | null;
   updated_at: string | null;
   quiz?: {
@@ -128,8 +129,9 @@ function normalizeGradeFromAttempt(payload: unknown): GradeSnapshot | null {
       : null;
   const status = readString(item.status, "unknown");
   const normalizedStatus = status.toLowerCase();
+  const gradedBy = readNumber(item.graded_by);
   const gradeAvailable =
-    normalizedStatus === "graded" ||
+    (normalizedStatus === "graded" && gradedBy != null) ||
     normalizedStatus === "passed" ||
     normalizedStatus === "completed" ||
     score != null;
@@ -141,7 +143,7 @@ function normalizeGradeFromAttempt(payload: unknown): GradeSnapshot | null {
     percentage,
     status,
     grade_available: gradeAvailable,
-    message: gradeAvailable ? null : "Your quiz will be graded and you will be notified when grading is complete.",
+    message: gradeAvailable ? null : "Waiting to be graded by your instructor.",
     graded_at: readString(item.graded_at, "") || null,
     submitted_at: readString(item.submitted_at, "") || null,
     updated_at: readString(item.updated_at, "") || null,
@@ -180,6 +182,22 @@ export default function StudentQuizGradePage() {
     };
   }, []);
 
+  const createPendingGradeSnapshot = useCallback(
+    (): GradeSnapshot => ({
+      score: null,
+      max_score: null,
+      passing_score: null,
+      percentage: null,
+      status: "submitted",
+      grade_available: false,
+      message: "Waiting to be graded by your instructor.",
+      graded_at: null,
+      submitted_at: null,
+      updated_at: null,
+    }),
+    []
+  );
+
   const loadAttemptFallback = useCallback(
     async (resolvedAttemptId: number) => {
       if (!headers) return null;
@@ -202,39 +220,14 @@ export default function StudentQuizGradePage() {
       if (!resolvedAttemptId) {
         if (isPendingReview) {
           setAttemptId(null);
-          setGrade({
-            score: null,
-            max_score: null,
-            passing_score: null,
-            percentage: null,
-            status: "submitted",
-            grade_available: false,
-            message: "Your quiz will be graded and you will be notified when grading is complete.",
-            graded_at: null,
-            submitted_at: null,
-            updated_at: null,
-          });
+          setGrade(createPendingGradeSnapshot());
           return;
         }
         throw new Error("missing_attempt_id");
       }
 
-      const response = await requestWithProxyFallback(`/attempts/${resolvedAttemptId}/grade`, {
-        method: "GET",
-        headers,
-      });
-      const snapshot = normalizeGrade(response.data);
+      const snapshot = await loadAttemptFallback(resolvedAttemptId);
       if (!snapshot) throw new Error("invalid_grade_payload");
-
-      if (!snapshot.grade_available) {
-        const fallbackSnapshot = await loadAttemptFallback(resolvedAttemptId);
-        if (fallbackSnapshot?.grade_available) {
-          setAttemptId(resolvedAttemptId);
-          setGrade(fallbackSnapshot);
-          localStorage.setItem(attemptStorageKey, String(resolvedAttemptId));
-          return;
-        }
-      }
 
       setAttemptId(resolvedAttemptId);
       setGrade(snapshot);
@@ -242,31 +235,6 @@ export default function StudentQuizGradePage() {
     } catch (error) {
       if (error instanceof Error && error.message === "missing_attempt_id") {
         setErrorMessage("No attempt id found for this grade view.");
-      } else if (axios.isAxiosError(error) && error.response?.status === 405) {
-        if (explicitAttemptId) {
-          try {
-            const fallbackSnapshot = await loadAttemptFallback(explicitAttemptId);
-            if (fallbackSnapshot) {
-              setAttemptId(explicitAttemptId);
-              setGrade(fallbackSnapshot);
-              return;
-            }
-          } catch {
-            // Fall through to pending review snapshot.
-          }
-        }
-        setGrade({
-          score: null,
-          max_score: null,
-          passing_score: null,
-          percentage: null,
-          status: "submitted",
-          grade_available: false,
-          message: "Your quiz will be graded and you will be notified when grading is complete.",
-          graded_at: null,
-          submitted_at: null,
-          updated_at: null,
-        });
       } else if (
         isPendingReview &&
         axios.isAxiosError(error) &&
@@ -284,18 +252,7 @@ export default function StudentQuizGradePage() {
             // Fall through to pending review snapshot.
           }
         }
-        setGrade({
-          score: null,
-          max_score: null,
-          passing_score: null,
-          percentage: null,
-          status: "submitted",
-          grade_available: false,
-          message: "Your quiz will be graded and you will be notified when grading is complete.",
-          graded_at: null,
-          submitted_at: null,
-          updated_at: null,
-        });
+        setGrade(createPendingGradeSnapshot());
       } else if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
         setErrorMessage(error.response.data.message);
       } else {
@@ -304,7 +261,7 @@ export default function StudentQuizGradePage() {
     } finally {
       setIsLoading(false);
     }
-  }, [attemptStorageKey, explicitAttemptId, headers, isPendingReview, loadAttemptFallback]);
+  }, [attemptStorageKey, createPendingGradeSnapshot, explicitAttemptId, headers, isPendingReview, loadAttemptFallback]);
 
   React.useEffect(() => {
     void loadGrade();
@@ -316,6 +273,10 @@ export default function StudentQuizGradePage() {
     grade?.score != null && grade.passing_score != null ? grade.score >= grade.passing_score : false;
   const showPassed = isPassedStatus || isPassedByScore;
   const percentage = grade?.percentage ?? null;
+  const passingPercentage =
+    grade?.passing_score != null && grade?.max_score != null && grade.max_score > 0
+      ? Math.round((grade.passing_score / grade.max_score) * 100)
+      : null;
   const gradeAvailable = Boolean(grade?.grade_available);
 
   return (
@@ -366,14 +327,14 @@ export default function StudentQuizGradePage() {
             ) : (
               <XCircle className="h-4 w-4" />
             )}
-            {!gradeAvailable ? "Pending Review" : showPassed ? "Passed" : "Not Passed"}
+            {!gradeAvailable ? "Waiting to be graded" : showPassed ? "Passed" : "Not Passed"}
           </span>
         </div>
 
         {grade && !gradeAvailable ? (
           <div className={`mb-6 flex items-start gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200 ${isRTL ? "flex-row-reverse text-right" : ""}`}>
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{grade.message ?? "You will be notified when the quiz gets corrected."}</span>
+            <span>{grade.message ?? "Waiting to be graded by your instructor."}</span>
           </div>
         ) : null}
 
@@ -393,7 +354,7 @@ export default function StudentQuizGradePage() {
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.02]">
             <p className="text-xs uppercase tracking-widest opacity-50">Passing Score</p>
-            <p className="mt-1 text-2xl font-black">{gradeAvailable ? grade?.passing_score ?? "--" : "--"}</p>
+            <p className="mt-1 text-2xl font-black">{gradeAvailable && passingPercentage != null ? `${passingPercentage}%` : "--"}</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.02]">
             <p className="text-xs uppercase tracking-widest opacity-50">Percentage</p>
@@ -401,7 +362,7 @@ export default function StudentQuizGradePage() {
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.02]">
             <p className="text-xs uppercase tracking-widest opacity-50">Status</p>
-            <p className="mt-1 text-2xl font-black">{gradeAvailable ? grade?.status ?? "--" : "pending_review"}</p>
+            <p className="mt-1 text-2xl font-black">{gradeAvailable ? grade?.status ?? "--" : "waiting_to_be_graded"}</p>
           </div>
         </div>
 

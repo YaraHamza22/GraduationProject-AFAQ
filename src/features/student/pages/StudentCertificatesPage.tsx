@@ -14,6 +14,13 @@ type CertState = {
   blobUrl?: string;
 };
 
+type CertificateSuccessPayload = {
+  message?: string;
+  fileName?: string;
+  fileUrl?: string;
+  blob?: Blob;
+};
+
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const str = (v: unknown, d = "") => (typeof v === "string" ? v : d);
@@ -49,6 +56,55 @@ function isHtml404(error: unknown) {
   );
 }
 
+function parseFileNameFromDisposition(value: string) {
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const basicMatch = value.match(/filename="?([^";]+)"?/i);
+  return basicMatch?.[1] ?? "";
+}
+
+function pickCertificateUrl(payload: Record<string, unknown>) {
+  const candidates = [
+    payload.file_url,
+    payload.pdf_url,
+    payload.download_url,
+    payload.url,
+    isObj(payload.data) ? payload.data.file_url : null,
+    isObj(payload.data) ? payload.data.pdf_url : null,
+    isObj(payload.data) ? payload.data.download_url : null,
+    isObj(payload.data) ? payload.data.url : null,
+  ];
+
+  return candidates.find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? "";
+}
+
+function pickCertificateBase64(payload: Record<string, unknown>) {
+  const candidates = [
+    payload.pdf,
+    payload.file,
+    payload.base64,
+    isObj(payload.data) ? payload.data.pdf : null,
+    isObj(payload.data) ? payload.data.file : null,
+    isObj(payload.data) ? payload.data.base64 : null,
+  ];
+
+  return candidates.find((value): value is string => typeof value === "string" && value.trim().length > 0) ?? "";
+}
+
+function decodeBase64Pdf(base64Value: string) {
+  const cleaned = base64Value.includes(",") ? base64Value.split(",").pop() ?? "" : base64Value;
+  const binary = atob(cleaned);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new Blob([bytes], { type: "application/pdf" });
+}
+
 async function request(config: Parameters<typeof axios.request>[0]) {
   const path = String(config.url ?? "");
   try {
@@ -67,6 +123,77 @@ async function parseBlobJson(blob: Blob) {
   } catch {
     return null;
   }
+}
+
+async function resolveCertificatePayload(
+  blob: Blob,
+  contentType: string,
+  headers: Record<string, unknown>,
+  headersConfig: Record<string, string>,
+  fallbackFileName: string
+): Promise<CertificateSuccessPayload | null> {
+  const disposition = String(headers["content-disposition"] ?? "");
+  const fileNameFromHeader = parseFileNameFromDisposition(disposition) || fallbackFileName;
+
+  if (contentType.includes("application/pdf") || contentType.includes("application/octet-stream")) {
+    return {
+      message: "Certificate is ready to download.",
+      fileName: fileNameFromHeader,
+      blob,
+    };
+  }
+
+  const parsed = await parseBlobJson(blob);
+  if (!parsed) return null;
+
+  const message = str(parsed.message) || "Certificate is ready to download.";
+  const payloadStatus = str(parsed.status).toLowerCase();
+  const fileUrl = pickCertificateUrl(parsed);
+  const base64Pdf = pickCertificateBase64(parsed);
+  const fileName =
+    str(parsed.file_name) ||
+    (isObj(parsed.data) ? str(parsed.data.file_name) : "") ||
+    fileNameFromHeader;
+
+  if (base64Pdf) {
+    return {
+      message,
+      fileName,
+      blob: decodeBase64Pdf(base64Pdf),
+    };
+  }
+
+  if (fileUrl) {
+    const downloadResponse = await request({
+      method: "GET",
+      url: fileUrl,
+      headers: headersConfig,
+      responseType: "blob",
+      validateStatus: () => true,
+    });
+
+    const downloadedBlob = downloadResponse.data as Blob;
+    const downloadedType = String(downloadResponse.headers?.["content-type"] ?? "").toLowerCase();
+    if (downloadResponse.status >= 200 && downloadResponse.status < 300 && (downloadedType.includes("pdf") || downloadedType.includes("octet-stream"))) {
+      const downloadedDisposition = String(downloadResponse.headers?.["content-disposition"] ?? "");
+      return {
+        message,
+        fileName: parseFileNameFromDisposition(downloadedDisposition) || fileName,
+        blob: downloadedBlob,
+      };
+    }
+  }
+
+  if (payloadStatus === "success") {
+    return {
+      message,
+      fileName,
+    };
+  }
+
+  return {
+    message,
+  };
 }
 
 export default function StudentCertificatesPage() {
@@ -104,6 +231,7 @@ export default function StudentCertificatesPage() {
     setCourseState(courseId, { status: "checking" });
 
     try {
+      const fallbackFileName = `course-${courseId}-certificate.pdf`;
       const res = await request({
         method: "GET",
         url: `/courses/${courseId}/certificate`,
@@ -115,39 +243,29 @@ export default function StudentCertificatesPage() {
 
       const contentType = String(res.headers?.["content-type"] ?? "").toLowerCase();
       const blob = res.data as Blob;
-      const isJson = contentType.includes("application/json") || contentType.includes("text/json");
-      const isFile = contentType.includes("application/pdf") || contentType.includes("application/octet-stream");
+      const resolved = await resolveCertificatePayload(
+        blob,
+        contentType,
+        (res.headers ?? {}) as Record<string, unknown>,
+        headers,
+        fallbackFileName
+      );
 
-      if (isFile && res.status >= 200 && res.status < 300) {
-        const blobUrl = URL.createObjectURL(blob);
+      if (res.status >= 200 && res.status < 300 && resolved?.blob) {
+        const blobUrl = URL.createObjectURL(resolved.blob);
         setCourseState(courseId, {
           status: "available",
-          message: "Certificate is ready to download.",
+          message: resolved.message || "Certificate is ready to download.",
           blobUrl,
-          fileName: `course-${courseId}-certificate.pdf`,
+          fileName: resolved.fileName || fallbackFileName,
         });
         return;
       }
 
-      const parsed = isJson ? await parseBlobJson(blob) : null;
-      const message = parsed ? str(parsed.message) : "";
-      const payloadStatus = parsed ? str(parsed.status).toLowerCase() : "";
-
-      if (payloadStatus === "success" && res.status >= 200 && res.status < 300) {
-        const blobUrl = URL.createObjectURL(blob);
-        setCourseState(courseId, {
-          status: "available",
-          message: message || "Certificate is ready to download.",
-          blobUrl,
-          fileName: `course-${courseId}-certificate.pdf`,
-        });
-        return;
-      }
-
-      if (message) {
+      if (res.status >= 200 && res.status < 300 && resolved?.message) {
         setCourseState(courseId, {
           status: "unavailable",
-          message,
+          message: resolved.message,
         });
         return;
       }
@@ -155,7 +273,7 @@ export default function StudentCertificatesPage() {
       if (res.status >= 400) {
         setCourseState(courseId, {
           status: "unavailable",
-          message: "Certificate is not available yet. Complete the required quizzes and pass at least 60%.",
+          message: "Certificate is not available yet. All required quizzes must be graded, and the course weighted score must be at least 60%.",
         });
         return;
       }

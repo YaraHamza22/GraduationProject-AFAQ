@@ -143,7 +143,6 @@ type QuizFormState = {
   maxScore: string;
   passingScore: string;
   status: string;
-  autoGradeEnabled: boolean;
 };
 
 type OptionDraft = {
@@ -184,7 +183,6 @@ const initialQuizForm: QuizFormState = {
   maxScore: "100",
   passingScore: "60",
   status: "draft",
-  autoGradeEnabled: true,
 };
 
 function createOptionDraft(overrides?: Partial<OptionDraft>): OptionDraft {
@@ -532,6 +530,16 @@ function getQuestionComposerType(question: Question): QuestionFormState["type"] 
   return "multiple_choice";
 }
 
+function getNextQuestionOrder(quiz: Quiz) {
+  const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
+  return (
+    questions.reduce((maxOrder, question) => {
+      const order = toNumber(question.order_index) ?? 0;
+      return Math.max(maxOrder, order);
+    }, 0) + 1
+  );
+}
+
 function getTrueFalseOption(optionList: QuestionOption[], kind: "true" | "false") {
   return optionList.find((option) => {
     const labels = [getOptionText(option, "en"), getOptionText(option, "ar")];
@@ -699,7 +707,6 @@ export default function InstructorQuizzesPage() {
       maxScore: String(toNumber(quiz.max_score) ?? 100),
       passingScore: String(toNumber(quiz.passing_score) ?? 60),
       status: quiz.status || "draft",
-      autoGradeEnabled: quiz.auto_grade_enabled !== false,
     });
     setIsQuizModalOpen(true);
   };
@@ -712,12 +719,23 @@ export default function InstructorQuizzesPage() {
   const openCreateQuestionModal = async (quiz: Quiz) => {
     setSelectedQuiz(quiz);
     setExpandedQuizId(getQuizId(quiz));
-    resetQuestionForm();
-    setIsQuestionModalOpen(true);
+    const quizId = getQuizId(quiz);
 
     if (!quiz.questions || quiz.questions.length === 0) {
-      await loadQuizDetails(getQuizId(quiz), true);
+      await loadQuizDetails(quizId, true);
     }
+
+    const hydratedQuiz =
+      quizzes.find((item) => getQuizId(item) === quizId) ??
+      (selectedQuiz && getQuizId(selectedQuiz) === quizId ? selectedQuiz : quiz);
+
+    setEditingQuestionId(null);
+    setQuestionForm({
+      ...initialQuestionForm,
+      orderIndex: String(getNextQuestionOrder(hydratedQuiz)),
+      options: createInitialOptions(),
+    });
+    setIsQuestionModalOpen(true);
   };
 
   const openEditQuestionModal = (quiz: Quiz, question: Question) => {
@@ -935,7 +953,7 @@ export default function InstructorQuizzesPage() {
         course_id: resolvedCourseId,
         quizable_type: "course",
         quizable_id: resolvedCourseId,
-        auto_grade_enabled: quizForm.autoGradeEnabled,
+        auto_grade_enabled: false,
         duration_minutes: Number(quizForm.durationMinutes || 30),
       };
 
@@ -1195,6 +1213,38 @@ export default function InstructorQuizzesPage() {
             headers: buildAuthHeaders(),
           });
         }
+      }
+
+      if (questionForm.type === "short_answer" && selectedQuiz.auto_grade_enabled !== false) {
+        const resolvedCourseId = getCourseIdFromQuiz(selectedQuiz);
+        if (!resolvedCourseId || !currentInstructorId) {
+          throw new Error("Manual grading could not be enabled for this quiz. Please reopen the quiz and try again.");
+        }
+
+        await axios.put(
+          getStudentApiRequestUrl(`${QUIZZES_API_PATH}/${quizId}`),
+          {
+            instructor_id: currentInstructorId,
+            title: {
+              en: getLocalizedValue(selectedQuiz.title, "en") || getLocalizedValue(selectedQuiz.title, "ar") || "Quiz",
+              ar: getLocalizedValue(selectedQuiz.title, "ar") || getLocalizedValue(selectedQuiz.title, "en") || "اختبار",
+            },
+            description: {
+              en: getLocalizedValue(selectedQuiz.description, "en") || getLocalizedValue(selectedQuiz.description, "ar") || "",
+              ar: getLocalizedValue(selectedQuiz.description, "ar") || getLocalizedValue(selectedQuiz.description, "en") || "",
+            },
+            max_score: toNumber(selectedQuiz.max_score) ?? 100,
+            passing_score: toNumber(selectedQuiz.passing_score) ?? 60,
+            type: "quiz",
+            status: selectedQuiz.status || "draft",
+            course_id: resolvedCourseId,
+            quizable_type: "course",
+            quizable_id: resolvedCourseId,
+            auto_grade_enabled: false,
+            duration_minutes: toNumber(selectedQuiz.duration_minutes) ?? 30,
+          },
+          { headers: buildAuthHeaders() }
+        );
       }
 
       setSuccessMessage(editingQuestionId ? "Question updated successfully." : "Question created successfully.");
@@ -1874,16 +1924,6 @@ export default function InstructorQuizzesPage() {
                           <option value="archived">Archived</option>
                         </select>
                       </div>
-
-                      <label className={`flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-bold dark:border-white/10 dark:bg-white/5 ${isRTL ? "flex-row-reverse" : ""}`}>
-                        <span>Enable auto grading</span>
-                        <input
-                          type="checkbox"
-                          checked={quizForm.autoGradeEnabled}
-                          onChange={(event) => setQuizForm((current) => ({ ...current, autoGradeEnabled: event.target.checked }))}
-                          className="h-4 w-4 accent-indigo-600"
-                        />
-                      </label>
                     </div>
                   </div>
                 </div>
@@ -2163,10 +2203,11 @@ export default function InstructorQuizzesPage() {
                           type="number"
                           min={1}
                           value={questionForm.orderIndex}
-                          onChange={(event) => setQuestionForm((current) => ({ ...current, orderIndex: event.target.value }))}
-                          placeholder="1"
-                          className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-violet-500/50 dark:border-white/10 dark:bg-white/5"
+                          readOnly
+                          aria-readonly="true"
+                          className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-100 px-4 text-sm font-bold text-slate-600 outline-none dark:border-white/10 dark:bg-white/10 dark:text-white/75"
                         />
+                        <p className="text-xs text-slate-500 dark:text-white/45">Assigned automatically based on the current quiz question order.</p>
                       </div>
                       <label className={`flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm font-bold dark:border-white/10 dark:bg-white/5 ${isRTL ? "flex-row-reverse" : ""}`}>
                         <span>Required question</span>

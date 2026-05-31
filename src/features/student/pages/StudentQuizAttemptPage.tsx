@@ -58,10 +58,12 @@ type AnswerDraft = {
   answer_text: string;
 };
 
-type SubmitAnswerPayload =
-  | { question_id: number; selected_option_id: number }
-  | { question_id: number; boolean_answer: boolean }
-  | { question_id: number; answer_text: { en: string } };
+type SubmitAnswerPayload = {
+  question_id: number;
+  selected_option_id: number | null;
+  boolean_answer: boolean | null;
+  answer_text: { en: string } | null;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -125,6 +127,37 @@ function extractAttemptId(payload: unknown): number | null {
   }
 
   return null;
+}
+
+function buildSubmitAnswerPayload(question: AttemptQuestion, draft: AnswerDraft): SubmitAnswerPayload | null {
+  if (question.type === "multiple_choice") {
+    if (!draft.selected_option_id) return null;
+    return {
+      question_id: question.id,
+      selected_option_id: draft.selected_option_id,
+      boolean_answer: null,
+      answer_text: null,
+    };
+  }
+
+  if (question.type === "true_false") {
+    if (draft.boolean_answer == null) return null;
+    return {
+      question_id: question.id,
+      selected_option_id: null,
+      boolean_answer: draft.boolean_answer,
+      answer_text: null,
+    };
+  }
+
+  const text = draft.answer_text.trim();
+  if (!text) return null;
+  return {
+    question_id: question.id,
+    selected_option_id: null,
+    boolean_answer: null,
+    answer_text: { en: text },
+  };
 }
 
 function extractList(payload: unknown) {
@@ -804,20 +837,7 @@ export default function StudentQuizAttemptPage() {
         .map((question) => {
           const draft = drafts[question.id];
           if (!draft) return null;
-
-          if (question.type === "multiple_choice") {
-            if (!draft.selected_option_id) return null;
-            return { question_id: question.id, selected_option_id: draft.selected_option_id };
-          }
-
-          if (question.type === "true_false") {
-            if (draft.boolean_answer == null) return null;
-            return { question_id: question.id, boolean_answer: draft.boolean_answer };
-          }
-
-          const text = draft.answer_text.trim();
-          if (!text) return null;
-          return { question_id: question.id, answer_text: { en: text } };
+          return buildSubmitAnswerPayload(question, draft);
         })
         .filter((item): item is SubmitAnswerPayload => item !== null);
 
