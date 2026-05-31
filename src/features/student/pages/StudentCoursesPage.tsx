@@ -20,6 +20,7 @@ import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiRequestUrl } from "@/features/student/studentApi";
 import { getStoredStudentId, getStudentToken } from "@/features/student/studentSession";
 import { motion, AnimatePresence } from "framer-motion";
+import { getStudentApiBaseUrl } from "@/features/student/studentApi";
 
 // --- Types ---
 
@@ -50,6 +51,7 @@ type EnrollableCourse = {
   description: string;
   description_translations?: LocalizedText;
   cover_url: string;
+  intro_video_url?: string;
   actual_duration_hours: number;
   difficulty_level: string;
   course_category: CourseCategory;
@@ -70,6 +72,8 @@ type Enrollment = {
     slug: string;
     description: string;
     description_translations?: LocalizedText;
+    cover_url?: string;
+    intro_video_url?: string;
     actual_duration_hours: number;
     course_category?: CourseCategory;
     creator?: { name: string };
@@ -79,11 +83,24 @@ type Enrollment = {
   slug?: string;
   description?: string;
   description_translations?: LocalizedText;
+  cover_url?: string;
+  intro_video_url?: string;
   actual_duration_hours?: number;
   title_translations?: LocalizedText;
   course_category?: CourseCategory;
   creator?: { name: string };
 };
+
+type CourseMediaDetails = {
+  cover_url?: string;
+  intro_video_url?: string;
+  title_translations?: LocalizedText;
+  description_translations?: LocalizedText;
+  course_category?: CourseCategory;
+  creator?: { name: string };
+};
+
+type CourseMediaEntry = readonly [number, CourseMediaDetails];
 
 type ProgressDetails = {
   enrollment_id: number;
@@ -95,14 +112,39 @@ type ProgressDetails = {
   is_completed: boolean;
 };
 
+function normalizeMediaUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return "";
+
+  const raw = value.trim();
+  if (/^https?:\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:")) {
+    return raw;
+  }
+
+  const baseUrl = getStudentApiBaseUrl();
+  if (!baseUrl) return raw;
+
+  const origin = (() => {
+    try {
+      return new URL(baseUrl).origin;
+    } catch {
+      return "";
+    }
+  })();
+
+  if (!origin) return raw;
+  return raw.startsWith("/") ? `${origin}${raw}` : `${origin}/${raw}`;
+}
+
 // --- Main Component ---
 
 export default function StudentCoursesPage() {
   const { t, isRTL, language } = useLanguage();
   const [activeTab, setActiveTab] = useState<"my-learning" | "discover">("my-learning");
+  const ITEMS_PER_PAGE = 6;
 
   const [enrolledCourses, setEnrolledCourses] = useState<Enrollment[]>([]);
   const [discoverCourses, setDiscoverCourses] = useState<EnrollableCourse[]>([]);
+  const [courseMediaById, setCourseMediaById] = useState<Record<number, CourseMediaDetails>>({});
   const [progressData, setProgressData] = useState<Record<number, ProgressDetails>>({});
   const [progressLoading, setProgressLoading] = useState<Record<number, boolean>>({});
   const [progressErrors, setProgressErrors] = useState<Record<number, string>>({});
@@ -111,6 +153,8 @@ export default function StudentCoursesPage() {
   const [isActionLoading, setIsActionLoading] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [enrolledPage, setEnrolledPage] = useState(1);
+  const [discoverPage, setDiscoverPage] = useState(1);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -147,14 +191,46 @@ export default function StudentCoursesPage() {
           : [];
 
       // Filter out courses that are already enrolled.
-      const enrolledCourseIds = new Set(
+      const enrolledCourseIdSet = new Set(
         enrollments
           .map((enrollment) => enrollment.course?.id ?? enrollment.course_id)
           .filter((id): id is number => typeof id === "number")
       );
-      const trulyDiscoverable = allDiscoverable.filter((c: any) => !enrolledCourseIds.has(c.id));
+      const trulyDiscoverable = allDiscoverable.filter((c: any) => !enrolledCourseIdSet.has(c.id));
 
       setDiscoverCourses(trulyDiscoverable);
+
+      const enrolledCourseIds = Array.from(enrolledCourseIdSet);
+
+      const mediaEntries: Array<CourseMediaEntry | null> = await Promise.all(
+        enrolledCourseIds.map(async (courseId: number) => {
+          try {
+            const response = await axios.get(getStudentApiRequestUrl(`/courses/${courseId}`), {
+              headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+            });
+            const coursePayload = response.data?.data?.data ?? response.data?.data ?? response.data;
+            if (!coursePayload || typeof coursePayload !== "object") return null;
+            const courseMedia: CourseMediaDetails = {
+              cover_url: typeof (coursePayload as { cover_url?: unknown }).cover_url === "string" ? (coursePayload as { cover_url?: string }).cover_url : undefined,
+              intro_video_url: typeof (coursePayload as { intro_video_url?: unknown }).intro_video_url === "string" ? (coursePayload as { intro_video_url?: string }).intro_video_url : undefined,
+              title_translations: (coursePayload as { title_translations?: LocalizedText }).title_translations,
+              description_translations: (coursePayload as { description_translations?: LocalizedText }).description_translations,
+              course_category: (coursePayload as { course_category?: CourseCategory }).course_category,
+              creator: (coursePayload as { creator?: { name: string } }).creator,
+            };
+            return [
+              courseId,
+              courseMedia,
+            ] as CourseMediaEntry;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      setCourseMediaById(
+        Object.fromEntries(mediaEntries.filter((entry): entry is CourseMediaEntry => entry !== null))
+      );
 
     } catch (error) {
       console.error("Fetch error:", error);
@@ -167,6 +243,14 @@ export default function StudentCoursesPage() {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    setEnrolledPage(1);
+  }, [enrolledCourses.length]);
+
+  useEffect(() => {
+    setDiscoverPage(1);
+  }, [discoverCourses.length]);
 
   const handleEnroll = async (courseId: number) => {
     setIsActionLoading(courseId);
@@ -225,6 +309,30 @@ export default function StudentCoursesPage() {
     } finally {
       setProgressLoading((prev) => ({ ...prev, [enrollmentId]: false }));
     }
+  };
+
+  const enrolledTotalPages = Math.max(1, Math.ceil(enrolledCourses.length / ITEMS_PER_PAGE));
+  const discoverTotalPages = Math.max(1, Math.ceil(discoverCourses.length / ITEMS_PER_PAGE));
+
+  const pagedEnrolledCourses = enrolledCourses.slice(
+    (enrolledPage - 1) * ITEMS_PER_PAGE,
+    enrolledPage * ITEMS_PER_PAGE
+  );
+  const pagedDiscoverCourses = discoverCourses.slice(
+    (discoverPage - 1) * ITEMS_PER_PAGE,
+    discoverPage * ITEMS_PER_PAGE
+  );
+
+  const currentPage = activeTab === "my-learning" ? enrolledPage : discoverPage;
+  const totalPages = activeTab === "my-learning" ? enrolledTotalPages : discoverTotalPages;
+
+  const changePage = (nextPage: number) => {
+    const boundedPage = Math.max(1, Math.min(nextPage, totalPages));
+    if (activeTab === "my-learning") {
+      setEnrolledPage(boundedPage);
+      return;
+    }
+    setDiscoverPage(boundedPage);
   };
 
   return (
@@ -298,47 +406,90 @@ export default function StudentCoursesPage() {
           <p className="text-sm font-bold opacity-30 uppercase tracking-widest animate-pulse">Loading Platform Content...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-          <AnimatePresence mode="popLayout">
-            {activeTab === "my-learning" ? (
-              enrolledCourses.length > 0 ? (
-                enrolledCourses.map((enrollment) => (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+            <AnimatePresence mode="popLayout">
+              {activeTab === "my-learning" ? (
+                enrolledCourses.length > 0 ? (
+                  pagedEnrolledCourses.map((enrollment) => (
                   <CourseCard
                     key={enrollment.id}
                     type="enrolled"
                     data={enrollment}
+                    courseMedia={courseMediaById[enrollment.course?.id ?? enrollment.course_id ?? 0]}
                     progress={progressData[enrollment.id]}
                     progressError={progressErrors[enrollment.id]}
                     isProgressLoading={progressLoading[enrollment.id] === true}
-                    onFetchProgress={() => void fetchProgress(enrollment.id)}
-                    isRTL={isRTL}
-                    language={language}
-                    t={t}
-                  />
-                ))
+                      onFetchProgress={() => void fetchProgress(enrollment.id)}
+                      isRTL={isRTL}
+                      language={language}
+                      t={t}
+                    />
+                  ))
+                ) : (
+                  <EmptyState t={t} icon={BookOpen} message="No courses enrolled yet." />
+                )
               ) : (
-                <EmptyState t={t} icon={BookOpen} message="No courses enrolled yet." />
-              )
-            ) : (
-              discoverCourses.length > 0 ? (
-                discoverCourses.map((course) => (
-                  <CourseCard
-                    key={course.id}
-                    type="enrollable"
-                    data={course}
-                    isRTL={isRTL}
-                    language={language}
-                    t={t}
-                    onEnroll={() => void handleEnroll(course.id)}
-                    isActionLoading={isActionLoading === course.id}
-                  />
-                ))
-              ) : (
-                <EmptyState t={t} icon={Compass} message="No new courses available at the moment." />
-              )
-            )}
-          </AnimatePresence>
-        </div>
+                discoverCourses.length > 0 ? (
+                  pagedDiscoverCourses.map((course) => (
+                    <CourseCard
+                      key={course.id}
+                      type="enrollable"
+                      data={course}
+                      isRTL={isRTL}
+                      language={language}
+                      t={t}
+                      onEnroll={() => void handleEnroll(course.id)}
+                      isActionLoading={isActionLoading === course.id}
+                    />
+                  ))
+                ) : (
+                  <EmptyState t={t} icon={Compass} message="No new courses available at the moment." />
+                )
+              )}
+            </AnimatePresence>
+          </div>
+
+          {totalPages > 1 ? (
+            <div className={`mt-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between ${isRTL ? "md:flex-row-reverse" : ""}`}>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] opacity-40">
+                Page {currentPage} of {totalPages}
+              </p>
+              <div className={`flex flex-wrap gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
+                <button
+                  type="button"
+                  onClick={() => changePage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition hover:border-indigo-500/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/[0.05]"
+                >
+                  Previous
+                </button>
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+                  <button
+                    key={pageNumber}
+                    type="button"
+                    onClick={() => changePage(pageNumber)}
+                    className={`min-w-11 rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition ${
+                      pageNumber === currentPage
+                        ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                        : "border border-slate-200 hover:border-indigo-500/40 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/[0.05]"
+                    }`}
+                  >
+                    {pageNumber}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => changePage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition hover:border-indigo-500/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/[0.05]"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );
@@ -355,12 +506,14 @@ function CourseCard({
   onFetchProgress,
   onEnroll,
   isActionLoading,
+  courseMedia,
   isRTL,
   language,
   t
 }: {
   type: "enrolled" | "enrollable";
   data: any; // data structure varies significantly between enrolled (Enrollment) and enrollable (EnrollableCourse)
+  courseMedia?: CourseMediaDetails;
   progress?: ProgressDetails;
   progressError?: string;
   isProgressLoading?: boolean;
@@ -372,6 +525,8 @@ function CourseCard({
   t: (key: string) => string;
 }) {
   const [showProgress, setShowProgress] = useState(false);
+  const [isMediaHovered, setIsMediaHovered] = useState(false);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
 
   const toggleProgress = () => {
     if (!showProgress && onFetchProgress && !progress && !progressError && !isProgressLoading) onFetchProgress();
@@ -380,6 +535,7 @@ function CourseCard({
 
   const isEnrolled = type === "enrolled";
   const course = isEnrolled && data.course ? data.course : data;
+  const courseWithMedia = isEnrolled && courseMedia ? { ...course, ...courseMedia } : course;
   const progressPercent = isEnrolled ? (data.progress_percentage ?? 0) : 0;
   const isCompleted = isEnrolled ? (data.is_completed ?? false) : false;
   const locale = language === "ar" ? "ar" : "en";
@@ -393,14 +549,36 @@ function CourseCard({
   };
 
   const localizedTitle =
-    getLocalizedValue(course.title_translations, "") ||
-    (typeof course.title === "string" ? course.title : "Untitled");
+    getLocalizedValue(courseWithMedia.title_translations, "") ||
+    (typeof courseWithMedia.title === "string" ? courseWithMedia.title : "Untitled");
   const localizedDescription =
-    getLocalizedValue(course.description_translations, "") ||
-    (typeof course.description === "string" ? course.description : "No description provided.");
+    getLocalizedValue(courseWithMedia.description_translations, "") ||
+    (typeof courseWithMedia.description === "string" ? courseWithMedia.description : "No description provided.");
   const localizedCategory =
-    getLocalizedValue(course.course_category?.name, "") ||
-    (typeof course.course_category?.name === "string" ? course.course_category.name : "Academic");
+    getLocalizedValue(courseWithMedia.course_category?.name, "") ||
+    (typeof courseWithMedia.course_category?.name === "string" ? courseWithMedia.course_category.name : "Academic");
+  const normalizedCoverUrl = normalizeMediaUrl(courseWithMedia.cover_url);
+  const normalizedVideoUrl = normalizeMediaUrl(courseWithMedia.intro_video_url);
+  const shouldPreferVideo = !normalizedCoverUrl && Boolean(normalizedVideoUrl);
+  const shouldShowHoverVideo = Boolean(normalizedCoverUrl && normalizedVideoUrl && isMediaHovered);
+
+  React.useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (shouldPreferVideo || shouldShowHoverVideo) {
+      const playAttempt = video.play();
+      if (playAttempt && typeof playAttempt.catch === "function") {
+        playAttempt.catch(() => {
+          // Ignore autoplay rejections; the cover/fallback remains visible.
+        });
+      }
+      return;
+    }
+
+    video.pause();
+    video.currentTime = 0;
+  }, [shouldPreferVideo, shouldShowHoverVideo]);
 
   return (
     <motion.div
@@ -412,14 +590,40 @@ function CourseCard({
       className="group relative bg-white dark:bg-white/5 rounded-[2.5rem] border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col shadow-sm hover:shadow-2xl hover:border-indigo-500/30 transition-all duration-500"
     >
       {/* Visual Header */}
-      <div className="relative h-48 overflow-hidden bg-slate-100 dark:bg-slate-900">
-        {course.cover_url ? (
-          <img src={course.cover_url} alt="" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-        ) : (
+      <div
+        className="relative h-48 overflow-hidden bg-slate-100 dark:bg-slate-900"
+        onMouseEnter={() => setIsMediaHovered(true)}
+        onMouseLeave={() => setIsMediaHovered(false)}
+      >
+        {normalizedCoverUrl ? (
+          <img
+            src={normalizedCoverUrl}
+            alt={localizedTitle}
+            className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ${
+              shouldShowHoverVideo ? "scale-105 opacity-0" : "opacity-100 group-hover:scale-110"
+            }`}
+          />
+        ) : null}
+
+        {normalizedVideoUrl ? (
+          <video
+            ref={videoRef}
+            src={normalizedVideoUrl}
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${
+              shouldPreferVideo || shouldShowHoverVideo ? "opacity-100" : "opacity-0"
+            }`}
+          />
+        ) : null}
+
+        {!normalizedCoverUrl && !normalizedVideoUrl ? (
           <div className="w-full h-full flex items-center justify-center opacity-10">
             <BookOpen className="w-24 h-24" />
           </div>
-        )}
+        ) : null}
         <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent" />
 
         <div className={`absolute bottom-4 left-6 right-6 flex items-center justify-between ${isRTL ? "flex-row-reverse" : ""}`}>
@@ -452,7 +656,7 @@ function CourseCard({
             </div>
             <div className="flex items-center gap-1.5">
               <User className="w-3.5 h-3.5" />
-              <span>{course.creator?.name || "System"}</span>
+              <span>{courseWithMedia.creator?.name || "System"}</span>
             </div>
           </div>
 

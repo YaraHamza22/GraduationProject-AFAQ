@@ -94,6 +94,28 @@ function parseItem(payload: unknown): Record<string, unknown> | null {
   return isRecord(unwrapped) ? unwrapped : null;
 }
 
+function parsePagination(payload: unknown) {
+  const root = isRecord(payload) ? payload : null;
+  const unwrapped = unwrapApiPayload(payload);
+  const unwrappedRecord = isRecord(unwrapped) ? unwrapped : null;
+
+  const candidates = [
+    root?.pagination,
+    isRecord(root?.data) ? root.data.pagination : null,
+    unwrappedRecord?.pagination,
+  ];
+
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    const currentPage = readNumber(candidate.current_page) ?? 1;
+    const totalPages = readNumber(candidate.total_pages) ?? 1;
+    const perPage = readNumber(candidate.per_page) ?? 15;
+    return { currentPage, totalPages, perPage };
+  }
+
+  return { currentPage: 1, totalPages: 1, perPage: 15 };
+}
+
 function parseAssessmentProgressRows(payload: unknown) {
   const item = parseItem(payload);
   if (!item) return [];
@@ -135,6 +157,34 @@ async function requestWithProxyFallback<T>(path: string, config: Parameters<type
     if (!isHtml404AxiosError(error) && !isLocalProxy404(error)) throw error;
     return axios.request<T>({ ...config, url: getStudentApiEndpoint(path) });
   }
+}
+
+async function fetchAllPages(path: string, headers: Record<string, string>, params?: Record<string, unknown>) {
+  const perPage = 15;
+  const firstResponse = await requestWithProxyFallback(path, {
+    method: "GET",
+    headers,
+    params: { ...params, per_page: perPage, page: 1 },
+  });
+
+  const firstPageItems = parseList(firstResponse.data);
+  const pagination = parsePagination(firstResponse.data);
+  if (pagination.totalPages <= 1) return firstPageItems;
+
+  const remainingResponses = await Promise.all(
+    Array.from({ length: pagination.totalPages - 1 }, (_, index) =>
+      requestWithProxyFallback(path, {
+        method: "GET",
+        headers,
+        params: { ...params, per_page: perPage, page: index + 2 },
+      })
+    )
+  );
+
+  return [
+    ...firstPageItems,
+    ...remainingResponses.flatMap((response) => parseList(response.data)),
+  ];
 }
 
 function getAttemptIdFromProgress(item: Record<string, unknown>) {
@@ -221,12 +271,7 @@ export default function StudentQuizzesPage() {
     try {
       if (!headers) throw new Error("missing_token");
 
-      const enrollmentsResponse = await requestWithProxyFallback("/enrollments", {
-        method: "GET",
-        headers,
-        params: { per_page: 100 },
-      });
-      const enrollments = parseList(enrollmentsResponse.data) as EnrollmentRow[];
+      const enrollments = await fetchAllPages("/enrollments", headers) as EnrollmentRow[];
 
       const enrolledCourses = enrollments
         .map((enrollment) => {
