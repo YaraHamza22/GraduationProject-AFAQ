@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Target,
   Trophy,
+  Upload,
   X,
   ChevronRight,
   Globe,
@@ -248,6 +249,8 @@ export default function CoursesPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [introVideoFile, setIntroVideoFile] = useState<File | null>(null);
 
   // Assign Instructor State
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -307,6 +310,9 @@ export default function CoursesPage() {
     setForm(initialForm);
     setModalMode("create");
     setFieldErrors({});
+    setCoverFile(null);
+    setIntroVideoFile(null);
+    setEditingCourse(null);
     setActiveTab("basic");
     setIsModalOpen(true);
   };
@@ -340,6 +346,8 @@ export default function CoursesPage() {
     });
     setModalMode("edit");
     setFieldErrors({});
+    setCoverFile(null);
+    setIntroVideoFile(null);
     setActiveTab("basic");
     setIsModalOpen(true);
   };
@@ -351,8 +359,8 @@ export default function CoursesPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
     setIsSubmitting(true);
     setFieldErrors({});
     
@@ -379,15 +387,76 @@ export default function CoursesPage() {
         difficulty_level: form.difficulty_level,
       };
 
+      const hasMediaFiles = Boolean(coverFile || introVideoFile);
+
       if (modalMode === "create") {
-        await axios.post(getAdminApiRequestUrl(API_PATH), payload, { headers: getHeaders(currentLocale) });
+        if (hasMediaFiles) {
+          const formData = new FormData();
+          formData.append("course_category_id", String(payload.course_category_id));
+          formData.append("title[en]", payload.title.en);
+          formData.append("title[ar]", payload.title.ar);
+          formData.append("description[en]", payload.description.en);
+          formData.append("description[ar]", payload.description.ar);
+          formData.append("objectives[en]", payload.objectives.en);
+          formData.append("objectives[ar]", payload.objectives.ar);
+          formData.append("prerequisites[en]", payload.prerequisites.en);
+          formData.append("prerequisites[ar]", payload.prerequisites.ar);
+          formData.append("actual_duration_hours", String(payload.actual_duration_hours));
+          formData.append("language", payload.language);
+          formData.append("status", payload.status);
+          formData.append("min_score_to_pass", String(payload.min_score_to_pass));
+          formData.append("is_offline_available", payload.is_offline_available ? "1" : "0");
+          formData.append("course_delivery_type", payload.course_delivery_type);
+          formData.append("difficulty_level", payload.difficulty_level);
+          if (coverFile) formData.append("cover", coverFile);
+          if (introVideoFile) formData.append("intro_video", introVideoFile);
+          await axios.post(getAdminApiRequestUrl(API_PATH), formData, {
+            headers: {
+              ...getHeaders(currentLocale),
+              "Content-Type": "multipart/form-data",
+            },
+          });
+        } else {
+          await axios.post(getAdminApiRequestUrl(API_PATH), payload, { headers: getHeaders(currentLocale) });
+        }
         setSuccessMessage("Course created successfully!");
       } else if (editingCourse) {
-        await axios.put(getAdminApiRequestUrl(`${API_PATH}/${editingCourse.id}`), payload, { headers: getHeaders(currentLocale) });
+        if (hasMediaFiles) {
+          const formData = new FormData();
+          formData.append("_method", "PUT");
+          formData.append("course_category_id", String(payload.course_category_id));
+          formData.append("title[en]", payload.title.en);
+          formData.append("title[ar]", payload.title.ar);
+          formData.append("description[en]", payload.description.en);
+          formData.append("description[ar]", payload.description.ar);
+          formData.append("objectives[en]", payload.objectives.en);
+          formData.append("objectives[ar]", payload.objectives.ar);
+          formData.append("prerequisites[en]", payload.prerequisites.en);
+          formData.append("prerequisites[ar]", payload.prerequisites.ar);
+          formData.append("actual_duration_hours", String(payload.actual_duration_hours));
+          formData.append("language", payload.language);
+          formData.append("status", payload.status);
+          formData.append("min_score_to_pass", String(payload.min_score_to_pass));
+          formData.append("is_offline_available", payload.is_offline_available ? "1" : "0");
+          formData.append("course_delivery_type", payload.course_delivery_type);
+          formData.append("difficulty_level", payload.difficulty_level);
+          if (coverFile) formData.append("cover", coverFile);
+          if (introVideoFile) formData.append("intro_video", introVideoFile);
+          await axios.post(getAdminApiRequestUrl(`${API_PATH}/${editingCourse.id}`), formData, {
+            headers: {
+              ...getHeaders(currentLocale),
+              "Content-Type": "multipart/form-data",
+            },
+          });
+        } else {
+          await axios.put(getAdminApiRequestUrl(`${API_PATH}/${editingCourse.id}`), payload, { headers: getHeaders(currentLocale) });
+        }
         setSuccessMessage("Course updated successfully!");
       }
 
       setIsModalOpen(false);
+      setCoverFile(null);
+      setIntroVideoFile(null);
       await loadData();
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (error: any) {
@@ -1004,6 +1073,40 @@ export default function CoursesPage() {
                               checked={form.is_offline_available}
                               onChange={(e) => updateField("is_offline_available", e.target.checked)}
                               className="w-8 h-8 rounded-xl accent-indigo-600 cursor-pointer"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                        <div className="space-y-4">
+                          <label className={`block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/20 ${isRTL ? "text-right" : ""}`}>Course Cover (Image)</label>
+                          <label className={`flex items-center gap-4 p-6 rounded-[32px] bg-slate-100 dark:bg-white/5 border-2 border-transparent cursor-pointer hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${isRTL ? "flex-row-reverse" : ""}`}>
+                            <Upload className="w-6 h-6 text-indigo-500" />
+                            <span className="flex-1 truncate text-slate-700 dark:text-white/70 font-bold">
+                              {coverFile ? coverFile.name : (editingCourse?.cover_url ? "Replace existing cover image" : "Select cover image")}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              className="hidden"
+                              onChange={(event) => setCoverFile(event.target.files?.[0] || null)}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="space-y-4">
+                          <label className={`block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/20 ${isRTL ? "text-right" : ""}`}>Intro Video</label>
+                          <label className={`flex items-center gap-4 p-6 rounded-[32px] bg-slate-100 dark:bg-white/5 border-2 border-transparent cursor-pointer hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${isRTL ? "flex-row-reverse" : ""}`}>
+                            <Upload className="w-6 h-6 text-indigo-500" />
+                            <span className="flex-1 truncate text-slate-700 dark:text-white/70 font-bold">
+                              {introVideoFile ? introVideoFile.name : "Select intro video (mp4 or mov)"}
+                            </span>
+                            <input
+                              type="file"
+                              accept="video/mp4,video/quicktime,.mov"
+                              className="hidden"
+                              onChange={(event) => setIntroVideoFile(event.target.files?.[0] || null)}
                             />
                           </label>
                         </div>

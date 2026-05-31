@@ -160,8 +160,12 @@ type QuestionFormState = {
   point: string;
   orderIndex: string;
   isRequired: boolean;
-  type: "multiple_choice" | "true_false";
-  trueFalseAnswer: boolean;
+  type: "multiple_choice" | "true_false" | "short_answer";
+  trueOptionTextEn: string;
+  trueOptionTextAr: string;
+  falseOptionTextEn: string;
+  falseOptionTextAr: string;
+  trueFalseCorrect: "true" | "false";
   options: OptionDraft[];
 };
 
@@ -204,7 +208,11 @@ const initialQuestionForm: QuestionFormState = {
   orderIndex: "1",
   isRequired: true,
   type: "multiple_choice",
-  trueFalseAnswer: true,
+  trueOptionTextEn: "True",
+  trueOptionTextAr: "صح",
+  falseOptionTextEn: "False",
+  falseOptionTextAr: "خطأ",
+  trueFalseCorrect: "true",
   options: createInitialOptions(),
 };
 
@@ -493,7 +501,42 @@ function getQuizStatusClasses(status: string | undefined) {
 
 function getQuestionTypeLabel(type: string | undefined) {
   if (!type) return "Question";
-  return type.replaceAll("_", " ");
+  return type.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function isTrueLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "صح";
+}
+
+function isFalseLabel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "false" || normalized === "خطأ";
+}
+
+function isTrueFalseQuestion(question: Question) {
+  if ((question.type || "").toLowerCase() === "true_false") return true;
+
+  const options = Array.isArray(question.options) ? question.options : [];
+  if (options.length !== 2) return false;
+
+  const labels = options.flatMap((option) => [getOptionText(option, "en"), getOptionText(option, "ar")]);
+  const hasTrue = labels.some(isTrueLabel);
+  const hasFalse = labels.some(isFalseLabel);
+  return hasTrue && hasFalse;
+}
+
+function getQuestionComposerType(question: Question): QuestionFormState["type"] {
+  if (isTrueFalseQuestion(question)) return "true_false";
+  if ((question.type || "").toLowerCase() === "short_answer") return "short_answer";
+  return "multiple_choice";
+}
+
+function getTrueFalseOption(optionList: QuestionOption[], kind: "true" | "false") {
+  return optionList.find((option) => {
+    const labels = [getOptionText(option, "en"), getOptionText(option, "ar")];
+    return kind === "true" ? labels.some(isTrueLabel) : labels.some(isFalseLabel);
+  });
 }
 
 export default function InstructorQuizzesPage() {
@@ -679,6 +722,9 @@ export default function InstructorQuizzesPage() {
 
   const openEditQuestionModal = (quiz: Quiz, question: Question) => {
     const options = Array.isArray(question.options) ? question.options : [];
+    const composerType = getQuestionComposerType(question);
+    const trueOption = getTrueFalseOption(options, "true");
+    const falseOption = getTrueFalseOption(options, "false");
     setSelectedQuiz(quiz);
     setExpandedQuizId(getQuizId(quiz));
     setEditingQuestionId(getQuestionId(question));
@@ -688,13 +734,14 @@ export default function InstructorQuizzesPage() {
       point: String(toNumber(question.point) ?? 5),
       orderIndex: String(toNumber(question.order_index) ?? 1),
       isRequired: question.is_required !== false,
-      type: question.type === "true_false" ? "true_false" : "multiple_choice",
-      trueFalseAnswer:
-        question.type === "true_false"
-          ? Boolean(options.find((option) => getOptionText(option, "en").toLowerCase() === "true")?.is_correct)
-          : true,
+      type: composerType,
+      trueOptionTextEn: trueOption ? getOptionText(trueOption, "en") || "True" : "True",
+      trueOptionTextAr: trueOption ? getOptionText(trueOption, "ar") || "صح" : "صح",
+      falseOptionTextEn: falseOption ? getOptionText(falseOption, "en") || "False" : "False",
+      falseOptionTextAr: falseOption ? getOptionText(falseOption, "ar") || "خطأ" : "خطأ",
+      trueFalseCorrect: falseOption?.is_correct ? "false" : "true",
       options:
-        question.type === "true_false"
+        composerType !== "multiple_choice"
           ? createInitialOptions()
           : options.map((option) =>
               createOptionDraft({
@@ -893,7 +940,7 @@ export default function InstructorQuizzesPage() {
       };
 
       const url = editingQuizId ? `${QUIZZES_API_PATH}/${editingQuizId}` : QUIZZES_API_PATH;
-      const method = editingQuizId ? "patch" : "post";
+      const method = editingQuizId ? "put" : "post";
       const response = await axios.request({
         url: getStudentApiRequestUrl(url),
         method,
@@ -1005,20 +1052,22 @@ export default function InstructorQuizzesPage() {
       const quizId = getQuizId(selectedQuiz);
       if (!quizId) throw new Error("Choose a quiz before saving a question.");
 
+      const questionTypeForApi = questionForm.type === "true_false" ? "multiple_choice" : questionForm.type;
+
       const questionPayload = {
         quiz_id: quizId,
         question_text: {
           en: questionForm.questionTextEn.trim() || questionForm.questionTextAr.trim() || "Question",
           ar: questionForm.questionTextAr.trim() || questionForm.questionTextEn.trim() || "سؤال",
         },
-        type: questionForm.type,
+        type: questionTypeForApi,
         point: Number(questionForm.point || 5),
         order_index: Number(questionForm.orderIndex || 1),
         is_required: questionForm.isRequired,
       };
 
       const questionUrl = editingQuestionId ? `${QUESTIONS_API_PATH}/${editingQuestionId}` : QUESTIONS_API_PATH;
-      const questionMethod = editingQuestionId ? "patch" : "post";
+      const questionMethod = editingQuestionId ? "put" : "post";
       const questionResponse = await axios.request({
         url: getStudentApiRequestUrl(questionUrl),
         method: questionMethod,
@@ -1057,7 +1106,7 @@ export default function InstructorQuizzesPage() {
           };
 
           const optionUrl = option.id ? `${QUESTION_OPTIONS_API_PATH}/${option.id}` : QUESTION_OPTIONS_API_PATH;
-          const optionMethod = option.id ? "patch" : "post";
+          const optionMethod = option.id ? "put" : "post";
           const optionResponse = await axios.request({
             url: getStudentApiRequestUrl(optionUrl),
             method: optionMethod,
@@ -1082,7 +1131,7 @@ export default function InstructorQuizzesPage() {
             });
           }
         }
-      } else {
+      } else if (questionForm.type === "true_false") {
         const existingQuestion = editingQuestionId && selectedQuiz.questions
           ? selectedQuiz.questions.find((question) => getQuestionId(question) === editingQuestionId)
           : null;
@@ -1094,19 +1143,19 @@ export default function InstructorQuizzesPage() {
         const truePayload = {
           question_id: savedQuestionId,
           option_text: { en: "True", ar: "صح" },
-          is_correct: questionForm.trueFalseAnswer,
+          is_correct: questionForm.trueFalseCorrect === "true",
         };
         const falsePayload = {
           question_id: savedQuestionId,
           option_text: { en: "False", ar: "خطأ" },
-          is_correct: !questionForm.trueFalseAnswer,
+          is_correct: questionForm.trueFalseCorrect === "false",
         };
 
         await axios.request({
           url: getStudentApiRequestUrl(
             trueOption?.id ? `${QUESTION_OPTIONS_API_PATH}/${trueOption.id}` : QUESTION_OPTIONS_API_PATH
           ),
-          method: trueOption?.id ? "patch" : "post",
+          method: trueOption?.id ? "put" : "post",
           headers: buildAuthHeaders(),
           data: truePayload,
         });
@@ -1115,7 +1164,7 @@ export default function InstructorQuizzesPage() {
           url: getStudentApiRequestUrl(
             falseOption?.id ? `${QUESTION_OPTIONS_API_PATH}/${falseOption.id}` : QUESTION_OPTIONS_API_PATH
           ),
-          method: falseOption?.id ? "patch" : "post",
+          method: falseOption?.id ? "put" : "post",
           headers: buildAuthHeaders(),
           data: falsePayload,
         });
@@ -1130,6 +1179,18 @@ export default function InstructorQuizzesPage() {
           );
 
         for (const optionId of staleIds) {
+          await axios.delete(getStudentApiRequestUrl(`${QUESTION_OPTIONS_API_PATH}/${optionId}`), {
+            headers: buildAuthHeaders(),
+          });
+        }
+      } else {
+        const existingQuestion = editingQuestionId && selectedQuiz.questions
+          ? selectedQuiz.questions.find((question) => getQuestionId(question) === editingQuestionId)
+          : null;
+
+        for (const option of existingQuestion?.options ?? []) {
+          const optionId = toNumber(option.id);
+          if (!optionId) continue;
           await axios.delete(getStudentApiRequestUrl(`${QUESTION_OPTIONS_API_PATH}/${optionId}`), {
             headers: buildAuthHeaders(),
           });
@@ -1410,7 +1471,17 @@ export default function InstructorQuizzesPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void loadQuizDetails(quizId)}
+                        onClick={() => {
+                          if (isExpanded) {
+                            setExpandedQuizId(null);
+                            if (selectedQuiz && getQuizId(selectedQuiz) === quizId) {
+                              setSelectedQuiz(null);
+                            }
+                            return;
+                          }
+
+                          void loadQuizDetails(quizId);
+                        }}
                         className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-700 transition hover:border-indigo-500/50 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-white/80"
                       >
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -1457,52 +1528,65 @@ export default function InstructorQuizzesPage() {
                         <div className="space-y-4">
                           {questions.map((question, index) => (
                             <div key={String(question.id)} className="rounded-[1.75rem] border border-slate-200/90 bg-white/90 p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-white/[0.03]">
-                              <div className={`flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between ${isRTL ? "lg:flex-row-reverse" : ""}`}>
-                                <div className="min-w-0 flex-1">
-                                  <div className={`mb-3 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] ${isRTL ? "flex-row-reverse" : ""}`}>
-                                    <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-violet-500 dark:text-violet-300">Question {index + 1}</span>
-                                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-500 dark:bg-white/10 dark:text-white/60">{getQuestionTypeLabel(question.type)}</span>
-                                    <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-500 dark:text-emerald-300">{toNumber(question.point) ?? 0} pts</span>
-                                  </div>
-                                  <h3 className="text-xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
-                                    {getLocalizedValue(question.question_text ?? question.text, currentLocale) || `Question #${question.id}`}
-                                  </h3>
-                                  <div className="mt-4 flex flex-wrap gap-2">
-                                    {(question.options ?? []).map((option) => (
-                                      <span
-                                        key={String(option.id)}
-                                        className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${
-                                          option.is_correct
-                                            ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-500 dark:text-emerald-300"
-                                            : "border-slate-200 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-white/60"
-                                        }`}
-                                      >
-                                        {getOptionText(option, currentLocale) || "Option"}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
+                              {(() => {
+                                const displayType = isTrueFalseQuestion(question) ? "true_false" : question.type;
+                                const optionItems = question.options ?? [];
 
-                                <div className={`flex flex-wrap gap-2 ${isRTL ? "justify-end" : ""}`}>
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditQuestionModal(quiz, question)}
-                                    className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:bg-sky-500"
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void handleDeleteQuestion(quiz, question)}
-                                    disabled={isSubmitting}
-                                    className="inline-flex items-center gap-2 rounded-2xl bg-rose-600 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:bg-rose-500 disabled:opacity-60"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
+                                return (
+                                  <div className={`flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between ${isRTL ? "lg:flex-row-reverse" : ""}`}>
+                                    <div className="min-w-0 flex-1">
+                                      <div className={`mb-3 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] ${isRTL ? "flex-row-reverse" : ""}`}>
+                                        <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-violet-500 dark:text-violet-300">Question {index + 1}</span>
+                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-500 dark:bg-white/10 dark:text-white/60">{getQuestionTypeLabel(displayType)}</span>
+                                        <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-500 dark:text-emerald-300">{toNumber(question.point) ?? 0} pts</span>
+                                      </div>
+                                      <h3 className="text-xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
+                                        {getLocalizedValue(question.question_text ?? question.text, currentLocale) || `Question #${question.id}`}
+                                      </h3>
+                                      {displayType === "short_answer" ? (
+                                        <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 text-sm font-medium text-slate-500 dark:border-white/15 dark:bg-white/[0.04] dark:text-white/60">
+                                          Students will submit a written answer for manual review.
+                                        </div>
+                                      ) : (
+                                        <div className="mt-4 flex flex-wrap gap-2">
+                                          {optionItems.map((option) => (
+                                            <span
+                                              key={String(option.id)}
+                                              className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${
+                                                option.is_correct
+                                                  ? "border-emerald-400/20 bg-emerald-500/10 text-emerald-500 dark:text-emerald-300"
+                                                  : "border-slate-200 bg-slate-100 text-slate-600 dark:border-white/10 dark:bg-white/10 dark:text-white/60"
+                                              }`}
+                                            >
+                                              {getOptionText(option, currentLocale) || "Option"}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className={`flex flex-wrap gap-2 ${isRTL ? "justify-end" : ""}`}>
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditQuestionModal(quiz, question)}
+                                        className="inline-flex items-center gap-2 rounded-2xl bg-sky-600 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:bg-sky-500"
+                                      >
+                                        <Pencil className="h-4 w-4" />
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleDeleteQuestion(quiz, question)}
+                                        disabled={isSubmitting}
+                                        className="inline-flex items-center gap-2 rounded-2xl bg-rose-600 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white transition hover:bg-rose-500 disabled:opacity-60"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           ))}
                         </div>
@@ -1827,13 +1911,13 @@ export default function InstructorQuizzesPage() {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 18 }}
-              className="relative z-10 w-full max-w-5xl overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-[#0A0F1D]"
+              className="relative z-10 flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-[#0A0F1D]"
             >
-              <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.15),transparent_28%),linear-gradient(145deg,#ffffff_0%,#f8fafc_100%)] px-8 py-7 dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.18),transparent_28%),linear-gradient(145deg,#0b1120_0%,#0a0f1d_100%)]">
+              <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.15),transparent_28%),linear-gradient(145deg,#ffffff_0%,#f8fafc_100%)] px-5 py-6 sm:px-8 sm:py-7 dark:border-white/10 dark:bg-[radial-gradient(circle_at_top_left,rgba(139,92,246,0.18),transparent_28%),linear-gradient(145deg,#0b1120_0%,#0a0f1d_100%)]">
                 <div className={`flex items-start justify-between gap-4 ${isRTL ? "flex-row-reverse" : ""}`}>
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-400">Instructor Question Builder</p>
-                    <h2 className="mt-2 text-3xl font-black tracking-[-0.04em]">{editingQuestionId ? "Refine this question" : "Add a high-quality question"}</h2>
+                    <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] sm:text-3xl">{editingQuestionId ? "Refine this question" : "Add a high-quality question"}</h2>
                     <p className="mt-2 text-sm text-slate-600 dark:text-slate-300/70">
                       Quiz: {getLocalizedValue(selectedQuiz.title, currentLocale) || "Untitled quiz"}
                     </p>
@@ -1844,10 +1928,10 @@ export default function InstructorQuizzesPage() {
                 </div>
               </div>
 
-              <form onSubmit={handleSaveQuestion} className="space-y-6 px-8 py-7">
-                <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+              <form onSubmit={handleSaveQuestion} className="flex-1 space-y-6 overflow-y-auto px-5 py-6 sm:px-8 sm:py-7">
+                <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
                   <div className="space-y-6">
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className="grid gap-4 lg:grid-cols-2">
                       <div className="space-y-2">
                         <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/50">Question EN</label>
                         <textarea
@@ -1868,6 +1952,42 @@ export default function InstructorQuizzesPage() {
                           placeholder="Write the Arabic version"
                           className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-medium outline-none focus:border-violet-500/50 dark:border-white/10 dark:bg-white/5"
                         />
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.6rem] border border-slate-200 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                      <div className="flex flex-wrap gap-3">
+                        {[
+                          { value: "multiple_choice", label: "MCQ", hint: "Add several answers and mark one correct." },
+                          { value: "true_false", label: "True / False", hint: "Create a quick binary check." },
+                          { value: "short_answer", label: "Short Answer", hint: "Let students type a written response." },
+                        ].map((item) => {
+                          const isActive = questionForm.type === item.value;
+                          return (
+                            <button
+                              key={item.value}
+                              type="button"
+                              onClick={() =>
+                                setQuestionForm((current) => ({
+                                  ...current,
+                                  type: item.value as QuestionFormState["type"],
+                                  options:
+                                    item.value === "multiple_choice"
+                                      ? current.options.length > 0 ? current.options : createInitialOptions()
+                                      : current.options,
+                                }))
+                              }
+                              className={`min-w-[160px] flex-1 rounded-[1.25rem] border px-4 py-4 text-left transition ${
+                                isActive
+                                  ? "border-violet-500/50 bg-[linear-gradient(135deg,rgba(124,58,237,0.16),rgba(236,72,153,0.12))] text-slate-950 shadow-[0_18px_35px_rgba(124,58,237,0.16)] dark:text-white"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-violet-300 hover:bg-violet-50/60 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75 dark:hover:bg-violet-500/10"
+                              }`}
+                            >
+                              <span className="block text-sm font-black uppercase tracking-[0.18em]">{item.label}</span>
+                              <span className="mt-1 block text-xs leading-5 opacity-70">{item.hint}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1921,19 +2041,80 @@ export default function InstructorQuizzesPage() {
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <label className={`flex items-center justify-between rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5 text-sm font-bold dark:border-white/10 dark:bg-white/[0.03] ${isRTL ? "flex-row-reverse" : ""}`}>
+                    ) : questionForm.type === "true_false" ? (
+                      <div className="space-y-4 rounded-[1.5rem] border border-slate-200 bg-slate-50 px-5 py-5 dark:border-white/10 dark:bg-white/[0.03]">
                         <div>
-                          <p className="font-black">True / False Answer</p>
-                          <p className="mt-1 text-xs font-medium text-slate-500 dark:text-white/50">Turn this on when the correct answer is True.</p>
+                          <p className="font-black">True / False Answers</p>
+                          <p className="mt-1 text-xs font-medium text-slate-500 dark:text-white/50">Use the same setup as admin: edit both labels and choose which one is correct.</p>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={questionForm.trueFalseAnswer}
-                          onChange={(event) => setQuestionForm((current) => ({ ...current, trueFalseAnswer: event.target.checked }))}
-                          className="h-4 w-4 accent-violet-600"
-                        />
-                      </label>
+                        {[
+                          {
+                            key: "true" as const,
+                            en: questionForm.trueOptionTextEn,
+                            ar: questionForm.trueOptionTextAr,
+                            enPlaceholder: "True text (EN)",
+                            arPlaceholder: "True text (AR)",
+                          },
+                          {
+                            key: "false" as const,
+                            en: questionForm.falseOptionTextEn,
+                            ar: questionForm.falseOptionTextAr,
+                            enPlaceholder: "False text (EN)",
+                            arPlaceholder: "False text (AR)",
+                          },
+                        ].map((option, index) => {
+                          const isCorrect = questionForm.trueFalseCorrect === option.key;
+                          return (
+                            <div
+                              key={option.key}
+                              className={`grid gap-3 rounded-[1.5rem] border p-4 transition md:grid-cols-[1fr_1fr_auto] ${
+                                isCorrect
+                                  ? "border-emerald-300 bg-emerald-50/80 shadow-[0_14px_30px_rgba(16,185,129,0.12)] dark:border-emerald-500/30 dark:bg-emerald-500/10"
+                                  : "border-slate-200 bg-white/80 dark:border-white/10 dark:bg-white/[0.04]"
+                              }`}
+                            >
+                              <input
+                                value={option.en}
+                                onChange={(event) =>
+                                  setQuestionForm((current) => ({
+                                    ...current,
+                                    [option.key === "true" ? "trueOptionTextEn" : "falseOptionTextEn"]: event.target.value,
+                                  }))
+                                }
+                                placeholder={option.enPlaceholder}
+                                className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium outline-none focus:border-violet-500/50 dark:border-white/10 dark:bg-white/5"
+                              />
+                              <input
+                                value={option.ar}
+                                onChange={(event) =>
+                                  setQuestionForm((current) => ({
+                                    ...current,
+                                    [option.key === "true" ? "trueOptionTextAr" : "falseOptionTextAr"]: event.target.value,
+                                  }))
+                                }
+                                placeholder={option.arPlaceholder}
+                                className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium outline-none focus:border-violet-500/50 dark:border-white/10 dark:bg-white/5"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setQuestionForm((current) => ({ ...current, trueFalseCorrect: option.key }))}
+                                className={`rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.18em] ${
+                                  isCorrect ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-white/70"
+                                }`}
+                              >
+                                {isCorrect ? "Correct Answer" : `Mark ${index === 0 ? "True" : "False"} Correct`}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="rounded-[1.5rem] border border-dashed border-violet-300/70 bg-[linear-gradient(135deg,rgba(124,58,237,0.08),rgba(14,165,233,0.08))] px-5 py-5 dark:border-violet-500/30 dark:bg-[linear-gradient(135deg,rgba(124,58,237,0.12),rgba(14,165,233,0.08))]">
+                        <p className="text-sm font-black text-slate-900 dark:text-white">Short answer response</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300/75">
+                          Students will answer this question in their own words. No answer options will be sent, and instructors can review responses from the quiz results panel.
+                        </p>
+                      </div>
                     )}
                   </div>
 
@@ -1962,6 +2143,7 @@ export default function InstructorQuizzesPage() {
                         >
                           <option value="multiple_choice">Multiple Choice</option>
                           <option value="true_false">True / False</option>
+                          <option value="short_answer">Short Answer</option>
                         </select>
                       </div>
                       <div className="space-y-2">

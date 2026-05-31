@@ -3,9 +3,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { AlertCircle, Flag, Heart, Loader2, Lock, MessageCircle, MoreVertical, Pencil, Pin, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { extractStudentIdFromToken } from "@/features/student/studentSession";
 
 type Pagination = { total: number; count: number; per_page: number; current_page: number; total_pages: number };
-type Thread = { id: number; course_id: number; title: string; body: string; category: string; is_pinned: number; is_locked: number; updated_at?: string };
+type Thread = { id: number; course_id: number; author_id: number; title: string; body: string; category: string; is_pinned: number; is_locked: number; updated_at?: string };
 type Post = { id: number; forum_thread_id: number; body: string; created_at?: string; updated_at?: string };
 type Course = { id: number; title: string };
 type Form = { courseId: string; title: string; body: string; category: string };
@@ -42,7 +43,17 @@ function parseThreads(payload: unknown): { rows: Thread[]; pag: Pagination } {
     if (!isObj(x)) continue;
     const id = num(x.id);
     if (!id) continue;
-    rows.push({ id, course_id: num(x.course_id), title: str(x.title, `Thread #${id}`), body: str(x.body), category: str(x.category, "general"), is_pinned: num(x.is_pinned), is_locked: num(x.is_locked), updated_at: str(x.updated_at) || undefined });
+    rows.push({
+      id,
+      course_id: num(x.course_id),
+      author_id: num(x.author_id),
+      title: str(x.title, `Thread #${id}`),
+      body: str(x.body),
+      category: str(x.category, "general"),
+      is_pinned: num(x.is_pinned),
+      is_locked: num(x.is_locked),
+      updated_at: str(x.updated_at) || undefined,
+    });
   }
   return { rows, pag: parsePagination(root.pagination ?? (isObj(data) ? data.pagination : undefined)) };
 }
@@ -122,6 +133,10 @@ export default function ForumWorkspace({
   const headers = useMemo(() => {
     const token = getToken();
     return token ? { Accept: "application/json", Authorization: `Bearer ${token}` } : null;
+  }, [getToken]);
+  const currentUserId = useMemo(() => {
+    const token = getToken();
+    return token ? extractStudentIdFromToken(token) : null;
   }, [getToken]);
   const courseName = useMemo(() => new Map(courses.map((course) => [course.id, course.title])), [courses]);
 
@@ -359,6 +374,10 @@ export default function ForumWorkspace({
               <div className="space-y-3">
                 {filtered.map((thread) => (
                   <div key={thread.id} className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                    {(() => {
+                      const canManageThread = currentUserId !== null && thread.author_id === currentUserId;
+                      return (
+                        <>
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="mb-1 flex items-center gap-1.5">
@@ -369,7 +388,7 @@ export default function ForumWorkspace({
                         <h3 className="text-lg font-black">{thread.title}</h3>
                         <p className="text-xs opacity-55">{courseName.get(thread.course_id) ?? `Course #${thread.course_id}`} | Updated {fmt(thread.updated_at)}</p>
                       </div>
-                      <div className="relative" data-thread-menu>
+                      {canManageThread ? <div className="relative" data-thread-menu>
                         <button onClick={() => setOpenMenuId((prev) => (prev === thread.id ? null : thread.id))} className="rounded-lg p-1.5 hover:bg-slate-100 dark:hover:bg-white/10">{busyId === thread.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}</button>
                         {openMenuId === thread.id ? <div className="absolute right-0 z-10 mt-1 w-40 rounded-lg border border-slate-200 bg-white p-1 text-slate-900 shadow-lg dark:border-white/10 dark:bg-slate-900 dark:text-slate-100">
                           <button onClick={() => void threadAction(thread.id, `/forum-threads/${thread.id}/pin`, `Thread ${thread.is_pinned ? "unpinned" : "pinned"} successfully.`)} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-white/10"><Pin className="h-4 w-4" />{thread.is_pinned ? "Unpin" : "Pin"}</button>
@@ -377,7 +396,7 @@ export default function ForumWorkspace({
                           <button onClick={() => { setEditingThreadId(thread.id); setForm({ courseId: String(thread.course_id), title: thread.title, body: thread.body, category: thread.category }); setOpenMenuId(null); }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-white/10"><Pencil className="h-4 w-4" />Update</button>
                           <button onClick={async () => { if (!headers || !window.confirm(`Delete "${thread.title}"?`)) return; setBusyId(thread.id); try { await request(`/forum-threads/${thread.id}`, { method: "DELETE", headers }); setOk("Forum thread deleted successfully."); await loadThreads(pag.current_page); } catch { setError("Unable to delete thread."); } finally { setBusyId(null); } }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-rose-600 hover:bg-rose-50"><Trash2 className="h-4 w-4" />Delete</button>
                         </div> : null}
-                      </div>
+                      </div> : null}
                     </div>
                     <p className="mt-2 whitespace-pre-wrap text-sm">{thread.body}</p>
                     <div className="mt-2 flex justify-end"><button onClick={async () => { const on = expanded.has(thread.id); setExpanded((prev) => { const next = new Set(prev); if (on) next.delete(thread.id); else next.add(thread.id); return next; }); if (!on && !postsByThread[thread.id]) await loadPosts(thread.id, 1); }} className="inline-flex items-center gap-1 rounded bg-slate-200 px-2.5 py-1 text-xs font-bold dark:bg-white/10"><MessageCircle className="h-3.5 w-3.5" />{expanded.has(thread.id) ? "Hide Posts" : "View Posts"}</button></div>
@@ -413,6 +432,9 @@ export default function ForumWorkspace({
                         <div className="mt-2 flex items-center justify-between"><p className="text-[11px] opacity-55">Total posts: {postsPagByThread[thread.id]?.total ?? (postsByThread[thread.id] ?? []).length} | Page {postsPagByThread[thread.id]?.current_page ?? 1}/{postsPagByThread[thread.id]?.total_pages ?? 1}</p><div className="flex gap-1"><button onClick={() => void loadPosts(thread.id, Math.max(1, (postsPagByThread[thread.id]?.current_page ?? 1) - 1))} disabled={(postsPagByThread[thread.id]?.current_page ?? 1) <= 1 || loadingPosts[thread.id]} className="rounded border border-slate-300 px-2 py-0.5 text-[11px] font-bold dark:border-white/20">Prev</button><button onClick={() => void loadPosts(thread.id, Math.min(postsPagByThread[thread.id]?.total_pages ?? 1, (postsPagByThread[thread.id]?.current_page ?? 1) + 1))} disabled={(postsPagByThread[thread.id]?.current_page ?? 1) >= (postsPagByThread[thread.id]?.total_pages ?? 1) || loadingPosts[thread.id]} className="rounded border border-slate-300 px-2 py-0.5 text-[11px] font-bold dark:border-white/20">Next</button></div></div>
                       </div>
                     ) : null}
+                        </>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>

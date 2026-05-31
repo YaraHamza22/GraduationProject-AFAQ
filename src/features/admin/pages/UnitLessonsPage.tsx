@@ -736,9 +736,34 @@ export default function UnitLessonsPage() {
           }
         }
       } else if (editingLesson) {
-        await axios.put(getAdminApiRequestUrl(`${LESSONS_API_PATH}/${getLessonId(editingLesson)}`), payload, {
-          headers: getHeaders(currentLocale),
-        });
+        if (videoFile || attachments.length > 0) {
+          const formData = new FormData();
+          formData.append("unit_id", String(payload.unit_id));
+          formData.append("title", payload.title);
+          formData.append("description", payload.description);
+          formData.append("lesson_type", payload.lesson_type);
+          formData.append("is_required", String(payload.is_required));
+          formData.append("actual_duration_minutes", String(payload.actual_duration_minutes));
+          if (payload.lesson_order !== undefined) {
+            formData.append("lesson_order", String(payload.lesson_order));
+          }
+          formData.append("_method", "PUT");
+          if (videoFile) {
+            formData.append("video", videoFile);
+          }
+          attachments.forEach((file) => formData.append("attachments[]", file));
+
+          await axios.post(getAdminApiRequestUrl(`${LESSONS_API_PATH}/${getLessonId(editingLesson)}`), formData, {
+            headers: {
+              ...getHeaders(currentLocale),
+              "Content-Type": "multipart/form-data",
+            },
+          });
+        } else {
+          await axios.put(getAdminApiRequestUrl(`${LESSONS_API_PATH}/${getLessonId(editingLesson)}`), payload, {
+            headers: getHeaders(currentLocale),
+          });
+        }
         setSuccessMessage("Lesson updated successfully.");
         if (normalizeLessonType(form.lesson_type) === "interactive") {
           const lessonKey = String(getLessonId(editingLesson));
@@ -2311,42 +2336,40 @@ export default function UnitLessonsPage() {
                     </div>
                   </div>
 
-                  {modalMode === "create" && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
-                      <div className="space-y-4">
-                        <label className={`block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/20 ${isRTL ? "text-right" : ""}`}>Video (Optional)</label>
-                        <label className={`flex items-center gap-4 p-6 rounded-[32px] bg-slate-100 dark:bg-white/5 border-2 border-transparent cursor-pointer hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${isRTL ? "flex-row-reverse" : ""}`}>
-                          <Upload className="w-6 h-6 text-indigo-500" />
-                          <span className="flex-1 truncate text-slate-700 dark:text-white/70 font-bold">{videoFile ? videoFile.name : "Select video file"}</span>
-                          <input
-                            type="file"
-                            accept="video/*"
-                            className="hidden"
-                            onChange={(event) => setVideoFile(event.target.files?.[0] || null)}
-                          />
-                        </label>
-                      </div>
-
-                      <div className="space-y-4">
-                        <label className={`block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/20 ${isRTL ? "text-right" : ""}`}>Attachments (Optional)</label>
-                        <label className={`flex items-center gap-4 p-6 rounded-[32px] bg-slate-100 dark:bg-white/5 border-2 border-transparent cursor-pointer hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${isRTL ? "flex-row-reverse" : ""}`}>
-                          <Upload className="w-6 h-6 text-indigo-500" />
-                          <span className="flex-1 truncate text-slate-700 dark:text-white/70 font-bold">
-                            {attachments.length > 0 ? `${attachments.length} file(s) selected` : "Select attachment files"}
-                          </span>
-                          <input
-                            type="file"
-                            multiple
-                            className="hidden"
-                            onChange={(event) => {
-                              const files = event.target.files ? Array.from(event.target.files) : [];
-                              setAttachments(files);
-                            }}
-                          />
-                        </label>
-                      </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-10">
+                    <div className="space-y-4">
+                      <label className={`block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/20 ${isRTL ? "text-right" : ""}`}>Video (Optional)</label>
+                      <label className={`flex items-center gap-4 p-6 rounded-[32px] bg-slate-100 dark:bg-white/5 border-2 border-transparent cursor-pointer hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${isRTL ? "flex-row-reverse" : ""}`}>
+                        <Upload className="w-6 h-6 text-indigo-500" />
+                        <span className="flex-1 truncate text-slate-700 dark:text-white/70 font-bold">{videoFile ? videoFile.name : "Select video file"}</span>
+                        <input
+                          type="file"
+                          accept="video/*"
+                          className="hidden"
+                          onChange={(event) => setVideoFile(event.target.files?.[0] || null)}
+                        />
+                      </label>
                     </div>
-                  )}
+
+                    <div className="space-y-4">
+                      <label className={`block text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/20 ${isRTL ? "text-right" : ""}`}>Attachments (Optional)</label>
+                      <label className={`flex items-center gap-4 p-6 rounded-[32px] bg-slate-100 dark:bg-white/5 border-2 border-transparent cursor-pointer hover:bg-slate-200 dark:hover:bg-white/10 transition-all ${isRTL ? "flex-row-reverse" : ""}`}>
+                        <Upload className="w-6 h-6 text-indigo-500" />
+                        <span className="flex-1 truncate text-slate-700 dark:text-white/70 font-bold">
+                          {attachments.length > 0 ? `${attachments.length} file(s) selected` : "Select attachment files"}
+                        </span>
+                        <input
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={(event) => {
+                            const files = event.target.files ? Array.from(event.target.files) : [];
+                            setAttachments(files);
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </div>
 
                 <footer className={`flex flex-col gap-4 border-t border-slate-100 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/2 sm:flex-row sm:p-8 md:p-12 ${isRTL ? "sm:flex-row-reverse" : ""}`}>

@@ -41,6 +41,24 @@ const gradients = [
 
 type LoginModeId = "student" | "instructor" | "auditor";
 
+type ToastTone = "success" | "error";
+
+type ToastItem = {
+  id: string;
+  message: string;
+  tone: ToastTone;
+};
+
+const educationLevelOptions = [
+  { value: "highschool", label: "High School" },
+  { value: "associate", label: "Associate Degree" },
+  { value: "bachelor", label: "Bachelor Degree" },
+  { value: "collage", label: "College" },
+  { value: "master", label: "Master Degree" },
+  { value: "doctorate", label: "Doctorate" },
+  { value: "other", label: "Other" },
+] as const;
+
 const loginModes: Array<{
   id: LoginModeId;
   label: string;
@@ -129,6 +147,36 @@ function getRedirectPathByRole(rawRole: string | null) {
   return "/student";
 }
 
+function normalizeEducationLevel(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "college") return "collage";
+  return normalized;
+}
+
+function extractValidationMessages(payload: unknown) {
+  if (!payload || typeof payload !== "object") return [];
+  const maybeErrors = (payload as { errors?: unknown }).errors;
+  if (!maybeErrors || typeof maybeErrors !== "object") return [];
+
+  const messages: string[] = [];
+  Object.values(maybeErrors as Record<string, unknown>).forEach((entry) => {
+    if (Array.isArray(entry)) {
+      entry.forEach((item) => {
+        if (typeof item === "string" && item.trim()) {
+          messages.push(item);
+        }
+      });
+      return;
+    }
+
+    if (typeof entry === "string" && entry.trim()) {
+      messages.push(entry);
+    }
+  });
+
+  return [...new Set(messages)];
+}
+
 async function resolveRedirectPath(token: string, rawRole: string | null) {
   const rolePath = getRedirectPathByRole(rawRole);
   if (rawRole) {
@@ -192,6 +240,7 @@ export default function AuthPage() {
 
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   useEffect(() => {
     setMounted(true);
@@ -230,6 +279,21 @@ export default function AuthPage() {
       setErrors((prev) => ({ ...prev, [name]: [] }));
     }
     setGeneralError(null);
+  };
+
+  const dismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  };
+
+  const pushToast = (message: string, tone: ToastTone = "error") => {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setToasts((prev) => [...prev, { id, message: trimmed, tone }]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, tone === "success" ? 3500 : 5000);
   };
 
   const selectLoginMode = (modeId: LoginModeId) => {
@@ -335,6 +399,7 @@ export default function AuthPage() {
       setFormData((current) => ({ ...current, email }));
       setForgotSuccess(message);
       setSuccessMessage(message);
+      pushToast(message, "success");
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (error) {
       console.error("Forgot password error:", error);
@@ -347,8 +412,10 @@ export default function AuthPage() {
           "We could not send the reset email. Please check the address and try again.";
 
         setForgotError(message);
+        pushToast(message, "error");
       } else {
         setForgotError("Network error. Please check your connection and the API server.");
+        pushToast("Network error. Please check your connection and the API server.", "error");
       }
     } finally {
       setIsForgotLoading(false);
@@ -374,6 +441,7 @@ export default function AuthPage() {
 
         if (loginCandidates.length === 0) {
           setGeneralError("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.");
+          pushToast("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.", "error");
           return;
         }
 
@@ -416,6 +484,7 @@ export default function AuthPage() {
 
         persistStudentSession(token, user ? { ...user, role: sessionRole, api_role: responseRole } : { role: sessionRole, api_role: responseRole });
         setSuccessMessage(`${selectedLoginMode.label} login successful! Redirecting...`);
+        pushToast(`${selectedLoginMode.label} login successful! Redirecting...`, "success");
 
         const redirectPath = selectedLoginMode.redirectPath;
 
@@ -427,10 +496,12 @@ export default function AuthPage() {
         console.error("Login error:", error);
         if (error instanceof Error && error.message === "missing_token") {
           setGeneralError("Login response did not include an auth token.");
+          pushToast("Login response did not include an auth token.", "error");
           return;
         }
         if (error instanceof Error && error.message === "login_endpoint_not_found") {
           setGeneralError(`${selectedLoginMode.label} login endpoint is not available. Verify backend routes for ${selectedLoginMode.endpointPaths.join(" or ")}.`);
+          pushToast(`${selectedLoginMode.label} login endpoint is not available. Verify backend routes for ${selectedLoginMode.endpointPaths.join(" or ")}.`, "error");
           return;
         }
         if (axios.isAxiosError(error) && error.response) {
@@ -443,8 +514,17 @@ export default function AuthPage() {
           } else {
             setGeneralError('An unexpected error occurred from the server.');
           }
+          pushToast(
+            error.response.status === 405 || isHtmlResponse
+              ? "The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy."
+              : error.response.data.message || (error.response.status === 422 || error.response.status === 401
+                ? "Invalid credentials. Please try again."
+                : "An unexpected error occurred from the server."),
+            "error"
+          );
         } else {
           setGeneralError('Network error. Please check your connection and the API server.');
+          pushToast("Network error. Please check your connection and the API server.", "error");
         }
       } finally {
         setIsLoading(false);
@@ -467,6 +547,7 @@ export default function AuthPage() {
 
         const payload = {
           ...formData,
+          education_level: normalizeEducationLevel(formData.education_level),
           phone: formattedPhone
         };
 
@@ -478,6 +559,7 @@ export default function AuthPage() {
 
         setIsLogin(true);
         setSuccessMessage('Registration successful! You can now log in.');
+        pushToast("Registration successful! You can now log in.", "success");
         setTimeout(() => setSuccessMessage(null), 4000);
 
       } catch (error) {
@@ -487,14 +569,21 @@ export default function AuthPage() {
 
           if (error.response.status === 405 || isHtmlResponse) {
             setGeneralError("The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy.");
+            pushToast("The deployed site is not connected to a public backend API yet. Set NEXT_PUBLIC_API_URL in the GitHub Pages build and redeploy.", "error");
           } else if (error.response.status === 422) {
             setErrors(error.response.data.errors || {});
             setGeneralError("Please fix the validation errors below.");
+            const validationMessages = extractValidationMessages(error.response.data);
+            (validationMessages.length > 0 ? validationMessages : ["Please fix the validation errors below."])
+              .slice(0, 4)
+              .forEach((message) => pushToast(message, "error"));
           } else {
             setGeneralError(error.response.data.message || 'An unexpected error occurred from the server.');
+            pushToast(error.response.data.message || "An unexpected error occurred from the server.", "error");
           }
         } else {
           setGeneralError('Network error. Please check your connection and the API server.');
+          pushToast("Network error. Please check your connection and the API server.", "error");
         }
       } finally {
         setIsLoading(false);
@@ -533,6 +622,35 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#020617] flex items-center justify-center p-4 md:p-8 overflow-hidden font-sans transition-colors duration-300">
+      <div className="pointer-events-none fixed right-4 top-4 z-[100] flex w-full max-w-sm flex-col gap-3">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: -16, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -12, scale: 0.97 }}
+              className={`pointer-events-auto rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-xl ${
+                toast.tone === "success"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/12 dark:text-emerald-300"
+                  : "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/12 dark:text-rose-300"
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="flex-1 text-sm font-semibold">{toast.message}</p>
+                <button
+                  type="button"
+                  onClick={() => dismissToast(toast.id)}
+                  className="rounded-full p-1 transition hover:bg-black/5 dark:hover:bg-white/10"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
       <div className="absolute top-4 right-4 z-50">
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -801,12 +919,11 @@ export default function AuthPage() {
                             className={`w-full bg-slate-50 dark:bg-white/5 border ${errors.education_level ? 'border-red-300 dark:border-red-500/50' : 'border-slate-200 dark:border-white/10'} rounded-xl py-3 pl-10 px-5 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 transition-all appearance-none text-slate-900 dark:text-white/70 text-sm cursor-pointer`}
                           >
                             <option value="" className="bg-white dark:bg-slate-900">Select...</option>
-                            <option value="highschool" className="bg-white dark:bg-slate-900">High School</option>
-                            <option value="associate" className="bg-white dark:bg-slate-900">Associate&apos;s Degree</option>
-                            <option value="bachelor" className="bg-white dark:bg-slate-900">Bachelor&apos;s Degree</option>
-                            <option value="master" className="bg-white dark:bg-slate-900">Master&apos;s Degree</option>
-                            <option value="doctorate" className="bg-white dark:bg-slate-900">Doctorate Degree</option>
-                            <option value="other" className="bg-white dark:bg-slate-900">Other</option>
+                            {educationLevelOptions.map((option) => (
+                              <option key={option.value} value={option.value} className="bg-white dark:bg-slate-900">
+                                {option.label}
+                              </option>
+                            ))}
                           </select>
                           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 dark:text-white/20 pointer-events-none transition-colors" />
                         </div>
