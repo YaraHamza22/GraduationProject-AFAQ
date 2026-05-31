@@ -21,6 +21,20 @@ type CertificateSuccessPayload = {
   blob?: Blob;
 };
 
+type AssessmentProgressPayload = {
+  certificate?: {
+    eligible?: boolean;
+    issued?: boolean;
+    reason?: string;
+    average_percentage?: number;
+  };
+  progress?: {
+    required_quizzes_count?: number;
+    all_required_quizzes_graded?: boolean;
+    average_percentage?: number;
+  };
+};
+
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const str = (v: unknown, d = "") => (typeof v === "string" ? v : d);
@@ -38,6 +52,15 @@ function parseCourses(payload: unknown): Course[] {
     rows.push({ id, title: str(item.title, `Course #${id}`) });
   }
   return rows;
+}
+
+function parseAssessmentPayload(payload: unknown): AssessmentProgressPayload {
+  if (!isObj(payload)) return {};
+  const data = isObj(payload.data) ? payload.data : payload;
+  return {
+    certificate: isObj(data.certificate) ? data.certificate as AssessmentProgressPayload["certificate"] : undefined,
+    progress: isObj(data.progress) ? data.progress as AssessmentProgressPayload["progress"] : undefined,
+  };
 }
 
 function getErrorMessage(error: unknown) {
@@ -196,6 +219,34 @@ async function resolveCertificatePayload(
   };
 }
 
+async function fetchCertificatePdf(
+  courseId: number,
+  headers: Record<string, string>,
+  myId: number
+) {
+  const fallbackFileName = `course-${courseId}-certificate.pdf`;
+  const res = await request({
+    method: "GET",
+    url: `/courses/${courseId}/certificate`,
+    headers,
+    params: myId ? { student_id: myId } : undefined,
+    responseType: "blob",
+    validateStatus: () => true,
+  });
+
+  const contentType = String(res.headers?.["content-type"] ?? "").toLowerCase();
+  const blob = res.data as Blob;
+  const resolved = await resolveCertificatePayload(
+    blob,
+    contentType,
+    (res.headers ?? {}) as Record<string, unknown>,
+    headers,
+    fallbackFileName
+  );
+
+  return { res, resolved, fallbackFileName };
+}
+
 export default function StudentCertificatesPage() {
   const [courses, setCourses] = React.useState<Course[]>([]);
   const [certByCourse, setCertByCourse] = React.useState<Record<number, CertState>>({});
@@ -231,54 +282,33 @@ export default function StudentCertificatesPage() {
     setCourseState(courseId, { status: "checking" });
 
     try {
-      const fallbackFileName = `course-${courseId}-certificate.pdf`;
-      const res = await request({
+      const progressResponse = await request({
         method: "GET",
-        url: `/courses/${courseId}/certificate`,
+        url: `/courses/${courseId}/assessment-progress`,
         headers,
         params: myId ? { student_id: myId } : undefined,
-        responseType: "blob",
-        validateStatus: () => true,
       });
 
-      const contentType = String(res.headers?.["content-type"] ?? "").toLowerCase();
-      const blob = res.data as Blob;
-      const resolved = await resolveCertificatePayload(
-        blob,
-        contentType,
-        (res.headers ?? {}) as Record<string, unknown>,
-        headers,
-        fallbackFileName
-      );
+      const { certificate, progress } = parseAssessmentPayload(progressResponse.data);
+      const isEligible = certificate?.eligible === true || certificate?.issued === true;
+      const averagePercentage = num(certificate?.average_percentage ?? progress?.average_percentage, 0);
 
-      if (res.status >= 200 && res.status < 300 && resolved?.blob) {
-        const blobUrl = URL.createObjectURL(resolved.blob);
+      if (isEligible) {
         setCourseState(courseId, {
           status: "available",
-          message: resolved.message || "Certificate is ready to download.",
-          blobUrl,
-          fileName: resolved.fileName || fallbackFileName,
+          message: averagePercentage > 0
+            ? `Certificate is ready. Current average: ${averagePercentage.toFixed(2)}%.`
+            : "Certificate is ready to download.",
         });
         return;
       }
 
-      if (res.status >= 200 && res.status < 300 && resolved?.message) {
-        setCourseState(courseId, {
-          status: "unavailable",
-          message: resolved.message,
-        });
-        return;
-      }
-
-      if (res.status >= 400) {
-        setCourseState(courseId, {
-          status: "unavailable",
-          message: "Certificate is not available yet. All required quizzes must be graded, and the course weighted score must be at least 60%.",
-        });
-        return;
-      }
-
-      setCourseState(courseId, { status: "error", message: "Unexpected certificate response format." });
+      setCourseState(courseId, {
+        status: "unavailable",
+        message:
+          str(certificate?.reason) ||
+          "Certificate is not available yet. All required quizzes must be graded, and the course average score must be at least 60%.",
+      });
     } catch (e) {
       setCourseState(courseId, { status: "error", message: getErrorMessage(e) });
     }
@@ -296,8 +326,37 @@ export default function StudentCertificatesPage() {
       setOk("Certificate download started.");
       return;
     }
-    await probeCertificate(courseId);
-  }, [certByCourse, probeCertificate]);
+
+    if (!headers) return;
+
+    setCourseState(courseId, { status: "checking" });
+    try {
+      const { res, resolved, fallbackFileName } = await fetchCertificatePdf(courseId, headers, myId);
+
+      if (res.status >= 200 && res.status < 300 && resolved?.blob) {
+        const blobUrl = URL.createObjectURL(resolved.blob);
+        setCourseState(courseId, {
+          status: "available",
+          message: resolved.message || "Certificate is ready to download.",
+          blobUrl,
+          fileName: resolved.fileName || fallbackFileName,
+        });
+
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = resolved.fileName || fallbackFileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setOk("Certificate download started.");
+        return;
+      }
+
+      await probeCertificate(courseId);
+    } catch (e) {
+      setCourseState(courseId, { status: "error", message: getErrorMessage(e) });
+    }
+  }, [certByCourse, headers, myId, probeCertificate, setCourseState]);
 
   const loadCourses = React.useCallback(async () => {
     if (!headers) {

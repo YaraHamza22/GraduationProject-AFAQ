@@ -871,8 +871,8 @@ export default function UnitLessonsPage() {
         titleAr: quizTitleAr,
         descriptionEn: quizDescriptionEn,
         descriptionAr: quizDescriptionAr,
-        maxScore: String(existingQuiz.max_score ?? 100),
-        passingScore: String(existingQuiz.passing_score ?? 60),
+        maxScore: existingQuiz.max_score != null ? String(existingQuiz.max_score) : "",
+        passingScore: existingQuiz.passing_score != null ? String(existingQuiz.passing_score) : "",
         status: existingQuiz.status === "draft" ? "draft" : "published",
         quizableType: existingQuiz.quizable_type === "course" || existingQuiz.quizable_type === "lesson" || existingQuiz.quizable_type === "unit"
           ? existingQuiz.quizable_type
@@ -911,6 +911,15 @@ export default function UnitLessonsPage() {
       let activeQuiz: Quiz | null = null;
       const fallbackTitle = getLocalizedValue(selectedLessonForQuiz.title, currentLocale) || `Lesson ${lessonId}`;
       const resolvedQuizableId = resolveQuizableId(quizCreateForm.quizableType, courseId, unitId, lessonId);
+      const resolvedMaxScore = Number(quizCreateForm.maxScore);
+      const resolvedPassingScore = Number(quizCreateForm.passingScore);
+      if (!Number.isFinite(resolvedMaxScore) || resolvedMaxScore <= 0) {
+        throw new Error("Please enter a valid quiz max score.");
+      }
+      if (!Number.isFinite(resolvedPassingScore) || resolvedPassingScore < 0) {
+        throw new Error("Please enter a valid quiz passing score.");
+      }
+
       const payload = {
         title: {
           en: quizCreateForm.titleEn.trim() || fallbackTitle,
@@ -920,8 +929,8 @@ export default function UnitLessonsPage() {
           en: quizCreateForm.descriptionEn.trim() || fallbackTitle,
           ar: quizCreateForm.descriptionAr.trim() || quizCreateForm.descriptionEn.trim() || fallbackTitle,
         },
-        max_score: Number(quizCreateForm.maxScore || 100),
-        passing_score: Number(quizCreateForm.passingScore || 60),
+        max_score: resolvedMaxScore,
+        passing_score: resolvedPassingScore,
         type: "quiz",
         status: quizCreateForm.status,
         instructor_id: courseInstructorId,

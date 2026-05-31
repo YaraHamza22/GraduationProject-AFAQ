@@ -180,8 +180,8 @@ const initialQuizForm: QuizFormState = {
   descriptionEn: "",
   descriptionAr: "",
   durationMinutes: "30",
-  maxScore: "100",
-  passingScore: "60",
+  maxScore: "",
+  passingScore: "",
   status: "draft",
 };
 
@@ -704,8 +704,8 @@ export default function InstructorQuizzesPage() {
       descriptionEn: getLocalizedValue(quiz.description, "en"),
       descriptionAr: getLocalizedValue(quiz.description, "ar"),
       durationMinutes: String(toNumber(quiz.duration_minutes) ?? 30),
-      maxScore: String(toNumber(quiz.max_score) ?? 100),
-      passingScore: String(toNumber(quiz.passing_score) ?? 60),
+      maxScore: toNumber(quiz.max_score) != null ? String(toNumber(quiz.max_score)) : "",
+      passingScore: toNumber(quiz.passing_score) != null ? String(toNumber(quiz.passing_score)) : "",
       status: quiz.status || "draft",
     });
     setIsQuizModalOpen(true);
@@ -935,6 +935,16 @@ export default function InstructorQuizzesPage() {
       const titleAr = quizForm.titleAr.trim();
       const descriptionEn = quizForm.descriptionEn.trim();
       const descriptionAr = quizForm.descriptionAr.trim();
+      const resolvedMaxScore = Number(quizForm.maxScore);
+      const resolvedPassingScore = Number(quizForm.passingScore);
+
+      if (!Number.isFinite(resolvedMaxScore) || resolvedMaxScore <= 0) {
+        throw new Error("Please enter a valid max score.");
+      }
+
+      if (!Number.isFinite(resolvedPassingScore) || resolvedPassingScore < 0) {
+        throw new Error("Please enter a valid passing score.");
+      }
 
       const payload = {
         instructor_id: currentInstructorId,
@@ -946,8 +956,8 @@ export default function InstructorQuizzesPage() {
           en: descriptionEn || descriptionAr || "",
           ar: descriptionAr || descriptionEn || "",
         },
-        max_score: Number(quizForm.maxScore || 100),
-        passing_score: Number(quizForm.passingScore || 60),
+        max_score: resolvedMaxScore,
+        passing_score: resolvedPassingScore,
         type: "quiz",
         status: quizForm.status,
         course_id: resolvedCourseId,
@@ -990,7 +1000,12 @@ export default function InstructorQuizzesPage() {
     } catch (error) {
       if (
         error instanceof Error &&
-        (error.message === "Please select a valid course." || error.message === "Instructor session is missing. Please log in again.")
+        (
+          error.message === "Please select a valid course." ||
+          error.message === "Instructor session is missing. Please log in again." ||
+          error.message === "Please enter a valid max score." ||
+          error.message === "Please enter a valid passing score."
+        )
       ) {
         setErrorMessage(error.message);
       } else {
@@ -1897,7 +1912,7 @@ export default function InstructorQuizzesPage() {
                           min={1}
                           value={quizForm.maxScore}
                           onChange={(event) => setQuizForm((current) => ({ ...current, maxScore: event.target.value }))}
-                          placeholder="100"
+                          placeholder="5"
                           className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-indigo-500/50 dark:border-white/10 dark:bg-white/5"
                         />
                       </div>
@@ -1908,7 +1923,7 @@ export default function InstructorQuizzesPage() {
                           min={1}
                           value={quizForm.passingScore}
                           onChange={(event) => setQuizForm((current) => ({ ...current, passingScore: event.target.value }))}
-                          placeholder="60"
+                          placeholder="3"
                           className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-indigo-500/50 dark:border-white/10 dark:bg-white/5"
                         />
                       </div>
