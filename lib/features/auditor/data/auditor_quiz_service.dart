@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
+import 'auditor_locale_options.dart';
 
 class AuditorQuizService {
   const AuditorQuizService({ApiClient? apiClient}) : _apiClient = apiClient;
@@ -10,15 +11,38 @@ class AuditorQuizService {
 
   ApiClient get _client => _apiClient ?? ApiClient.instance;
 
-  Future<Response<Map<String, dynamic>>> getQuizzes() {
-    return _client.get<Map<String, dynamic>>(ApiEndpoints.quizzes);
+  Future<Response<Map<String, dynamic>>> getQuizzes({
+    int perPage = 30,
+    int page = 1,
+  }) {
+    return _client.get<Map<String, dynamic>>(
+      ApiEndpoints.quizzes,
+      queryParameters: {
+        'per_page': perPage,
+        'page': page,
+      },
+      options: auditorLocaleOptions(),
+    );
   }
 
   Future<Response<Map<String, dynamic>>> getQuiz(int quizId) {
-    return _client.get<Map<String, dynamic>>(ApiEndpoints.quiz(quizId));
+    return _client.get<Map<String, dynamic>>(
+      ApiEndpoints.quiz(quizId),
+      options: auditorLocaleOptions(),
+    );
   }
 
-  Future<Response<Map<String, dynamic>>> getQuestions() {
-    return _client.get<Map<String, dynamic>>(ApiEndpoints.questions);
+  Future<Response<Map<String, dynamic>>> getQuestions({
+    int perPage = 60,
+    int page = 1,
+  }) {
+    return _client.get<Map<String, dynamic>>(
+      ApiEndpoints.questions,
+      queryParameters: {
+        'per_page': perPage,
+        'page': page,
+      },
+      options: auditorLocaleOptions(),
+    );
   }
 }

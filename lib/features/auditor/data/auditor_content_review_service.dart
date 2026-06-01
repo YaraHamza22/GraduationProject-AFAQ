@@ -2,11 +2,12 @@ import 'package:dio/dio.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
+import 'auditor_locale_options.dart';
 
 enum AuditorReviewVerdict {
   approved,
   changesRequested,
-  rejected,
+  followUp,
 }
 
 extension AuditorReviewVerdictApi on AuditorReviewVerdict {
@@ -14,7 +15,7 @@ extension AuditorReviewVerdictApi on AuditorReviewVerdict {
     return switch (this) {
       AuditorReviewVerdict.approved => 'approved',
       AuditorReviewVerdict.changesRequested => 'changes_requested',
-      AuditorReviewVerdict.rejected => 'rejected',
+      AuditorReviewVerdict.followUp => 'follow_up',
     };
   }
 }
@@ -26,9 +27,24 @@ class AuditorContentReviewService {
 
   ApiClient get _client => _apiClient ?? ApiClient.instance;
 
+  Future<Response<Map<String, dynamic>>> getReviews({
+    required int courseId,
+    int page = 1,
+    int perPage = 10,
+  }) {
+    return _client.get<Map<String, dynamic>>(
+      ApiEndpoints.auditorContentReview(courseId),
+      queryParameters: {
+        'page': page,
+        'per_page': perPage,
+      },
+      options: auditorLocaleOptions(),
+    );
+  }
+
   Future<Response<Map<String, dynamic>>> submitLessonReview({
     required int courseId,
-    required int lessonId,
+    int? lessonId,
     required AuditorReviewVerdict verdict,
     required String notes,
   }) {
@@ -37,8 +53,9 @@ class AuditorContentReviewService {
       data: {
         'verdict': verdict.apiValue,
         'notes': notes,
-        'lesson_id': lessonId,
+        if (lessonId != null && lessonId > 0) 'lesson_id': lessonId,
       },
+      options: auditorLocaleOptions(),
     );
   }
 }

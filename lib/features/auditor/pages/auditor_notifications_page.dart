@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/app.dart';
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/toast/afaq_toast.dart';
 import '../../../core/widgets/afaq_panel.dart';
@@ -53,11 +54,16 @@ class _AuditorNotificationsPageState extends State<AuditorNotificationsPage> {
 
   Future<void> _markAllRead() async {
     setState(() => _markingAllRead = true);
+    final lang = localeNotifier.value.languageCode;
     try {
       await _service.markAllRead();
       await _load();
       if (!mounted) return;
-      AfaqToast.show(context, message: 'Notifications marked as read.', type: AfaqToastType.success);
+      AfaqToast.show(
+        context,
+        message: auditorText('notifications_marked', lang),
+        type: AfaqToastType.success,
+      );
     } catch (error) {
       if (!mounted) return;
       AfaqToast.show(context, message: error.toString(), type: AfaqToastType.error);
@@ -68,9 +74,10 @@ class _AuditorNotificationsPageState extends State<AuditorNotificationsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
     return AuditorPageScaffold(
-      title: 'Notification Inbox',
-      subtitle: 'Unread auditor notifications from the same notification API.',
+      title: auditorText('notifications', lang),
+      subtitle: auditorText('notifications_subtitle', lang),
       onRefresh: _load,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -84,7 +91,7 @@ class _AuditorNotificationsPageState extends State<AuditorNotificationsPage> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.done_all),
-            label: const Text('Mark All Read'),
+            label: Text(auditorText('mark_all_read', lang)),
           ),
           const SizedBox(height: 20),
           if (_loading)
@@ -92,7 +99,10 @@ class _AuditorNotificationsPageState extends State<AuditorNotificationsPage> {
           else if (_error != null)
             AuditorErrorPanel(message: _error!, onRetry: _load)
           else if (_notifications.isEmpty)
-            const AuditorEmptyPanel(message: 'No unread notifications.', icon: Icons.notifications_none)
+            AuditorEmptyPanel(
+              message: auditorText('no_unread_notifications', lang),
+              icon: Icons.notifications_none,
+            )
           else
             GridView.builder(
               shrinkWrap: true,
@@ -119,7 +129,9 @@ class _AuditorNotificationsPageState extends State<AuditorNotificationsPage> {
                           const Icon(Icons.notifications_none, color: AfaqColors.amber500),
                           const Spacer(),
                           AuditorStatusChip(
-                            label: notification.readAt.isEmpty ? 'Unread' : 'Read',
+                            label: notification.readAt.isEmpty
+                                ? auditorText('unread', lang)
+                                : auditorText('read', lang),
                             tone: notification.readAt.isEmpty
                                 ? AuditorStatusTone.warn
                                 : AuditorStatusTone.neutral,
@@ -172,9 +184,14 @@ class _AuditorNotification {
     final data = auditorMap(map['data']) ?? <String, dynamic>{};
     return _AuditorNotification(
       id: auditorInt(map['id']),
-      title: auditorString(data['title'] ?? data['type'], fallback: 'Notification'),
-      body: auditorString(data['body'], fallback: 'No body content.'),
-      createdAt: auditorString(map['created_at'], fallback: 'Now'),
+      title: auditorString(
+        data['title'] ?? data['type'],
+        fallback: auditorText('notification_inbox', localeNotifier.value.languageCode),
+      ),
+      body: auditorString(data['body'], fallback: auditorText('empty', localeNotifier.value.languageCode)),
+      createdAt: auditorFormatDateTime(map['created_at']).isNotEmpty
+          ? auditorFormatDateTime(map['created_at'])
+          : auditorString(map['created_at'], fallback: 'Now'),
       readAt: auditorString(map['read_at']),
     );
   }

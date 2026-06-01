@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app.dart';
+import '../../../core/session/session_store.dart';
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/toast/afaq_toast.dart';
 import '../../../core/widgets/afaq_panel.dart';
@@ -28,10 +29,28 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
   List<_InstructorQuiz> _quizzes = const [];
   List<_QuizAttempt> _attempts = const [];
   _InstructorQuiz? _expandedQuiz;
+  late String _lastLocaleCode;
+
+  int get _currentInstructorId => SessionStore.instance.userId ?? 0;
 
   @override
   void initState() {
     super.initState();
+    _lastLocaleCode = localeNotifier.value.languageCode;
+    localeNotifier.addListener(_handleLocaleChanged);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    localeNotifier.removeListener(_handleLocaleChanged);
+    super.dispose();
+  }
+
+  void _handleLocaleChanged() {
+    final nextLocale = localeNotifier.value.languageCode;
+    if (nextLocale == _lastLocaleCode) return;
+    _lastLocaleCode = nextLocale;
     _load();
   }
 
@@ -44,7 +63,7 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
     try {
       final results = await Future.wait([
         _coursesService.getMyCourses(),
-        _quizService.listQuizzes(),
+        _quizService.listQuizzes(instructorId: _currentInstructorId),
         _gradingService.getAttempts(),
       ]);
 
@@ -78,8 +97,13 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
   }
 
   Future<void> _openCreateQuiz() async {
+    final lang = localeNotifier.value.languageCode;
     if (_courses.isEmpty) {
-      AfaqToast.show(context, message: 'Create a course first.', type: AfaqToastType.warning);
+      AfaqToast.show(
+        context,
+        message: instructorText('create_course_first', lang),
+        type: AfaqToastType.warning,
+      );
       return;
     }
 
@@ -93,7 +117,7 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
             return AlertDialog(
-              title: const Text('Create Quiz'),
+              title: Text(instructorText('create_quiz_title', lang)),
               content: SizedBox(
                 width: 420,
                 child: Column(
@@ -116,13 +140,17 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: titleController,
-                      decoration: const InputDecoration(labelText: 'Title'),
+                      decoration: InputDecoration(
+                        labelText: instructorText('title_label', lang),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: descriptionController,
                       maxLines: 3,
-                      decoration: const InputDecoration(labelText: 'Description'),
+                      decoration: InputDecoration(
+                        labelText: instructorText('description_label', lang),
+                      ),
                     ),
                   ],
                 ),
@@ -130,11 +158,11 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancel'),
+                  child: Text(instructorText('cancel', lang)),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('Create'),
+                  child: Text(instructorText('create', lang)),
                 ),
               ],
             );
@@ -169,7 +197,11 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
       });
       await _load();
       if (!mounted) return;
-      AfaqToast.show(context, message: 'Quiz created.', type: AfaqToastType.success);
+      AfaqToast.show(
+        context,
+        message: instructorText('quiz_created', lang),
+        type: AfaqToastType.success,
+      );
     } catch (error) {
       if (!mounted) return;
       AfaqToast.show(context, message: error.toString(), type: AfaqToastType.error);
@@ -179,6 +211,7 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
   }
 
   Future<void> _openAddQuestion(_InstructorQuiz quiz) async {
+    final lang = localeNotifier.value.languageCode;
     final promptController = TextEditingController();
     final optionAController = TextEditingController();
     final optionBController = TextEditingController();
@@ -187,7 +220,7 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Add Question'),
+          title: Text(instructorText('add_question_title', lang)),
           content: SizedBox(
             width: 460,
             child: Column(
@@ -196,17 +229,23 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                 TextField(
                   controller: promptController,
                   maxLines: 3,
-                  decoration: const InputDecoration(labelText: 'Question'),
+                  decoration: InputDecoration(
+                    labelText: instructorText('question_label', lang),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: optionAController,
-                  decoration: const InputDecoration(labelText: 'Correct option'),
+                  decoration: InputDecoration(
+                    labelText: instructorText('correct_option', lang),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: optionBController,
-                  decoration: const InputDecoration(labelText: 'Another option'),
+                  decoration: InputDecoration(
+                    labelText: instructorText('another_option', lang),
+                  ),
                 ),
               ],
             ),
@@ -214,11 +253,11 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              child: Text(instructorText('cancel', lang)),
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Save'),
+              child: Text(instructorText('save', lang)),
             ),
           ],
         );
@@ -258,7 +297,11 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
       });
       await _load();
       if (!mounted) return;
-      AfaqToast.show(context, message: 'Question created.', type: AfaqToastType.success);
+      AfaqToast.show(
+        context,
+        message: instructorText('question_created', lang),
+        type: AfaqToastType.success,
+      );
     } catch (error) {
       if (!mounted) return;
       AfaqToast.show(context, message: error.toString(), type: AfaqToastType.error);
@@ -298,7 +341,7 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
                 : const Icon(Icons.add),
-            label: const Text('Create Quiz'),
+            label: Text(instructorText('create_quiz', lang)),
           ),
           const SizedBox(height: 20),
           if (_loading)
@@ -321,8 +364,8 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                     .where((item) => item.id == quiz.courseId)
                     .map((item) => item.title)
                     .cast<String?>()
-                    .firstWhere((item) => item != null, orElse: () => 'Course')
-                    ?? 'Course';
+                    .firstWhere((item) => item != null, orElse: () => instructorText('course', lang))
+                    ?? instructorText('course', lang);
 
                 return AfaqPanel(
                   child: Column(
@@ -359,10 +402,24 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: [
-                          _QuizMetaChip(label: quiz.status),
-                          _QuizMetaChip(label: '${quiz.questions.length} questions'),
-                          _QuizMetaChip(label: '${attempts.length} attempts'),
+                    children: [
+                          _QuizMetaChip(
+                            label: instructorStatusText(quiz.status, lang),
+                          ),
+                          _QuizMetaChip(
+                            label: instructorFormatText(
+                              'questions_count',
+                              lang,
+                              values: {'count': '${quiz.questions.length}'},
+                            ),
+                          ),
+                          _QuizMetaChip(
+                            label: instructorFormatText(
+                              'attempts_count',
+                              lang,
+                              values: {'count': '${attempts.length}'},
+                            ),
+                          ),
                         ],
                       ),
                       if (expanded) ...[
@@ -379,18 +436,18 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                             FilledButton.icon(
                               onPressed: () => _openAddQuestion(quiz),
                               icon: const Icon(Icons.add_task_outlined),
-                              label: const Text('Add Question'),
+                              label: Text(instructorText('add_question', lang)),
                             ),
                             OutlinedButton.icon(
                               onPressed: () => _deleteQuiz(quiz),
                               icon: const Icon(Icons.delete_outline),
-                              label: const Text('Delete Quiz'),
+                              label: Text(instructorText('delete_quiz', lang)),
                             ),
                           ],
                         ),
                         const SizedBox(height: 16),
                         if (quiz.questions.isEmpty)
-                          const Text('No questions yet.')
+                          Text(instructorText('no_questions', lang))
                         else
                           for (final question in quiz.questions)
                             Container(
@@ -404,14 +461,14 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                             ),
                         const SizedBox(height: 16),
                         Text(
-                          'Attempts',
+                          instructorText('attempts_title', lang),
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                         const SizedBox(height: 10),
                         if (attempts.isEmpty)
-                          const Text('No attempts yet.')
+                          Text(instructorText('no_attempts', lang))
                         else
                           for (final attempt in attempts.take(8))
                             Container(
@@ -430,7 +487,14 @@ class _InstructorQuizzesPageState extends State<InstructorQuizzesPage> {
                                         Text(attempt.studentName),
                                         const SizedBox(height: 4),
                                         Text(
-                                          '${attempt.status} - score ${attempt.scoreLabel}',
+                                          instructorFormatText(
+                                            'score_status',
+                                            lang,
+                                            values: {
+                                              'status': attempt.status,
+                                              'score': attempt.scoreLabel,
+                                            },
+                                          ),
                                           style: const TextStyle(color: AfaqColors.slate500),
                                         ),
                                       ],
@@ -458,12 +522,16 @@ class _QuizCourse {
   final String title;
 
   factory _QuizCourse.fromMap(Map<String, dynamic> map) {
+    final lang = localeNotifier.value.languageCode;
     return _QuizCourse(
       id: instructorInt(map['id']),
       title: instructorLocalized(
         map['title_translations'],
-        localeNotifier.value.languageCode,
-        fallback: instructorString(map['title'], fallback: 'Course'),
+        lang,
+        fallback: instructorString(
+          map['title'],
+          fallback: instructorText('course', lang),
+        ),
       ),
     );
   }
@@ -487,18 +555,25 @@ class _InstructorQuiz {
   final List<_InstructorQuestion> questions;
 
   factory _InstructorQuiz.fromMap(Map<String, dynamic> map) {
+    final lang = localeNotifier.value.languageCode;
     return _InstructorQuiz(
       id: instructorInt(map['quiz_id'] ?? map['id']),
       courseId: instructorInt(map['course_id'] ?? map['quizable_id']),
       title: instructorLocalized(
         map['title'],
-        localeNotifier.value.languageCode,
-        fallback: instructorString(map['title'], fallback: 'Untitled Quiz'),
+        lang,
+        fallback: instructorString(
+          map['title'],
+          fallback: instructorText('untitled_quiz', lang),
+        ),
       ),
       description: instructorLocalized(
         map['description'],
-        localeNotifier.value.languageCode,
-        fallback: instructorString(map['description'], fallback: 'No description'),
+        lang,
+        fallback: instructorString(
+          map['description'],
+          fallback: instructorText('no_description', lang),
+        ),
       ),
       status: instructorString(map['status'], fallback: 'draft'),
       questions: instructorList(map['questions'])
@@ -515,12 +590,16 @@ class _InstructorQuestion {
   final String text;
 
   factory _InstructorQuestion.fromMap(Map<String, dynamic> map) {
+    final lang = localeNotifier.value.languageCode;
     return _InstructorQuestion(
       id: instructorInt(map['id']),
       text: instructorLocalized(
         map['question_text'] ?? map['text'],
-        localeNotifier.value.languageCode,
-        fallback: instructorString(map['question_text'] ?? map['text'], fallback: 'Question'),
+        lang,
+        fallback: instructorString(
+          map['question_text'] ?? map['text'],
+          fallback: instructorText('question_label', lang),
+        ),
       ),
     );
   }
@@ -543,13 +622,14 @@ class _QuizAttempt {
 
   factory _QuizAttempt.fromMap(Map<String, dynamic> map) {
     final student = instructorMap(map['student']);
+    final lang = localeNotifier.value.languageCode;
     return _QuizAttempt(
       id: instructorInt(map['id']),
       quizId: instructorInt(map['quiz_id']),
       status: instructorString(map['status'], fallback: 'unknown'),
       studentName: instructorString(
         student?['name'] ?? map['student_name'],
-        fallback: 'Student',
+        fallback: instructorText('student', lang),
       ),
       scoreLabel: instructorString(map['score'], fallback: '--'),
     );

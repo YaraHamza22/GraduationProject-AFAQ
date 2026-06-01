@@ -44,8 +44,8 @@ class AuditorWorkspaceService {
       profileService.getProfile(),
       coursesService.getCategories(),
       coursesService.getCourses(status: status, perPage: perPage),
-      quizService.getQuizzes(),
-      quizService.getQuestions(),
+      quizService.getQuizzes(perPage: 8, page: 1),
+      quizService.getQuestions(perPage: 12, page: 1),
       notificationService.getNotifications(unreadOnly: true),
     ]);
 

@@ -25,6 +25,7 @@ class AfaqBottomDock extends StatelessWidget {
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final isAuditor = role == AfaqRole.auditor;
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
 
     final primaryColor = isAuditor
         ? (dark ? Colors.white : AfaqColors.slate950)
@@ -47,6 +48,9 @@ class AfaqBottomDock extends StatelessWidget {
       activeIndex = displayItems.length; // The last slot is the "More" button
     } else {
       activeIndex = displayItems.indexWhere((item) => item.id == activeId);
+    }
+    if (isRtl && activeIndex >= 0) {
+      activeIndex = totalVisualSlots(useMore, displayItems.length) - 1 - activeIndex;
     }
 
     final double dockHeight = 72.0;
@@ -175,6 +179,8 @@ class AfaqBottomDock extends StatelessWidget {
       ),
     );
   }
+
+  int totalVisualSlots(bool useMore, int displayCount) => useMore ? 5 : displayCount;
 }
 
 class _BottomDockTile extends StatefulWidget {

@@ -2,7 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../app/app.dart';
 
-Options instructorLocaleOptions({String? locale}) {
+Options auditorLocaleOptions({String? locale}) {
   final effectiveLocale = locale != null && locale.trim().isNotEmpty
       ? locale
       : localeNotifier.value.languageCode;

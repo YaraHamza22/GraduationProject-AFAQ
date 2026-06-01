@@ -182,4 +182,14 @@ class ApiEndpoints {
   static String auditorContentReview(int courseId) {
     return '/auditor/courses/$courseId/content-reviews';
   }
+
+  static const auditorCourses = '/auditor/courses';
+
+  static String auditorCourse(String courseKey) {
+    return '/auditor/courses/$courseKey';
+  }
+
+  static String auditorCourseUnits(String courseKey) {
+    return '/auditor/courses/$courseKey/units';
+  }
 }

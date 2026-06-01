@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/app.dart';
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/widgets/afaq_panel.dart';
 import '../data/auditor_workspace_service.dart';
@@ -49,10 +50,12 @@ class _AuditorDashboardPageState extends State<AuditorDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
     final data = _data;
+
     return AuditorPageScaffold(
-      title: 'Auditor Command',
-      subtitle: 'Review courses, quizzes, notifications, and profile data from API.',
+      title: auditorText('dashboard', lang),
+      subtitle: auditorText('dashboard_subtitle', lang),
       onRefresh: _load,
       child: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -60,6 +63,8 @@ class _AuditorDashboardPageState extends State<AuditorDashboardPage> {
               ? AuditorErrorPanel(message: _error!, onRetry: _load)
               : Column(
                   children: [
+                    _AuditHero(data: data),
+                    const SizedBox(height: 18),
                     GridView.count(
                       crossAxisCount: MediaQuery.sizeOf(context).width >= 1100
                           ? 4
@@ -70,53 +75,55 @@ class _AuditorDashboardPageState extends State<AuditorDashboardPage> {
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisSpacing: 16,
                       mainAxisSpacing: 16,
-                      childAspectRatio: MediaQuery.sizeOf(context).width >= 1100 ? 1.3 : 2.1,
+                      childAspectRatio: MediaQuery.sizeOf(context).width >= 1100
+                          ? 1.28
+                          : 2.0,
                       children: [
                         _MetricCard(
-                          label: 'Review Courses',
+                          label: auditorText('review_courses', lang),
                           value: '${data?.courses.length ?? 0}',
-                          icon: Icons.book_outlined,
-                          color: AfaqColors.primary,
+                          icon: Icons.fact_check_outlined,
+                          color: const Color(0xFF2563EB),
                         ),
                         _MetricCard(
-                          label: 'Categories',
+                          label: auditorText('categories', lang),
                           value: '${data?.categoriesCount ?? 0}',
                           icon: Icons.layers_outlined,
-                          color: AfaqColors.emerald500,
+                          color: const Color(0xFF059669),
                         ),
                         _MetricCard(
-                          label: 'Quizzes',
+                          label: auditorText('quizzes_count', lang),
                           value: '${data?.quizzesCount ?? 0}',
-                          icon: Icons.quiz_outlined,
-                          color: AfaqColors.fuchsia500,
+                          icon: Icons.rule_folder_outlined,
+                          color: const Color(0xFFD946EF),
                         ),
                         _MetricCard(
-                          label: 'Unread',
+                          label: auditorText('notifications_count', lang),
                           value: '${data?.notificationsCount ?? 0}',
-                          icon: Icons.notifications_none,
-                          color: AfaqColors.amber500,
+                          icon: Icons.notifications_active_outlined,
+                          color: const Color(0xFFF59E0B),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 18),
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final stacked = constraints.maxWidth < 980;
                         if (stacked) {
                           return Column(
                             children: [
-                              _SelectedCoursePanel(data: data),
+                              _PriorityPanel(data: data),
                               const SizedBox(height: 16),
-                              _QuickPanels(data: data),
+                              _QuickQueuePanel(data: data),
                             ],
                           );
                         }
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(flex: 3, child: _SelectedCoursePanel(data: data)),
+                            Expanded(flex: 3, child: _PriorityPanel(data: data)),
                             const SizedBox(width: 16),
-                            Expanded(flex: 2, child: _QuickPanels(data: data)),
+                            Expanded(flex: 2, child: _QuickQueuePanel(data: data)),
                           ],
                         );
                       },
@@ -146,7 +153,10 @@ class _AuditorDashboardData {
     final profile = unwrapAuditorMap(data.profile.data);
     final user = auditorMap(profile['user']) ?? profile;
     return _AuditorDashboardData(
-      auditorName: auditorString(user['name'], fallback: 'Auditor'),
+      auditorName: auditorString(
+        user['name'],
+        fallback: auditorText('auditor', localeNotifier.value.languageCode),
+      ),
       courses: unwrapAuditorList(data.courses.data)
           .map(_DashboardCourse.fromMap)
           .toList(growable: false),
@@ -171,11 +181,73 @@ class _DashboardCourse {
   final String description;
 
   factory _DashboardCourse.fromMap(Map<String, dynamic> map) {
+    final lang = localeNotifier.value.languageCode;
     return _DashboardCourse(
       id: auditorInt(map['id']),
-      title: auditorTextOf(map['title'], fallback: 'Course'),
+      title: auditorTextOf(
+        map['title_translations'] ?? map['title'],
+        fallback: auditorText('course_label', lang),
+      ),
       status: auditorStatus(map['status']),
-      description: auditorString(map['description'], fallback: 'No description available.'),
+      description: auditorTextOf(
+        map['description_translations'] ?? map['description'],
+        fallback: auditorText('queue_empty_hint', lang),
+      ),
+    );
+  }
+}
+
+class _AuditHero extends StatelessWidget {
+  const _AuditHero({required this.data});
+
+  final _AuditorDashboardData? data;
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
+    return AfaqPanel(
+      child: Row(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: const Color(0xFFDBEAFE),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const Icon(
+              Icons.shield_outlined,
+              color: Color(0xFF1D4ED8),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  auditorText('workspace', lang),
+                  style: const TextStyle(
+                    color: AfaqColors.slate500,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  auditorFormatText(
+                    'signed_in_as',
+                    lang,
+                    values: {'name': data?.auditorName ?? auditorText('auditor', lang)},
+                  ),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -197,17 +269,18 @@ class _MetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final labelColor = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
-    final valueColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final valueColor =
+        isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
 
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 46,
+            height: 46,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: .12),
+              color: color.withValues(alpha: .14),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: color),
@@ -224,9 +297,9 @@ class _MetricCard extends StatelessWidget {
           Text(
             value,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: valueColor,
-            ),
+                  fontWeight: FontWeight.w900,
+                  color: valueColor,
+                ),
           ),
         ],
       ),
@@ -234,51 +307,56 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _SelectedCoursePanel extends StatelessWidget {
-  const _SelectedCoursePanel({required this.data});
+class _PriorityPanel extends StatelessWidget {
+  const _PriorityPanel({required this.data});
 
   final _AuditorDashboardData? data;
 
   @override
   Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final titleColor =
+        isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
     final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
-
     final course = data?.courses.isNotEmpty == true ? data!.courses.first : null;
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Priority Review',
+            auditorText('priority_review', lang),
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: titleColor,
-            ),
+                  fontWeight: FontWeight.w900,
+                  color: titleColor,
+                ),
           ),
           const SizedBox(height: 16),
           if (course == null)
             Text(
-              'No courses currently waiting for review.',
+              auditorText('queue_empty_hint', lang),
               style: TextStyle(color: secondary),
             )
           else ...[
             Text(
               course.title,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: titleColor,
-              ),
+                    fontWeight: FontWeight.w900,
+                    color: titleColor,
+                  ),
             ),
-            const SizedBox(height: 8),
-            Text(course.description, style: TextStyle(color: secondary)),
+            const SizedBox(height: 10),
+            Text(
+              course.description,
+              style: TextStyle(color: secondary, height: 1.4),
+            ),
             const SizedBox(height: 16),
             AuditorStatusChip(
               label: course.status,
               tone: course.status.toLowerCase().contains('review')
                   ? AuditorStatusTone.warn
-                  : AuditorStatusTone.neutral,
+                  : AuditorStatusTone.info,
             ),
           ],
         ],
@@ -287,77 +365,67 @@ class _SelectedCoursePanel extends StatelessWidget {
   }
 }
 
-class _QuickPanels extends StatelessWidget {
-  const _QuickPanels({required this.data});
+class _QuickQueuePanel extends StatelessWidget {
+  const _QuickQueuePanel({required this.data});
 
   final _AuditorDashboardData? data;
 
   @override
   Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final titleColor =
+        isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
     final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
 
-    return Column(
-      children: [
-        AfaqPanel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Workspace',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+    return AfaqPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            auditorText('queue', lang),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w900,
                   color: titleColor,
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Signed in as ${data?.auditorName ?? 'Auditor'}',
-                style: TextStyle(color: secondary),
-              ),
-            ],
           ),
-        ),
-        const SizedBox(height: 16),
-        AfaqPanel(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Recent Queue',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: titleColor,
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (data?.courses.isEmpty ?? true)
-                Text(
-                  'No queued courses.',
-                  style: TextStyle(color: secondary),
-                )
-              else
-                for (final course in data!.courses.take(4))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.article_outlined, color: AfaqColors.primary),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            course.title,
-                            style: TextStyle(color: titleColor),
+          const SizedBox(height: 14),
+          if (data?.courses.isEmpty ?? true)
+            Text(
+              auditorText('queue_empty_hint', lang),
+              style: TextStyle(color: secondary),
+            )
+          else
+            for (final course in data!.courses.take(4))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: .05)
+                        : AfaqColors.slate100.withValues(alpha: .6),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.article_outlined, color: AfaqColors.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          course.title,
+                          style: TextStyle(
+                            color: titleColor,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-            ],
-          ),
-        ),
-      ],
+                ),
+              ),
+        ],
+      ),
     );
   }
 }

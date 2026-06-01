@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/app.dart';
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/widgets/afaq_panel.dart';
 
@@ -29,6 +30,65 @@ String instructorText(String key, String lang) {
       'save': 'Save',
       'delete': 'Delete',
       'send': 'Send',
+      'workspace': 'Instructor Workspace',
+      'workspace_subtitle': 'Manage only the courses assigned to you.',
+      'courses_metric': 'Courses',
+      'units_metric': 'Units',
+      'lessons_metric': 'Lessons',
+      'assigned_courses_title': 'My Assigned Courses',
+      'assigned_courses_subtitle':
+          'Only courses created by you or explicitly assigned to you appear here.',
+      'no_instructor_courses': 'No instructor courses found.',
+      'selected_for_editing': 'Selected for editing',
+      'tap_to_manage': 'Tap to manage structure',
+      'builder_subtitle':
+          'Build units, expand lessons, and keep your course structure tight and clear.',
+      'status': 'Status',
+      'new_unit_hint': 'Create a new unit',
+      'add_unit': 'Add Unit',
+      'no_units': 'No units for this course yet.',
+      'new_lesson_hint': 'Create a new lesson in this unit',
+      'add_lesson': 'Add Lesson',
+      'lessons_in_unit': 'Lessons in {unit}',
+      'no_lessons': 'No lessons in this unit yet.',
+      'select_course_manage':
+          'Select one of your assigned courses to manage units and lessons.',
+      'unit_created': 'Unit created successfully.',
+      'unit_deleted': 'Unit deleted.',
+      'lesson_created': 'Lesson created successfully.',
+      'lesson_deleted': 'Lesson deleted.',
+      'untitled_course': 'Untitled Course',
+      'unit_fallback': 'Unit',
+      'lesson_fallback': 'Lesson',
+      'hours_short': '{count}h',
+      'units_short': '{count} units',
+      'draft': 'Draft',
+      'published': 'Published',
+      'lecture': 'Lecture',
+      'course': 'Course',
+      'questions_count': '{count} questions',
+      'attempts_count': '{count} attempts',
+      'create_quiz': 'Create Quiz',
+      'create_course_first': 'Create a course first.',
+      'create_quiz_title': 'Create Quiz',
+      'cancel': 'Cancel',
+      'title_label': 'Title',
+      'description_label': 'Description',
+      'quiz_created': 'Quiz created.',
+      'add_question_title': 'Add Question',
+      'question_label': 'Question',
+      'correct_option': 'Correct option',
+      'another_option': 'Another option',
+      'question_created': 'Question created.',
+      'add_question': 'Add Question',
+      'delete_quiz': 'Delete Quiz',
+      'no_questions': 'No questions yet.',
+      'attempts_title': 'Attempts',
+      'no_attempts': 'No attempts yet.',
+      'untitled_quiz': 'Untitled Quiz',
+      'no_description': 'No description',
+      'student': 'Student',
+      'score_status': '{status} - score {score}',
     },
     'ar': {
       'dashboard': 'لوحة المدرس',
@@ -54,10 +114,79 @@ String instructorText(String key, String lang) {
       'save': 'حفظ',
       'delete': 'حذف',
       'send': 'إرسال',
+      'workspace': 'مساحة المدرس',
+      'workspace_subtitle': 'اعرض فقط الدورات المنشأة بواسطتك أو المسندة إليك.',
+      'courses_metric': 'الدورات',
+      'units_metric': 'الوحدات',
+      'lessons_metric': 'الدروس',
+      'assigned_courses_title': 'الدورات المسندة إلي',
+      'assigned_courses_subtitle':
+          'تظهر هنا فقط الدورات التي أنشأتها أنت أو أُسنِدت إليك بشكل صريح.',
+      'no_instructor_courses': 'لا توجد دورات مسندة لهذا المدرس.',
+      'selected_for_editing': 'محددة للتحرير',
+      'tap_to_manage': 'اضغط لإدارة البنية',
+      'builder_subtitle': 'أنشئ الوحدات ووسع الدروس وحافظ على تنظيم الدورة بوضوح.',
+      'status': 'الحالة',
+      'new_unit_hint': 'أنشئ وحدة جديدة',
+      'add_unit': 'إضافة وحدة',
+      'no_units': 'لا توجد وحدات لهذه الدورة بعد.',
+      'new_lesson_hint': 'أنشئ درسًا جديدًا داخل هذه الوحدة',
+      'add_lesson': 'إضافة درس',
+      'lessons_in_unit': 'دروس {unit}',
+      'no_lessons': 'لا توجد دروس في هذه الوحدة بعد.',
+      'select_course_manage': 'اختر إحدى دوراتك المسندة لإدارة الوحدات والدروس.',
+      'unit_created': 'تم إنشاء الوحدة بنجاح.',
+      'unit_deleted': 'تم حذف الوحدة.',
+      'lesson_created': 'تم إنشاء الدرس بنجاح.',
+      'lesson_deleted': 'تم حذف الدرس.',
+      'untitled_course': 'دورة بدون عنوان',
+      'unit_fallback': 'وحدة',
+      'lesson_fallback': 'درس',
+      'hours_short': '{count}س',
+      'units_short': '{count} وحدات',
+      'draft': 'مسودة',
+      'published': 'منشور',
+      'lecture': 'محاضرة',
+      'course': 'الدورة',
+      'questions_count': '{count} أسئلة',
+      'attempts_count': '{count} محاولات',
+      'create_quiz': 'إنشاء اختبار',
+      'create_course_first': 'أنشئ دورة أولاً.',
+      'create_quiz_title': 'إنشاء اختبار',
+      'cancel': 'إلغاء',
+      'title_label': 'العنوان',
+      'description_label': 'الوصف',
+      'quiz_created': 'تم إنشاء الاختبار.',
+      'add_question_title': 'إضافة سؤال',
+      'question_label': 'السؤال',
+      'correct_option': 'الخيار الصحيح',
+      'another_option': 'خيار آخر',
+      'question_created': 'تم إنشاء السؤال.',
+      'add_question': 'إضافة سؤال',
+      'delete_quiz': 'حذف الاختبار',
+      'no_questions': 'لا توجد أسئلة بعد.',
+      'attempts_title': 'المحاولات',
+      'no_attempts': 'لا توجد محاولات بعد.',
+      'untitled_quiz': 'اختبار بدون عنوان',
+      'no_description': 'لا يوجد وصف',
+      'student': 'طالب',
+      'score_status': '{status} - الدرجة {score}',
     },
   };
 
   return translations[lang]?[key] ?? translations['en']![key] ?? key;
+}
+
+String instructorFormatText(
+  String key,
+  String lang, {
+  Map<String, String> values = const {},
+}) {
+  var text = instructorText(key, lang);
+  values.forEach((placeholder, value) {
+    text = text.replaceAll('{$placeholder}', value);
+  });
+  return text;
 }
 
 Map<String, dynamic>? instructorMap(dynamic value) {
@@ -70,7 +199,10 @@ Map<String, dynamic>? instructorMap(dynamic value) {
 
 List<Map<String, dynamic>> instructorList(dynamic value) {
   if (value is! List) return const [];
-  return value.map(instructorMap).whereType<Map<String, dynamic>>().toList(growable: false);
+  return value
+      .map(instructorMap)
+      .whereType<Map<String, dynamic>>()
+      .toList(growable: false);
 }
 
 Map<String, dynamic> unwrapInstructorMap(dynamic payload) {
@@ -132,6 +264,16 @@ String instructorLocalized(dynamic value, String lang, {String fallback = ''}) {
   return fallback;
 }
 
+String instructorStatusText(String status, String lang) {
+  final normalized = instructorString(status, fallback: 'draft').toLowerCase();
+  return instructorText(normalized, lang);
+}
+
+String instructorLessonTypeText(String type, String lang) {
+  final normalized = instructorString(type, fallback: 'lecture').toLowerCase();
+  return instructorText(normalized, lang);
+}
+
 class InstructorPageScaffold extends StatelessWidget {
   const InstructorPageScaffold({
     super.key,
@@ -150,8 +292,10 @@ class InstructorPageScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final titleColor =
+        isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
     final subtitleColor = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+    final lang = localeNotifier.value.languageCode;
 
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
@@ -173,9 +317,9 @@ class InstructorPageScaffold extends StatelessWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      color: titleColor,
-                    ),
+                          fontWeight: FontWeight.w900,
+                          color: titleColor,
+                        ),
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -191,7 +335,7 @@ class InstructorPageScaffold extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: () => onRefresh?.call(),
                   icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Refresh'),
+                  label: Text(instructorText('refresh', lang)),
                 ),
             ],
           ),
@@ -215,6 +359,7 @@ class InstructorErrorPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -222,15 +367,15 @@ class InstructorErrorPanel extends StatelessWidget {
           Text(
             message,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: AfaqColors.accent,
-            ),
+                  fontWeight: FontWeight.w800,
+                  color: AfaqColors.accent,
+                ),
           ),
           if (onRetry != null) ...[
             const SizedBox(height: 12),
             OutlinedButton(
               onPressed: () => onRetry?.call(),
-              child: const Text('Retry'),
+              child: Text(instructorText('retry', lang)),
             ),
           ],
         ],
