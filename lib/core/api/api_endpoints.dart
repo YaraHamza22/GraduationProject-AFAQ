@@ -192,4 +192,10 @@ class ApiEndpoints {
   static String auditorCourseUnits(String courseKey) {
     return '/auditor/courses/$courseKey/units';
   }
+
+  static const auditorQuizzes = '/auditor/quizzes';
+
+  static String auditorQuiz(int quizId) {
+    return '/auditor/quizzes/$quizId';
+  }
 }

@@ -6,6 +6,7 @@ import '../../../core/toast/afaq_toast.dart';
 import '../../../core/widgets/afaq_panel.dart';
 import '../data/auditor_content_review_service.dart';
 import '../data/auditor_courses_service.dart';
+import '../data/auditor_quiz_service.dart';
 import 'auditor_page_shared.dart';
 
 class AuditorCoursesPage extends StatefulWidget {
@@ -15,13 +16,18 @@ class AuditorCoursesPage extends StatefulWidget {
   State<AuditorCoursesPage> createState() => _AuditorCoursesPageState();
 }
 
+enum _ReviewTarget { course, unit, lesson, quiz }
+
 class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
   final _coursesService = const AuditorCoursesService();
   final _reviewService = const AuditorContentReviewService();
+  final _quizService = const AuditorQuizService();
   final _notesController = TextEditingController();
+  final _quizSearchController = TextEditingController();
 
   bool _loading = true;
   bool _detailsLoading = false;
+  bool _quizDetailsLoading = false;
   bool _submitting = false;
   String? _error;
   String _statusFilter = 'review';
@@ -31,12 +37,23 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
   int _reviewsTotalPages = 1;
   final int _coursesPerPage = 8;
   final int _reviewsPerPage = 6;
+  int _quizzesPage = 1;
+  int _quizzesTotalPages = 1;
+  int _questionsPage = 1;
+  final int _quizzesPerPage = 8;
+  final int _questionsPerPage = 8;
 
   List<_AuditorCourse> _courses = const [];
   List<_AuditorUnitBlock> _units = const [];
   List<_CourseReviewRecord> _reviews = const [];
+  List<_AuditorQuiz> _quizzes = const [];
+  List<_AuditorQuestion> _questions = const [];
   _AuditorCourse? _selectedCourse;
+  _AuditorUnitBlock? _selectedUnit;
   _AuditorLesson? _selectedLesson;
+  _AuditorQuiz? _selectedQuiz;
+  _AuditorQuestion? _selectedQuestion;
+  _ReviewTarget _reviewTarget = _ReviewTarget.course;
   AuditorReviewVerdict _verdict = AuditorReviewVerdict.changesRequested;
 
   @override
@@ -48,6 +65,7 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
   @override
   void dispose() {
     _notesController.dispose();
+    _quizSearchController.dispose();
     super.dispose();
   }
 
@@ -93,11 +111,13 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
         setState(() {
           _units = const [];
           _reviews = const [];
+          _selectedUnit = null;
           _selectedLesson = null;
           _reviewsPage = 1;
           _reviewsTotalPages = 1;
         });
       }
+      await _loadQuizzes(preserveSelection: preserveSelection);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -139,6 +159,7 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
       final reviewsPagination = auditorPaginationOf(results[1].data);
 
       _AuditorLesson? lesson;
+      _AuditorUnitBlock? unitSelection = units.isNotEmpty ? units.first : null;
       final allLessons = units.expand((unit) => unit.lessons);
       for (final item in allLessons) {
         if (item.id == previousLessonId) {
@@ -147,11 +168,21 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
         }
       }
       lesson ??= allLessons.isNotEmpty ? allLessons.first : null;
+      if (lesson != null) {
+        final lessonId = lesson.id;
+        for (final unit in units) {
+          if (unit.lessons.any((item) => item.id == lessonId)) {
+            unitSelection = unit;
+            break;
+          }
+        }
+      }
 
       if (!mounted) return;
       setState(() {
         _units = units;
         _reviews = reviewRows;
+        _selectedUnit = unitSelection;
         _selectedLesson = lesson;
         _reviewsTotalPages = auditorInt(
           reviewsPagination['total_pages'],
@@ -164,6 +195,7 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
       setState(() {
         _units = const [];
         _reviews = const [];
+        _selectedUnit = null;
         _selectedLesson = null;
         _detailsLoading = false;
         _error = error.toString();
@@ -207,16 +239,122 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
     }
   }
 
+  Future<void> _loadQuizzes({bool preserveSelection = false}) async {
+    final selectedQuizId = preserveSelection ? _selectedQuiz?.id : null;
+    final selectedQuestionId = preserveSelection ? _selectedQuestion?.id : null;
+
+    try {
+      final response = await _quizService.getQuizzes(
+        perPage: _quizzesPerPage,
+        page: _quizzesPage,
+      );
+      final quizzes = unwrapAuditorList(response.data)
+          .map(_AuditorQuiz.fromMap)
+          .toList(growable: false);
+      final pagination = auditorPaginationOf(response.data);
+
+      _AuditorQuiz? selectedQuiz = quizzes.isNotEmpty ? quizzes.first : null;
+      if (selectedQuizId != null) {
+        for (final quiz in quizzes) {
+          if (quiz.id == selectedQuizId) {
+            selectedQuiz = quiz;
+            break;
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _quizzes = quizzes;
+        _selectedQuiz = selectedQuiz;
+        _quizzesTotalPages =
+            auditorInt(pagination['total_pages'], fallback: 1).clamp(1, 9999);
+      });
+
+      if (selectedQuiz != null) {
+        await _loadQuizDetail(
+          selectedQuiz,
+          preferredQuestionId: selectedQuestionId,
+        );
+      } else if (mounted) {
+        setState(() {
+          _questions = const [];
+          _selectedQuestion = null;
+          _questionsPage = 1;
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
+    }
+  }
+
+  Future<void> _loadQuizDetail(
+    _AuditorQuiz quiz, {
+    int? preferredQuestionId,
+  }) async {
+    setState(() {
+      _selectedQuiz = quiz;
+      _quizDetailsLoading = true;
+      _questionsPage = 1;
+    });
+
+    try {
+      final response = await _quizService.getQuiz(quiz.id);
+      final payload = unwrapAuditorMap(response.data);
+      final detailedQuiz = _AuditorQuiz.fromMap(payload);
+      final questions = auditorList(payload['questions'])
+          .map(_AuditorQuestion.fromMap)
+          .toList(growable: false);
+
+      _AuditorQuestion? selectedQuestion =
+          questions.isNotEmpty ? questions.first : null;
+      if (preferredQuestionId != null) {
+        for (final question in questions) {
+          if (question.id == preferredQuestionId) {
+            selectedQuestion = question;
+            break;
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedQuiz = detailedQuiz;
+        _questions = questions;
+        _selectedQuestion = selectedQuestion;
+        _quizDetailsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _questions = const [];
+        _selectedQuestion = null;
+        _quizDetailsLoading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
   Future<void> _submitReview() async {
     final course = _selectedCourse;
     if (course == null || _submitting) return;
     final lang = localeNotifier.value.languageCode;
 
+    if (_reviewTarget == _ReviewTarget.unit || _reviewTarget == _ReviewTarget.quiz) {
+      AfaqToast.show(
+        context,
+        message: auditorText('unit_review_not_supported', lang),
+        type: AfaqToastType.error,
+      );
+      return;
+    }
+
     setState(() => _submitting = true);
     try {
       await _reviewService.submitLessonReview(
         courseId: course.id,
-        lessonId: _selectedLesson?.id,
+        lessonId: _reviewTarget == _ReviewTarget.lesson ? _selectedLesson?.id : null,
         verdict: _verdict,
         notes: _notesController.text.trim(),
       );
@@ -243,10 +381,35 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
   @override
   Widget build(BuildContext context) {
     final lang = localeNotifier.value.languageCode;
+    final query = _quizSearchController.text.trim().toLowerCase();
+    final filteredQuestions = query.isEmpty
+        ? _questions
+        : _questions
+            .where((question) => question.text.toLowerCase().contains(query))
+            .toList(growable: false);
+    final questionsTotalPages = filteredQuestions.isEmpty
+        ? 1
+        : ((filteredQuestions.length + _questionsPerPage - 1) ~/ _questionsPerPage);
+    final normalizedQuestionsPage = _questionsPage > questionsTotalPages
+        ? questionsTotalPages
+        : _questionsPage < 1
+            ? 1
+            : _questionsPage;
+    final questionStart = filteredQuestions.isEmpty
+        ? 0
+        : (normalizedQuestionsPage - 1) * _questionsPerPage;
+    final questionEnd = filteredQuestions.isEmpty
+        ? 0
+        : (questionStart + _questionsPerPage > filteredQuestions.length
+            ? filteredQuestions.length
+            : questionStart + _questionsPerPage);
+    final pagedQuestions = filteredQuestions.isEmpty
+        ? const <_AuditorQuestion>[]
+        : filteredQuestions.sublist(questionStart, questionEnd);
 
     return AuditorPageScaffold(
-      title: auditorText('courses', lang),
-      subtitle: auditorText('courses_subtitle', lang),
+      title: auditorText('review_screen', lang),
+      subtitle: auditorText('review_screen_subtitle', lang),
       onRefresh: () => _load(preserveSelection: true),
       child: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -262,6 +425,12 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
                         (sum, unit) => sum + unit.lessons.length,
                       ),
                       selectedCourse: _selectedCourse,
+                    ),
+                    const SizedBox(height: 18),
+                    _ReviewSectionHeader(
+                      title: auditorText('course_review_section', lang),
+                      subtitle: auditorText('courses_subtitle', lang),
+                      icon: Icons.fact_check_outlined,
                     ),
                     const SizedBox(height: 18),
                     LayoutBuilder(
@@ -301,7 +470,9 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
                               _ReviewWorkspacePanel(
                                 course: _selectedCourse,
                                 units: _units,
+                                selectedUnit: _selectedUnit,
                                 selectedLesson: _selectedLesson,
+                                reviewTarget: _reviewTarget,
                                 verdict: _verdict,
                                 notesController: _notesController,
                                 submitting: _submitting,
@@ -309,8 +480,40 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
                                 reviews: _reviews,
                                 reviewsPage: _reviewsPage,
                                 reviewsTotalPages: _reviewsTotalPages,
-                                onLessonSelected: (lesson) =>
-                                    setState(() => _selectedLesson = lesson),
+                                onUnitSelected: (unit) => setState(() {
+                                  _selectedUnit = unit;
+                                  if (_reviewTarget == _ReviewTarget.unit) {
+                                    _selectedLesson = null;
+                                  }
+                                }),
+                                onLessonSelected: (lesson) => setState(() {
+                                  _selectedLesson = lesson;
+                                  if (lesson != null) {
+                                    for (final unit in _units) {
+                                      if (unit.lessons.any((item) => item.id == lesson.id)) {
+                                        _selectedUnit = unit;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }),
+                                onReviewTargetChanged: (target) => setState(() {
+                                  _reviewTarget = target;
+                                  if (target == _ReviewTarget.course) {
+                                    _selectedLesson = null;
+                                  } else if (target == _ReviewTarget.lesson &&
+                                      _selectedLesson == null &&
+                                      _units.isNotEmpty &&
+                                      _units.first.lessons.isNotEmpty) {
+                                    _selectedUnit = _units.first;
+                                    _selectedLesson = _units.first.lessons.first;
+                                  } else if (target == _ReviewTarget.unit &&
+                                      _selectedUnit == null &&
+                                      _units.isNotEmpty) {
+                                    _selectedUnit = _units.first;
+                                    _selectedLesson = null;
+                                  }
+                                }),
                                 onVerdictSelected: (verdict) =>
                                     setState(() => _verdict = verdict),
                                 onSubmit: _submitReview,
@@ -364,7 +567,9 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
                               child: _ReviewWorkspacePanel(
                                 course: _selectedCourse,
                                 units: _units,
+                                selectedUnit: _selectedUnit,
                                 selectedLesson: _selectedLesson,
+                                reviewTarget: _reviewTarget,
                                 verdict: _verdict,
                                 notesController: _notesController,
                                 submitting: _submitting,
@@ -372,8 +577,40 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
                                 reviews: _reviews,
                                 reviewsPage: _reviewsPage,
                                 reviewsTotalPages: _reviewsTotalPages,
-                                onLessonSelected: (lesson) =>
-                                    setState(() => _selectedLesson = lesson),
+                                onUnitSelected: (unit) => setState(() {
+                                  _selectedUnit = unit;
+                                  if (_reviewTarget == _ReviewTarget.unit) {
+                                    _selectedLesson = null;
+                                  }
+                                }),
+                                onLessonSelected: (lesson) => setState(() {
+                                  _selectedLesson = lesson;
+                                  if (lesson != null) {
+                                    for (final unit in _units) {
+                                      if (unit.lessons.any((item) => item.id == lesson.id)) {
+                                        _selectedUnit = unit;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }),
+                                onReviewTargetChanged: (target) => setState(() {
+                                  _reviewTarget = target;
+                                  if (target == _ReviewTarget.course) {
+                                    _selectedLesson = null;
+                                  } else if (target == _ReviewTarget.lesson &&
+                                      _selectedLesson == null &&
+                                      _units.isNotEmpty &&
+                                      _units.first.lessons.isNotEmpty) {
+                                    _selectedUnit = _units.first;
+                                    _selectedLesson = _units.first.lessons.first;
+                                  } else if (target == _ReviewTarget.unit &&
+                                      _selectedUnit == null &&
+                                      _units.isNotEmpty) {
+                                    _selectedUnit = _units.first;
+                                    _selectedLesson = null;
+                                  }
+                                }),
                                 onVerdictSelected: (verdict) =>
                                     setState(() => _verdict = verdict),
                                 onSubmit: _submitReview,
@@ -385,6 +622,74 @@ class _AuditorCoursesPageState extends State<AuditorCoursesPage> {
                                     : null,
                               ),
                             ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 18),
+                    _ReviewSectionHeader(
+                      title: auditorText('quiz_review_section', lang),
+                      subtitle: auditorText('quiz_review_section_subtitle', lang),
+                      icon: Icons.rule_folder_outlined,
+                    ),
+                    const SizedBox(height: 18),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final stacked = constraints.maxWidth < 1000;
+                        final quizWorkspace = _QuestionWorkspace(
+                          controller: _quizSearchController,
+                          questions: pagedQuestions,
+                          selectedQuestion: _selectedQuestion,
+                          questionsPage: normalizedQuestionsPage,
+                          questionsTotalPages: questionsTotalPages,
+                          detailsLoading: _quizDetailsLoading,
+                          onSearchChanged: () =>
+                              setState(() => _questionsPage = 1),
+                          onQuestionSelected: (question) =>
+                              setState(() => _selectedQuestion = question),
+                          onPreviousPage: normalizedQuestionsPage > 1
+                              ? () => setState(() => _questionsPage -= 1)
+                              : null,
+                          onNextPage: normalizedQuestionsPage < questionsTotalPages
+                              ? () => setState(() => _questionsPage += 1)
+                              : null,
+                        );
+                        final quizRail = _QuizRail(
+                          quizzes: _quizzes,
+                          selectedQuiz: _selectedQuiz,
+                          currentPage: _quizzesPage,
+                          totalPages: _quizzesTotalPages,
+                          onSelect: (quiz) => _loadQuizDetail(quiz),
+                          onPreviousPage: _quizzesPage > 1
+                              ? () {
+                                  setState(() => _quizzesPage -= 1);
+                                  _loadQuizzes(preserveSelection: true);
+                                }
+                              : null,
+                          onNextPage: _quizzesPage < _quizzesTotalPages
+                              ? () {
+                                  setState(() => _quizzesPage += 1);
+                                  _loadQuizzes(preserveSelection: true);
+                                }
+                              : null,
+                        );
+
+                        if (stacked) {
+                          return Column(
+                            children: [
+                              quizRail,
+                              const SizedBox(height: 16),
+                              quizWorkspace,
+                            ],
+                          );
+                        }
+
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(flex: 2, child: quizRail),
+                            const SizedBox(width: 16),
+                            Expanded(flex: 3, child: quizWorkspace),
                           ],
                         );
                       },
@@ -514,6 +819,146 @@ class _CourseReviewRecord {
       auditorName: auditorString(
         auditor?['name'],
         fallback: auditorText('auditor', lang),
+      ),
+    );
+  }
+}
+
+class _AuditorQuiz {
+  const _AuditorQuiz({
+    required this.id,
+    required this.title,
+    required this.status,
+    required this.questionsCount,
+  });
+
+  final int id;
+  final String title;
+  final String status;
+  final int questionsCount;
+
+  factory _AuditorQuiz.fromMap(Map<String, dynamic> map) {
+    final lang = localeNotifier.value.languageCode;
+    return _AuditorQuiz(
+      id: auditorInt(map['id']),
+      title: auditorTextOf(
+        map['title'],
+        fallback: auditorText('quizzes', lang),
+      ),
+      status: auditorStatus(map['status']),
+      questionsCount: auditorInt(
+        map['questions_count'],
+        fallback: auditorList(map['questions']).length,
+      ),
+    );
+  }
+}
+
+class _AuditorQuestion {
+  const _AuditorQuestion({
+    required this.id,
+    required this.text,
+    required this.type,
+    required this.points,
+    required this.required,
+    required this.options,
+  });
+
+  final int id;
+  final String text;
+  final String type;
+  final int points;
+  final bool required;
+  final List<_QuestionOption> options;
+
+  factory _AuditorQuestion.fromMap(Map<String, dynamic> map) {
+    final lang = localeNotifier.value.languageCode;
+    return _AuditorQuestion(
+      id: auditorInt(map['id']),
+      text: auditorTextOf(
+        map['question_text'] ?? map['text'],
+        fallback: auditorText('select_question', lang),
+      ),
+      type: auditorStatus(map['type']),
+      points: auditorInt(map['point']),
+      required: auditorBool(map['is_required']),
+      options: auditorList(map['options'])
+          .map(_QuestionOption.fromMap)
+          .toList(growable: false),
+    );
+  }
+}
+
+class _QuestionOption {
+  const _QuestionOption({
+    required this.id,
+    required this.text,
+    required this.correct,
+  });
+
+  final int id;
+  final String text;
+  final bool correct;
+
+  factory _QuestionOption.fromMap(Map<String, dynamic> map) {
+    return _QuestionOption(
+      id: auditorInt(map['id']),
+      text: auditorTextOf(map['option_text'], fallback: 'Option'),
+      correct: auditorBool(map['is_correct']),
+    );
+  }
+}
+
+class _ReviewSectionHeader extends StatelessWidget {
+  const _ReviewSectionHeader({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AfaqPanel(
+      child: Row(
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: AfaqColors.primary.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: AfaqColors.primary),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: isDark ? AfaqColors.slate300 : AfaqColors.slate500,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -674,7 +1119,7 @@ class _CourseQueuePanel extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
-            value: statusFilter,
+            initialValue: statusFilter,
             items: List.generate(
               values.length,
               (index) => DropdownMenuItem<String>(
@@ -749,7 +1194,9 @@ class _ReviewWorkspacePanel extends StatelessWidget {
   const _ReviewWorkspacePanel({
     required this.course,
     required this.units,
+    required this.selectedUnit,
     required this.selectedLesson,
+    required this.reviewTarget,
     required this.verdict,
     required this.notesController,
     required this.submitting,
@@ -757,7 +1204,9 @@ class _ReviewWorkspacePanel extends StatelessWidget {
     required this.reviews,
     required this.reviewsPage,
     required this.reviewsTotalPages,
+    required this.onUnitSelected,
     required this.onLessonSelected,
+    required this.onReviewTargetChanged,
     required this.onVerdictSelected,
     required this.onSubmit,
     required this.onPreviousReviews,
@@ -766,7 +1215,9 @@ class _ReviewWorkspacePanel extends StatelessWidget {
 
   final _AuditorCourse? course;
   final List<_AuditorUnitBlock> units;
+  final _AuditorUnitBlock? selectedUnit;
   final _AuditorLesson? selectedLesson;
+  final _ReviewTarget reviewTarget;
   final AuditorReviewVerdict verdict;
   final TextEditingController notesController;
   final bool submitting;
@@ -774,7 +1225,9 @@ class _ReviewWorkspacePanel extends StatelessWidget {
   final List<_CourseReviewRecord> reviews;
   final int reviewsPage;
   final int reviewsTotalPages;
+  final ValueChanged<_AuditorUnitBlock> onUnitSelected;
   final ValueChanged<_AuditorLesson?> onLessonSelected;
+  final ValueChanged<_ReviewTarget> onReviewTargetChanged;
   final ValueChanged<AuditorReviewVerdict> onVerdictSelected;
   final Future<void> Function() onSubmit;
   final VoidCallback? onPreviousReviews;
@@ -833,60 +1286,115 @@ class _ReviewWorkspacePanel extends StatelessWidget {
             for (final unit in units)
               Padding(
                 padding: const EdgeInsets.only(bottom: 14),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: .05)
-                        : AfaqColors.slate100.withValues(alpha: .5),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        unit.title,
-                        style: TextStyle(
-                          color: titleColor,
-                          fontWeight: FontWeight.w800,
-                        ),
+                child: InkWell(
+                  onTap: () => onUnitSelected(unit),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: selectedUnit?.id == unit.id
+                          ? AfaqColors.primary.withValues(alpha: .08)
+                          : isDark
+                              ? Colors.white.withValues(alpha: .05)
+                              : AfaqColors.slate100.withValues(alpha: .5),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: selectedUnit?.id == unit.id
+                            ? AfaqColors.primary.withValues(alpha: .24)
+                            : Colors.transparent,
                       ),
-                      const SizedBox(height: 10),
-                      for (final lesson in unit.lessons)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: InkWell(
-                            onTap: () => onLessonSelected(lesson),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: selectedLesson?.id == lesson.id
-                                    ? AfaqColors.primary.withValues(alpha: .10)
-                                    : lessonSurface,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          unit.title,
+                          style: TextStyle(
+                            color: titleColor,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        for (final lesson in unit.lessons)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: InkWell(
+                              onTap: () => onLessonSelected(lesson),
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
                                   color: selectedLesson?.id == lesson.id
-                                      ? AfaqColors.primary.withValues(alpha: .28)
-                                      : Colors.transparent,
+                                      ? AfaqColors.primary.withValues(alpha: .10)
+                                      : lessonSurface,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: selectedLesson?.id == lesson.id
+                                        ? AfaqColors.primary.withValues(alpha: .28)
+                                        : Colors.transparent,
+                                  ),
                                 ),
-                              ),
-                              child: Text(
-                                lesson.title,
-                                style: TextStyle(
-                                  color: titleColor,
-                                  fontWeight: FontWeight.w700,
+                                child: Text(
+                                  lesson.title,
+                                  style: TextStyle(
+                                    color: titleColor,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
           const SizedBox(height: 10),
+          Text(
+            auditorText('review_target', lang),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: titleColor,
+                ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<_ReviewTarget>(
+            initialValue: reviewTarget,
+            items: [
+              DropdownMenuItem<_ReviewTarget>(
+                value: _ReviewTarget.course,
+                child: Text(auditorText('all_course_review', lang)),
+              ),
+              DropdownMenuItem<_ReviewTarget>(
+                value: _ReviewTarget.unit,
+                child: Text(auditorText('whole_unit_review', lang)),
+              ),
+              DropdownMenuItem<_ReviewTarget>(
+                value: _ReviewTarget.lesson,
+                child: Text(auditorText('whole_lesson_review', lang)),
+              ),
+              DropdownMenuItem<_ReviewTarget>(
+                value: _ReviewTarget.quiz,
+                child: Text(auditorText('whole_quiz_review', lang)),
+              ),
+            ],
+            onChanged: (value) {
+              if (value != null) onReviewTargetChanged(value);
+            },
+          ),
+          const SizedBox(height: 10),
+          Text(
+            reviewTarget == _ReviewTarget.unit || reviewTarget == _ReviewTarget.quiz
+                ? auditorText('unit_review_not_supported', lang)
+                : auditorText('backend_review_scope_note', lang),
+            style: TextStyle(
+              color: secondary,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
           Text(
             auditorText('review_scope', lang),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -918,7 +1426,7 @@ class _ReviewWorkspacePanel extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<int>(
-            value: selectedLesson?.id ?? 0,
+            initialValue: selectedLesson?.id ?? 0,
             hint: Text(auditorText('all_course_review', lang)),
             items: [
               DropdownMenuItem<int>(
@@ -971,15 +1479,17 @@ class _ReviewWorkspacePanel extends StatelessWidget {
             label: Text(auditorText('send_review', lang)),
           ),
           const SizedBox(height: 24),
-          Row(
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Text(
-                  auditorText('history', lang),
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                ),
+              Text(
+                auditorText('history', lang),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
               ),
               AuditorPaginationBar(
                 currentPage: reviewsPage,
@@ -1023,15 +1533,16 @@ class _ReviewWorkspacePanel extends StatelessWidget {
                                     ? AuditorStatusTone.warn
                                     : AuditorStatusTone.info,
                           ),
-                          if (review.lessonId != 0)
-                            AuditorStatusChip(
-                              label: auditorFormatText(
-                                'lesson_label',
-                                lang,
-                                values: {'id': '${review.lessonId}'},
-                              ),
-                              tone: AuditorStatusTone.neutral,
-                            ),
+                          AuditorStatusChip(
+                            label: review.lessonId == 0
+                                ? auditorText('all_course_review', lang)
+                                : auditorFormatText(
+                                    'lesson_label',
+                                    lang,
+                                    values: {'id': '${review.lessonId}'},
+                                  ),
+                            tone: AuditorStatusTone.neutral,
+                          ),
                         ],
                       ),
                       const SizedBox(height: 10),
@@ -1075,6 +1586,335 @@ class _VerdictButton extends StatelessWidget {
         backgroundColor: selected ? AfaqColors.primary.withValues(alpha: .10) : null,
       ),
       child: Text(label),
+    );
+  }
+}
+
+class _QuizRail extends StatelessWidget {
+  const _QuizRail({
+    required this.quizzes,
+    required this.selectedQuiz,
+    required this.currentPage,
+    required this.totalPages,
+    required this.onSelect,
+    required this.onPreviousPage,
+    required this.onNextPage,
+  });
+
+  final List<_AuditorQuiz> quizzes;
+  final _AuditorQuiz? selectedQuiz;
+  final int currentPage;
+  final int totalPages;
+  final ValueChanged<_AuditorQuiz> onSelect;
+  final VoidCallback? onPreviousPage;
+  final VoidCallback? onNextPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
+    return AfaqPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            auditorText('quizzes', lang),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+          ),
+          const SizedBox(height: 16),
+          if (quizzes.isEmpty)
+            AuditorEmptyPanel(
+              message: auditorText('empty', lang),
+              icon: Icons.rule_folder_outlined,
+            )
+          else
+            for (final quiz in quizzes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: InkWell(
+                  onTap: () => onSelect(quiz),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: selectedQuiz?.id == quiz.id
+                          ? const Color(0xFF111827)
+                          : AfaqColors.slate100.withValues(alpha: .55),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          quiz.title,
+                          style: TextStyle(
+                            color: selectedQuiz?.id == quiz.id
+                                ? Colors.white
+                                : AfaqColors.foregroundLight,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            AuditorStatusChip(
+                              label: quiz.status,
+                              tone: AuditorStatusTone.hot,
+                            ),
+                            AuditorStatusChip(
+                              label: auditorFormatText(
+                                'question_count',
+                                lang,
+                                values: {'count': '${quiz.questionsCount}'},
+                              ),
+                              tone: AuditorStatusTone.info,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          const SizedBox(height: 8),
+          AuditorPaginationBar(
+            currentPage: currentPage,
+            totalPages: totalPages,
+            onPrevious: onPreviousPage,
+            onNext: onNextPage,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuestionWorkspace extends StatelessWidget {
+  const _QuestionWorkspace({
+    required this.controller,
+    required this.questions,
+    required this.selectedQuestion,
+    required this.questionsPage,
+    required this.questionsTotalPages,
+    required this.detailsLoading,
+    required this.onSearchChanged,
+    required this.onQuestionSelected,
+    required this.onPreviousPage,
+    required this.onNextPage,
+  });
+
+  final TextEditingController controller;
+  final List<_AuditorQuestion> questions;
+  final _AuditorQuestion? selectedQuestion;
+  final int questionsPage;
+  final int questionsTotalPages;
+  final bool detailsLoading;
+  final VoidCallback onSearchChanged;
+  final ValueChanged<_AuditorQuestion> onQuestionSelected;
+  final VoidCallback? onPreviousPage;
+  final VoidCallback? onNextPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
+    return AfaqPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              hintText: auditorText('search_questions', lang),
+              prefixIcon: const Icon(Icons.search),
+            ),
+            onChanged: (_) => onSearchChanged(),
+          ),
+          const SizedBox(height: 16),
+          if (detailsLoading) const LinearProgressIndicator(),
+          if (detailsLoading) const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 760;
+              if (stacked) {
+                return Column(
+                  children: [
+                    _QuestionsList(
+                      questions: questions,
+                      selectedQuestion: selectedQuestion,
+                      onQuestionSelected: onQuestionSelected,
+                    ),
+                    const SizedBox(height: 16),
+                    _QuestionDetail(selectedQuestion: selectedQuestion),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _QuestionsList(
+                      questions: questions,
+                      selectedQuestion: selectedQuestion,
+                      onQuestionSelected: onQuestionSelected,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(child: _QuestionDetail(selectedQuestion: selectedQuestion)),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          AuditorPaginationBar(
+            currentPage: questionsPage,
+            totalPages: questionsTotalPages,
+            onPrevious: onPreviousPage,
+            onNext: onNextPage,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuestionsList extends StatelessWidget {
+  const _QuestionsList({
+    required this.questions,
+    required this.selectedQuestion,
+    required this.onQuestionSelected,
+  });
+
+  final List<_AuditorQuestion> questions;
+  final _AuditorQuestion? selectedQuestion;
+  final ValueChanged<_AuditorQuestion> onQuestionSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
+    if (questions.isEmpty) {
+      return AuditorEmptyPanel(
+        message: auditorText('no_questions', lang),
+        icon: Icons.help_outline,
+      );
+    }
+    return Column(
+      children: [
+        for (final question in questions)
+          InkWell(
+            onTap: () => onQuestionSelected(question),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: selectedQuestion?.id == question.id
+                    ? AfaqColors.slate950
+                    : AfaqColors.slate100.withValues(alpha: .55),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                question.text,
+                style: TextStyle(
+                  color: selectedQuestion?.id == question.id ? Colors.white : null,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _QuestionDetail extends StatelessWidget {
+  const _QuestionDetail({required this.selectedQuestion});
+
+  final _AuditorQuestion? selectedQuestion;
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
+    if (selectedQuestion == null) {
+      return AuditorEmptyPanel(
+        message: auditorText('select_question', lang),
+        icon: Icons.help_outline,
+      );
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: .05)
+            : AfaqColors.slate100.withValues(alpha: .45),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            selectedQuestion!.text,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              AuditorStatusChip(label: selectedQuestion!.type),
+              AuditorStatusChip(
+                label: auditorFormatText(
+                  'points',
+                  lang,
+                  values: {'count': '${selectedQuestion!.points}'},
+                ),
+                tone: AuditorStatusTone.good,
+              ),
+              AuditorStatusChip(
+                label: selectedQuestion!.required
+                    ? auditorText('required', lang)
+                    : auditorText('optional', lang),
+                tone: selectedQuestion!.required
+                    ? AuditorStatusTone.warn
+                    : AuditorStatusTone.neutral,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (selectedQuestion!.options.isEmpty)
+            Text(auditorText('no_questions', lang))
+          else
+            for (final option in selectedQuestion!.options)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: .08)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(option.text)),
+                    if (option.correct)
+                      AuditorStatusChip(
+                        label: auditorText('correct', lang),
+                        tone: AuditorStatusTone.good,
+                      ),
+                  ],
+                ),
+              ),
+        ],
+      ),
     );
   }
 }

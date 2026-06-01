@@ -18,13 +18,13 @@ class _AuditorQuizzesPageState extends State<AuditorQuizzesPage> {
   final _searchController = TextEditingController();
 
   bool _loading = true;
+  bool _detailsLoading = false;
   String? _error;
   int _quizzesPage = 1;
   int _quizzesTotalPages = 1;
   int _questionsPage = 1;
-  int _questionsTotalPages = 1;
   final int _quizzesPerPage = 12;
-  final int _questionsPerPage = 24;
+  final int _questionsPerPage = 8;
   List<_AuditorQuiz> _quizzes = const [];
   List<_AuditorQuestion> _questions = const [];
   _AuditorQuiz? _selectedQuiz;
@@ -42,61 +42,56 @@ class _AuditorQuizzesPageState extends State<AuditorQuizzesPage> {
     super.dispose();
   }
 
-  _AuditorQuestion? _firstQuestionForQuiz(
-    List<_AuditorQuestion> questions,
-    _AuditorQuiz? quiz,
-  ) {
-    if (quiz == null) {
-      return questions.isNotEmpty ? questions.first : null;
-    }
-    for (final question in questions) {
-      if (question.quizId == quiz.id) return question;
-    }
-    return null;
-  }
-
   Future<void> _load({bool preserveQuiz = false}) async {
     final selectedQuizId = preserveQuiz ? _selectedQuiz?.id : null;
+    final selectedQuestionId = preserveQuiz ? _selectedQuestion?.id : null;
+
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final results = await Future.wait([
-        _service.getQuizzes(perPage: _quizzesPerPage, page: _quizzesPage),
-        _service.getQuestions(perPage: _questionsPerPage, page: _questionsPage),
-      ]);
-      final quizzes = unwrapAuditorList(results[0].data)
+      final response = await _service.getQuizzes(
+        perPage: _quizzesPerPage,
+        page: _quizzesPage,
+      );
+      final quizzes = unwrapAuditorList(response.data)
           .map(_AuditorQuiz.fromMap)
           .toList(growable: false);
-      final questions = unwrapAuditorList(results[1].data)
-          .map(_AuditorQuestion.fromMap)
-          .toList(growable: false);
-      final quizzesPagination = auditorPaginationOf(results[0].data);
-      final questionsPagination = auditorPaginationOf(results[1].data);
+      final pagination = auditorPaginationOf(response.data);
 
-      _AuditorQuiz? nextQuiz = quizzes.isNotEmpty ? quizzes.first : null;
+      _AuditorQuiz? selectedQuiz = quizzes.isNotEmpty ? quizzes.first : null;
       if (selectedQuizId != null) {
         for (final quiz in quizzes) {
           if (quiz.id == selectedQuizId) {
-            nextQuiz = quiz;
+            selectedQuiz = quiz;
             break;
           }
         }
       }
+
       if (!mounted) return;
       setState(() {
         _quizzes = quizzes;
-        _questions = questions;
-        _selectedQuiz = nextQuiz;
-        _selectedQuestion = _firstQuestionForQuiz(questions, nextQuiz);
+        _selectedQuiz = selectedQuiz;
         _quizzesTotalPages =
-            auditorInt(quizzesPagination['total_pages'], fallback: 1).clamp(1, 9999);
-        _questionsTotalPages =
-            auditorInt(questionsPagination['total_pages'], fallback: 1).clamp(1, 9999);
+            auditorInt(pagination['total_pages'], fallback: 1).clamp(1, 9999);
         _loading = false;
       });
+
+      if (selectedQuiz != null) {
+        await _loadQuizDetail(
+          selectedQuiz,
+          preferredQuestionId: selectedQuestionId,
+        );
+      } else if (mounted) {
+        setState(() {
+          _questions = const [];
+          _selectedQuestion = null;
+          _questionsPage = 1;
+        });
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -106,20 +101,82 @@ class _AuditorQuizzesPageState extends State<AuditorQuizzesPage> {
     }
   }
 
+  Future<void> _loadQuizDetail(
+    _AuditorQuiz quiz, {
+    int? preferredQuestionId,
+  }) async {
+    setState(() {
+      _selectedQuiz = quiz;
+      _detailsLoading = true;
+      _questionsPage = 1;
+      _error = null;
+    });
+
+    try {
+      final response = await _service.getQuiz(quiz.id);
+      final payload = unwrapAuditorMap(response.data);
+      final detailedQuiz = _AuditorQuiz.fromMap(payload);
+      final questions = auditorList(payload['questions'])
+          .map(_AuditorQuestion.fromMap)
+          .toList(growable: false);
+
+      _AuditorQuestion? selectedQuestion =
+          questions.isNotEmpty ? questions.first : null;
+      if (preferredQuestionId != null) {
+        for (final question in questions) {
+          if (question.id == preferredQuestionId) {
+            selectedQuestion = question;
+            break;
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedQuiz = detailedQuiz;
+        _questions = questions;
+        _selectedQuestion = selectedQuestion;
+        _detailsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _questions = const [];
+        _selectedQuestion = null;
+        _detailsLoading = false;
+        _error = error.toString();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final lang = localeNotifier.value.languageCode;
     final query = _searchController.text.trim().toLowerCase();
-    final quizScopedQuestions = _selectedQuiz == null
+    final filteredQuestions = query.isEmpty
         ? _questions
         : _questions
-            .where((question) => question.quizId == _selectedQuiz!.id)
-            .toList(growable: false);
-    final filteredQuestions = query.isEmpty
-        ? quizScopedQuestions
-        : quizScopedQuestions
             .where((question) => question.text.toLowerCase().contains(query))
             .toList(growable: false);
+    final questionsTotalPages = filteredQuestions.isEmpty
+        ? 1
+        : ((filteredQuestions.length + _questionsPerPage - 1) ~/ _questionsPerPage);
+    final normalizedQuestionsPage = _questionsPage > questionsTotalPages
+        ? questionsTotalPages
+        : _questionsPage < 1
+            ? 1
+            : _questionsPage;
+    final start = filteredQuestions.isEmpty
+        ? 0
+        : (normalizedQuestionsPage - 1) * _questionsPerPage;
+    final end = filteredQuestions.isEmpty
+        ? 0
+        : (start + _questionsPerPage > filteredQuestions.length
+            ? filteredQuestions.length
+            : start + _questionsPerPage);
+    final pagedQuestions = filteredQuestions.isEmpty
+        ? const <_AuditorQuestion>[]
+        : filteredQuestions.sublist(start, end);
 
     return AuditorPageScaffold(
       title: auditorText('quizzes', lang),
@@ -127,116 +184,65 @@ class _AuditorQuizzesPageState extends State<AuditorQuizzesPage> {
       onRefresh: () => _load(preserveQuiz: true),
       child: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
+          : _error != null && _quizzes.isEmpty
               ? AuditorErrorPanel(message: _error!, onRetry: _load)
               : LayoutBuilder(
                   builder: (context, constraints) {
                     final stacked = constraints.maxWidth < 1000;
+                    final workspace = _QuestionWorkspace(
+                      controller: _searchController,
+                      questions: pagedQuestions,
+                      selectedQuestion: _selectedQuestion,
+                      questionsPage: normalizedQuestionsPage,
+                      questionsTotalPages: questionsTotalPages,
+                      detailsLoading: _detailsLoading,
+                      onSearchChanged: () => setState(() => _questionsPage = 1),
+                      onQuestionSelected: (question) =>
+                          setState(() => _selectedQuestion = question),
+                      onPreviousPage: normalizedQuestionsPage > 1
+                          ? () => setState(() => _questionsPage -= 1)
+                          : null,
+                      onNextPage: normalizedQuestionsPage < questionsTotalPages
+                          ? () => setState(() => _questionsPage += 1)
+                          : null,
+                    );
+
+                    final rail = _QuizRail(
+                      quizzes: _quizzes,
+                      selectedQuiz: _selectedQuiz,
+                      currentPage: _quizzesPage,
+                      totalPages: _quizzesTotalPages,
+                      onSelect: (quiz) => _loadQuizDetail(quiz),
+                      onPreviousPage: _quizzesPage > 1
+                          ? () {
+                              setState(() => _quizzesPage -= 1);
+                              _load(preserveQuiz: true);
+                            }
+                          : null,
+                      onNextPage: _quizzesPage < _quizzesTotalPages
+                          ? () {
+                              setState(() => _quizzesPage += 1);
+                              _load(preserveQuiz: true);
+                            }
+                          : null,
+                    );
+
                     if (stacked) {
                       return Column(
                         children: [
-                          _QuizRail(
-                            quizzes: _quizzes,
-                            selectedQuiz: _selectedQuiz,
-                            currentPage: _quizzesPage,
-                            totalPages: _quizzesTotalPages,
-                            onSelect: (quiz) => setState(() {
-                              _selectedQuiz = quiz;
-                              _selectedQuestion = _firstQuestionForQuiz(_questions, quiz);
-                            }),
-                            onPreviousPage: _quizzesPage > 1
-                                ? () {
-                                    setState(() => _quizzesPage -= 1);
-                                    _load(preserveQuiz: true);
-                                  }
-                                : null,
-                            onNextPage: _quizzesPage < _quizzesTotalPages
-                                ? () {
-                                    setState(() => _quizzesPage += 1);
-                                    _load(preserveQuiz: true);
-                                  }
-                                : null,
-                          ),
+                          rail,
                           const SizedBox(height: 16),
-                          _QuestionWorkspace(
-                            controller: _searchController,
-                            questions: filteredQuestions,
-                            selectedQuestion: _selectedQuestion,
-                            questionsPage: _questionsPage,
-                            questionsTotalPages: _questionsTotalPages,
-                            onSearchChanged: () => setState(() {}),
-                            onQuestionSelected: (question) =>
-                                setState(() => _selectedQuestion = question),
-                            onPreviousPage: _questionsPage > 1
-                                ? () {
-                                    setState(() => _questionsPage -= 1);
-                                    _load(preserveQuiz: true);
-                                  }
-                                : null,
-                            onNextPage: _questionsPage < _questionsTotalPages
-                                ? () {
-                                    setState(() => _questionsPage += 1);
-                                    _load(preserveQuiz: true);
-                                  }
-                                : null,
-                          ),
+                          workspace,
                         ],
                       );
                     }
+
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          flex: 2,
-                          child: _QuizRail(
-                            quizzes: _quizzes,
-                            selectedQuiz: _selectedQuiz,
-                            currentPage: _quizzesPage,
-                            totalPages: _quizzesTotalPages,
-                            onSelect: (quiz) => setState(() {
-                              _selectedQuiz = quiz;
-                              _selectedQuestion = _firstQuestionForQuiz(_questions, quiz);
-                            }),
-                            onPreviousPage: _quizzesPage > 1
-                                ? () {
-                                    setState(() => _quizzesPage -= 1);
-                                    _load(preserveQuiz: true);
-                                  }
-                                : null,
-                            onNextPage: _quizzesPage < _quizzesTotalPages
-                                ? () {
-                                    setState(() => _quizzesPage += 1);
-                                    _load(preserveQuiz: true);
-                                  }
-                                : null,
-                          ),
-                        ),
+                        Expanded(flex: 2, child: rail),
                         const SizedBox(width: 16),
-                        Expanded(
-                          flex: 3,
-                          child: _QuestionWorkspace(
-                            controller: _searchController,
-                            questions: filteredQuestions,
-                            selectedQuestion: _selectedQuestion,
-                            questionsPage: _questionsPage,
-                            questionsTotalPages: _questionsTotalPages,
-                            onSearchChanged: () => setState(() {}),
-                            onQuestionSelected: (question) =>
-                                setState(() => _selectedQuestion = question),
-                            onPreviousPage: _questionsPage > 1
-                                ? () {
-                                    setState(() => _questionsPage -= 1);
-                                    _load(preserveQuiz: true);
-                                  }
-                                : null,
-                            onNextPage: _questionsPage < _questionsTotalPages
-                                ? () {
-                                    setState(() => _questionsPage += 1);
-                                    _load(preserveQuiz: true);
-                                  }
-                                : null,
-                          ),
-                        ),
+                        Expanded(flex: 3, child: workspace),
                       ],
                     );
                   },
@@ -267,7 +273,10 @@ class _AuditorQuiz {
         fallback: auditorText('quizzes', lang),
       ),
       status: auditorStatus(map['status']),
-      questionsCount: auditorList(map['questions']).length,
+      questionsCount: auditorInt(
+        map['questions_count'],
+        fallback: auditorList(map['questions']).length,
+      ),
     );
   }
 }
@@ -275,7 +284,6 @@ class _AuditorQuiz {
 class _AuditorQuestion {
   const _AuditorQuestion({
     required this.id,
-    required this.quizId,
     required this.text,
     required this.type,
     required this.points,
@@ -284,7 +292,6 @@ class _AuditorQuestion {
   });
 
   final int id;
-  final int quizId;
   final String text;
   final String type;
   final int points;
@@ -295,7 +302,6 @@ class _AuditorQuestion {
     final lang = localeNotifier.value.languageCode;
     return _AuditorQuestion(
       id: auditorInt(map['id']),
-      quizId: auditorInt(map['quiz_id']),
       text: auditorTextOf(
         map['question_text'] ?? map['text'],
         fallback: auditorText('select_question', lang),
@@ -439,6 +445,7 @@ class _QuestionWorkspace extends StatelessWidget {
     required this.selectedQuestion,
     required this.questionsPage,
     required this.questionsTotalPages,
+    required this.detailsLoading,
     required this.onSearchChanged,
     required this.onQuestionSelected,
     required this.onPreviousPage,
@@ -450,6 +457,7 @@ class _QuestionWorkspace extends StatelessWidget {
   final _AuditorQuestion? selectedQuestion;
   final int questionsPage;
   final int questionsTotalPages;
+  final bool detailsLoading;
   final VoidCallback onSearchChanged;
   final ValueChanged<_AuditorQuestion> onQuestionSelected;
   final VoidCallback? onPreviousPage;
@@ -471,6 +479,8 @@ class _QuestionWorkspace extends StatelessWidget {
             onChanged: (_) => onSearchChanged(),
           ),
           const SizedBox(height: 16),
+          if (detailsLoading) const LinearProgressIndicator(),
+          if (detailsLoading) const SizedBox(height: 16),
           LayoutBuilder(
             builder: (context, constraints) {
               final stacked = constraints.maxWidth < 760;
@@ -580,10 +590,14 @@ class _QuestionDetail extends StatelessWidget {
         icon: Icons.help_outline,
       );
     }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AfaqColors.slate100.withValues(alpha: .45),
+        color: isDark
+            ? Colors.white.withValues(alpha: .05)
+            : AfaqColors.slate100.withValues(alpha: .45),
         borderRadius: BorderRadius.circular(22),
       ),
       child: Column(
@@ -629,7 +643,9 @@ class _QuestionDetail extends StatelessWidget {
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: isDark
+                      ? Colors.white.withValues(alpha: .08)
+                      : Colors.white,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(

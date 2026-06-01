@@ -32,11 +32,11 @@ class AfaqBottomDock extends StatelessWidget {
         : AfaqColors.primaryButton;
 
     // Define display items for bottom dock (max 5 for phone screen UX)
-    final bool useMore = items.length > 5;
+    final bool useMore = items.length > 4 || onLogout != null;
     final List<AfaqNavItem> displayItems = useMore
-        ? items.sublist(0, 4)
+        ? items.sublist(0, items.length < 4 ? items.length : 4)
         : items;
-    final List<AfaqNavItem> overflowItems = useMore ? items.sublist(4) : [];
+    final List<AfaqNavItem> overflowItems = useMore && items.length > 4 ? items.sublist(4) : [];
 
     // Check if the currently active item is in the overflow drawer
     final bool activeIsOverflow =
@@ -82,7 +82,7 @@ class AfaqBottomDock extends StatelessWidget {
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final int totalSlots = useMore ? 5 : displayItems.length;
+                  final int totalSlots = useMore ? displayItems.length + 1 : displayItems.length;
                   if (totalSlots == 0) return const SizedBox.shrink();
 
                   final double slotWidth = constraints.maxWidth / totalSlots;
@@ -180,7 +180,7 @@ class AfaqBottomDock extends StatelessWidget {
     );
   }
 
-  int totalVisualSlots(bool useMore, int displayCount) => useMore ? 5 : displayCount;
+  int totalVisualSlots(bool useMore, int displayCount) => useMore ? displayCount + 1 : displayCount;
 }
 
 class _BottomDockTile extends StatefulWidget {

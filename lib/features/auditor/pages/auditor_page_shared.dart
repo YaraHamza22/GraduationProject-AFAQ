@@ -9,10 +9,15 @@ String auditorText(String key, String lang) {
     'en': {
       'dashboard': 'Audit Command',
       'dashboard_subtitle': 'Quality review, queue control, and approval intelligence.',
+      'review_screen': 'Review',
+      'review_screen_subtitle': 'Audit courses, lessons, quizzes, questions, and answer options in one workspace.',
       'courses': 'Content Reviews',
       'courses_subtitle': 'Inspect course structure and submit lesson-specific review decisions.',
       'quizzes': 'Assessment Review',
       'quizzes_subtitle': 'Review quiz quality, question clarity, and answer design.',
+      'course_review_section': 'Course Review',
+      'quiz_review_section': 'Quiz Review',
+      'quiz_review_section_subtitle': 'Inspect quiz questions and answer options from the auditor APIs.',
       'notifications': 'Notification Center',
       'notifications_subtitle': 'Unread platform events and audit updates.',
       'profile': 'Auditor Profile',
@@ -39,6 +44,13 @@ String auditorText(String key, String lang) {
       'send_review': 'Send Review',
       'lesson_scope': 'Lesson scope',
       'review_scope': 'Review decision',
+      'review_target': 'Review target',
+      'specific_lesson_review': 'Specific lesson review',
+      'backend_review_scope_note': 'Backend currently supports whole-course reviews or lesson-linked reviews.',
+      'whole_unit_review': 'Whole unit review',
+      'whole_lesson_review': 'Whole lesson review',
+      'whole_quiz_review': 'Whole quiz review',
+      'unit_review_not_supported': 'Unit and quiz review targets are visible in the UI, but backend submission is still limited to course or lesson reviews.',
       'follow_up': 'Follow Up',
       'approved': 'Approved',
       'changes_requested': 'Changes Requested',
@@ -119,6 +131,13 @@ String auditorText(String key, String lang) {
       'send_review': 'إرسال المراجعة',
       'lesson_scope': 'نطاق الدرس',
       'review_scope': 'قرار المراجعة',
+      'review_target': 'نطاق المراجعة',
+      'specific_lesson_review': 'مراجعة درس محدد',
+      'backend_review_scope_note': 'يدعم الخلفية حالياً مراجعة الدورة كاملة أو مراجعة مرتبطة بدرس محدد.',
+      'whole_unit_review': 'مراجعة الوحدة كاملة',
+      'whole_lesson_review': 'مراجعة الدرس كاملًا',
+      'whole_quiz_review': 'مراجعة الاختبار كاملًا',
+      'unit_review_not_supported': 'تظهر مراجعة الوحدة والاختبار في الواجهة، لكن الحفظ في الخلفية ما يزال مقتصراً على مراجعة الدورة أو الدرس.',
       'follow_up': 'متابعة',
       'approved': 'مقبول',
       'changes_requested': 'مطلوب تعديل',
@@ -322,10 +341,6 @@ class AuditorPageScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleColor =
-        isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
-    final subtitleColor = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
     final lang = localeNotifier.value.languageCode;
 
     return SingleChildScrollView(

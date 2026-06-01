@@ -16,10 +16,11 @@ class AuditorQuizService {
     int page = 1,
   }) {
     return _client.get<Map<String, dynamic>>(
-      ApiEndpoints.quizzes,
+      ApiEndpoints.auditorQuizzes,
       queryParameters: {
         'per_page': perPage,
         'page': page,
+        'include_questions': false,
       },
       options: auditorLocaleOptions(),
     );
@@ -27,7 +28,7 @@ class AuditorQuizService {
 
   Future<Response<Map<String, dynamic>>> getQuiz(int quizId) {
     return _client.get<Map<String, dynamic>>(
-      ApiEndpoints.quiz(quizId),
+      ApiEndpoints.auditorQuiz(quizId),
       options: auditorLocaleOptions(),
     );
   }

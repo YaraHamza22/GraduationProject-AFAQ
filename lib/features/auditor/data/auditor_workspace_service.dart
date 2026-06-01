@@ -12,7 +12,6 @@ class AuditorWorkspaceInitialData {
     required this.categories,
     required this.courses,
     required this.quizzes,
-    required this.questions,
     required this.unreadNotifications,
   });
 
@@ -20,7 +19,6 @@ class AuditorWorkspaceInitialData {
   final Response<Map<String, dynamic>> categories;
   final Response<Map<String, dynamic>> courses;
   final Response<Map<String, dynamic>> quizzes;
-  final Response<Map<String, dynamic>> questions;
   final Response<Map<String, dynamic>> unreadNotifications;
 }
 
@@ -45,7 +43,6 @@ class AuditorWorkspaceService {
       coursesService.getCategories(),
       coursesService.getCourses(status: status, perPage: perPage),
       quizService.getQuizzes(perPage: 8, page: 1),
-      quizService.getQuestions(perPage: 12, page: 1),
       notificationService.getNotifications(unreadOnly: true),
     ]);
 
@@ -54,8 +51,7 @@ class AuditorWorkspaceService {
       categories: results[1],
       courses: results[2],
       quizzes: results[3],
-      questions: results[4],
-      unreadNotifications: results[5],
+      unreadNotifications: results[4],
     );
   }
 }

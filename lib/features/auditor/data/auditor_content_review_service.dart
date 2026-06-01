@@ -4,11 +4,7 @@ import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
 import 'auditor_locale_options.dart';
 
-enum AuditorReviewVerdict {
-  approved,
-  changesRequested,
-  followUp,
-}
+enum AuditorReviewVerdict { approved, changesRequested, followUp }
 
 extension AuditorReviewVerdictApi on AuditorReviewVerdict {
   String get apiValue {
@@ -21,7 +17,8 @@ extension AuditorReviewVerdictApi on AuditorReviewVerdict {
 }
 
 class AuditorContentReviewService {
-  const AuditorContentReviewService({ApiClient? apiClient}) : _apiClient = apiClient;
+  const AuditorContentReviewService({ApiClient? apiClient})
+    : _apiClient = apiClient;
 
   final ApiClient? _apiClient;
 
@@ -34,10 +31,7 @@ class AuditorContentReviewService {
   }) {
     return _client.get<Map<String, dynamic>>(
       ApiEndpoints.auditorContentReview(courseId),
-      queryParameters: {
-        'page': page,
-        'per_page': perPage,
-      },
+      queryParameters: {'page': page, 'per_page': perPage},
       options: auditorLocaleOptions(),
     );
   }

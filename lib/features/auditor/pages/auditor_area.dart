@@ -8,7 +8,6 @@ import 'auditor_dashboard_page.dart';
 import 'auditor_notifications_page.dart';
 import 'auditor_page_shared.dart';
 import 'auditor_profile_page.dart';
-import 'auditor_quizzes_page.dart';
 
 class AuditorArea extends StatelessWidget {
   const AuditorArea({super.key});
@@ -27,16 +26,10 @@ class AuditorArea extends StatelessWidget {
             route: '/auditor',
           ),
           AfaqNavItem(
-            id: 'courses',
-            label: auditorText('courses', lang),
+            id: 'review',
+            label: auditorText('review_screen', lang),
             icon: Icons.fact_check_outlined,
-            route: '/auditor/courses',
-          ),
-          AfaqNavItem(
-            id: 'quizzes',
-            label: auditorText('quizzes', lang),
-            icon: Icons.rule_folder_outlined,
-            route: '/auditor/quizzes',
+            route: '/auditor/review',
           ),
           AfaqNavItem(
             id: 'notifications',
@@ -56,12 +49,11 @@ class AuditorArea extends StatelessWidget {
           role: AfaqRole.auditor,
           items: items,
           initialId: 'dashboard',
-          pages: const {
-            'dashboard': AuditorDashboardPage(),
-            'courses': AuditorCoursesPage(),
-            'quizzes': AuditorQuizzesPage(),
-            'notifications': AuditorNotificationsPage(),
-            'profile': AuditorProfilePage(),
+          pages: {
+            'dashboard': const AuditorDashboardPage(),
+            'review': const AuditorCoursesPage(),
+            'notifications': const AuditorNotificationsPage(),
+            'profile': const AuditorProfilePage(),
           },
         );
       },
