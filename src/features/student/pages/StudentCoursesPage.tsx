@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import {
@@ -12,8 +13,6 @@ import {
   Info,
   Loader2,
   PlayCircle,
-  RefreshCw,
-  Trophy,
   User
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
@@ -112,6 +111,8 @@ type ProgressDetails = {
   is_completed: boolean;
 };
 
+type CourseCardData = Enrollment | EnrollableCourse;
+
 function normalizeMediaUrl(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return "";
 
@@ -166,7 +167,7 @@ export default function StudentCoursesPage() {
       // Fetch enrolled courses from /enrollments (supports filters + pagination)
       const enrolledRes = await axios.get(getStudentApiRequestUrl("/enrollments"), {
         headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-        params: { per_page: 100 },
+        params: { per_page: 15 },
       });
 
       const enrolledPayload = enrolledRes.data?.data;
@@ -181,7 +182,7 @@ export default function StudentCoursesPage() {
       // Fetch visible courses, then exclude already enrolled ones client-side.
       const discoverRes = await axios.get(getStudentApiRequestUrl("/courses"), {
         headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-        params: { per_page: 100 },
+        params: { per_page: 15 },
       });
       const discoverPayload = discoverRes.data?.data;
       const allDiscoverable: EnrollableCourse[] = Array.isArray(discoverPayload)
@@ -196,7 +197,7 @@ export default function StudentCoursesPage() {
           .map((enrollment) => enrollment.course?.id ?? enrollment.course_id)
           .filter((id): id is number => typeof id === "number")
       );
-      const trulyDiscoverable = allDiscoverable.filter((c: any) => !enrolledCourseIdSet.has(c.id));
+      const trulyDiscoverable = allDiscoverable.filter((course) => !enrolledCourseIdSet.has(course.id));
 
       setDiscoverCourses(trulyDiscoverable);
 
@@ -427,7 +428,7 @@ export default function StudentCoursesPage() {
                     />
                   ))
                 ) : (
-                  <EmptyState t={t} icon={BookOpen} message="No courses enrolled yet." />
+                  <EmptyState icon={BookOpen} message="No courses enrolled yet." />
                 )
               ) : (
                 discoverCourses.length > 0 ? (
@@ -444,7 +445,7 @@ export default function StudentCoursesPage() {
                     />
                   ))
                 ) : (
-                  <EmptyState t={t} icon={Compass} message="No new courses available at the moment." />
+                  <EmptyState icon={Compass} message="No new courses available at the moment." />
                 )
               )}
             </AnimatePresence>
@@ -460,7 +461,7 @@ export default function StudentCoursesPage() {
                   type="button"
                   onClick={() => changePage(currentPage - 1)}
                   disabled={currentPage === 1}
-                  className="rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition hover:border-indigo-500/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/[0.05]"
+                  className="rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition hover:border-indigo-500/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
                 >
                   Previous
                 </button>
@@ -472,7 +473,7 @@ export default function StudentCoursesPage() {
                     className={`min-w-11 rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition ${
                       pageNumber === currentPage
                         ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
-                        : "border border-slate-200 hover:border-indigo-500/40 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/[0.05]"
+                        : "border border-slate-200 hover:border-indigo-500/40 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5"
                     }`}
                   >
                     {pageNumber}
@@ -482,7 +483,7 @@ export default function StudentCoursesPage() {
                   type="button"
                   onClick={() => changePage(currentPage + 1)}
                   disabled={currentPage === totalPages}
-                  className="rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition hover:border-indigo-500/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/[0.05]"
+                  className="rounded-2xl border border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition hover:border-indigo-500/40 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
                 >
                   Next
                 </button>
@@ -512,7 +513,7 @@ function CourseCard({
   t
 }: {
   type: "enrolled" | "enrollable";
-  data: any; // data structure varies significantly between enrolled (Enrollment) and enrollable (EnrollableCourse)
+  data: CourseCardData;
   courseMedia?: CourseMediaDetails;
   progress?: ProgressDetails;
   progressError?: string;
@@ -534,10 +535,11 @@ function CourseCard({
   };
 
   const isEnrolled = type === "enrolled";
-  const course = isEnrolled && data.course ? data.course : data;
+  const enrolledData = isEnrolled ? (data as Enrollment) : null;
+  const course = enrolledData?.course ? enrolledData.course : data;
   const courseWithMedia = isEnrolled && courseMedia ? { ...course, ...courseMedia } : course;
-  const progressPercent = isEnrolled ? (data.progress_percentage ?? 0) : 0;
-  const isCompleted = isEnrolled ? (data.is_completed ?? false) : false;
+  const progressPercent = enrolledData?.progress_percentage ?? 0;
+  const isCompleted = enrolledData?.is_completed ?? false;
   const locale = language === "ar" ? "ar" : "en";
   const fallbackLocale = locale === "ar" ? "en" : "ar";
 
@@ -596,9 +598,12 @@ function CourseCard({
         onMouseLeave={() => setIsMediaHovered(false)}
       >
         {normalizedCoverUrl ? (
-          <img
+          <Image
             src={normalizedCoverUrl}
             alt={localizedTitle}
+            fill
+            sizes="(max-width: 768px) 100vw, 33vw"
+            unoptimized
             className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ${
               shouldShowHoverVideo ? "scale-105 opacity-0" : "opacity-100 group-hover:scale-110"
             }`}
@@ -748,7 +753,7 @@ function ProgressStat({ label, value }: { label: string, value: number }) {
   );
 }
 
-function EmptyState({ t, icon: Icon, message }: { t: (key: string) => string, icon: React.ComponentType<{ className?: string }>, message: string }) {
+function EmptyState({ icon: Icon, message }: { icon: React.ComponentType<{ className?: string }>, message: string }) {
   return (
     <motion.div
       initial={{ opacity: 0 }}

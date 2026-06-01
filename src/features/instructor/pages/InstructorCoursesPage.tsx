@@ -641,6 +641,7 @@ export default function InstructorCoursesPage() {
     setSuccessMessage(null);
     try {
       const response = await axios.get(getStudentApiRequestUrl(`/my-courses/${courseId}`), {
+        params: { per_page:15 } ,
         headers: buildAuthHeaders(),
       });
 

@@ -41,7 +41,7 @@ type EchoLike = {
 };
 
 const defaultPag: Pagination = { total: 0, count: 0, per_page: 15, current_page: 1, total_pages: 1 };
-const defaultMsgPag: Pagination = { total: 0, count: 0, per_page: 30, current_page: 1, total_pages: 1 };
+const defaultMsgPag: Pagination = { total: 0, count: 0, per_page: 15, current_page: 1, total_pages: 1 };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const num = (v: unknown, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);

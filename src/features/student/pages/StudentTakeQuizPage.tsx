@@ -92,7 +92,7 @@ export default function StudentTakeQuizPage() {
         if (courseId) {
           const fallbackResponse = await axios.get(getStudentApiRequestUrl("/quizzes"), {
             headers,
-            params: { course_id: Number(courseId), per_page: 100 },
+            params: { course_id: Number(courseId), per_page: 15 },
           });
           const rows = extractList(fallbackResponse.data);
           const found = rows.find((row) => isRecord(row) && String(row.id) === String(quizId));

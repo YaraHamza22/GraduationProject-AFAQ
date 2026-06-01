@@ -359,7 +359,7 @@ export default function StudentQuizzesPage() {
               const response = await requestWithProxyFallback("/quizzes", {
                 method: "GET",
                 headers,
-                params: { course_id: course.id, per_page: 100 },
+                params: { course_id: course.id, per_page: 15 },
               });
               return parseList(response.data)
                 .filter(isRecord)
@@ -395,7 +395,7 @@ export default function StudentQuizzesPage() {
           const allResponse = await requestWithProxyFallback("/quizzes", {
             method: "GET",
             headers,
-            params: { per_page: 100 },
+            params: { per_page: 15 },
           });
           merged = parseList(allResponse.data)
             .filter(isRecord)
@@ -433,7 +433,7 @@ export default function StudentQuizzesPage() {
           headers,
           params: {
             ...(studentId ? { student_id: studentId } : {}),
-            per_page: 200,
+            per_page: 15,
           },
         });
         const attempts = parseList(attemptsResponse.data).filter(isRecord);
@@ -566,7 +566,7 @@ export default function StudentQuizzesPage() {
               params: {
                 quiz_id: quiz.id,
                 ...(studentId ? { student_id: studentId } : {}),
-                per_page: 50,
+                per_page: 15,
               },
             });
             const attempts = parseList(attemptsResponse.data).filter(isRecord);

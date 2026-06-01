@@ -170,7 +170,7 @@ export default function ForumWorkspace({
     if (!headers) return;
     for (const path of coursePaths) {
       try {
-        const res = await request(path, { method: "GET", headers, params: { per_page: 100 } });
+        const res = await request(path, { method: "GET", headers, params: { per_page: 15 } });
         const list = parseCourses(res.data);
         if (list.length) {
           setCourses(list);
@@ -188,7 +188,7 @@ export default function ForumWorkspace({
     if (!headers) return;
     setLoadingPosts((prev) => ({ ...prev, [threadId]: true }));
     try {
-      const res = await request(`/forum-threads/${threadId}/posts`, { method: "GET", headers, params: { page, per_page: 20 } });
+      const res = await request(`/forum-threads/${threadId}/posts`, { method: "GET", headers, params: { page, per_page: 15 } });
       const parsed = parsePosts(res.data);
       setPostsByThread((prev) => ({ ...prev, [threadId]: parsed.rows }));
       setPostsPagByThread((prev) => ({ ...prev, [threadId]: parsed.pag }));

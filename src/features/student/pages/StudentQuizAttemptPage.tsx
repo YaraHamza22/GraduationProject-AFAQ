@@ -560,7 +560,7 @@ export default function StudentQuizAttemptPage() {
         params: {
           quiz_id: Number(quizId),
           ...(resolvedStudentId ? { student_id: resolvedStudentId } : {}),
-          per_page: 50,
+          per_page: 15,
         },
       });
       const attempts = extractList(listResponse.data).filter(isRecord);
@@ -614,7 +614,7 @@ export default function StudentQuizAttemptPage() {
       const listResponse = await requestWithProxyFallback("/attempts", {
         method: "GET",
         headers,
-        params: { per_page: 200 },
+        params: { per_page: 15 },
       });
       const attempts = extractList(listResponse.data).filter(isRecord);
       const strictMatch = attempts
