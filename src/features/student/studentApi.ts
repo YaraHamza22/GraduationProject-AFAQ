@@ -45,6 +45,24 @@ export function getStudentApiRequestUrl(path: string) {
   return baseUrl ? `${baseUrl}${normalizedPath}` : "";
 }
 
+function isHtml404AxiosError(error: unknown) {
+  if (!axios.isAxiosError(error)) return false;
+  const contentType = String(error.response?.headers?.["content-type"] ?? "");
+  return (
+    error.response?.status === 404 &&
+    ((typeof error.response?.data === "string" && error.response.data.includes("<!DOCTYPE html")) ||
+      contentType.includes("text/html"))
+  );
+}
+
+function isLocalProxy404(error: unknown) {
+  if (!axios.isAxiosError(error)) return false;
+  if (error.response?.status !== 404) return false;
+
+  const requestedUrl = String(error.config?.url ?? "");
+  return requestedUrl.startsWith("/api/") || requestedUrl.includes("localhost:3000/api/");
+}
+
 function stableSerialize(value: unknown): string {
   if (value == null) return "";
   if (typeof value !== "object") return String(value);
@@ -96,6 +114,13 @@ export async function getStudentApiCached<T = unknown>(
 
   const request = axios
     .get<T>(getStudentApiRequestUrl(path), config)
+    .catch(async (error) => {
+      if (!isHtml404AxiosError(error) && !isLocalProxy404(error)) {
+        throw error;
+      }
+
+      return axios.get<T>(getStudentApiEndpoint(path), config);
+    })
     .then((response) => {
       responseCache.set(cacheKey, { expiresAt: Date.now() + ttlMs, response });
       return response as AxiosResponse<unknown>;

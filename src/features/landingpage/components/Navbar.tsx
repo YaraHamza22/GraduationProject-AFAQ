@@ -21,13 +21,19 @@ function UnitedStatesFlag() {
 
 function SyrianGreenFlag() {
   return (
-    <span className="relative block h-4 w-6 overflow-hidden rounded-[3px] shadow-sm">
-      <span className="absolute inset-x-0 top-0 h-1/3 bg-[#15803d]" />
-      <span className="absolute inset-x-0 top-1/3 h-1/3 bg-white" />
-      <span className="absolute inset-x-0 bottom-0 h-1/3 bg-black" />
-      <span className="absolute left-[38%] top-1/2 h-1 w-1 -translate-y-1/2 rotate-45 bg-[#dc2626]" />
-      <span className="absolute left-[52%] top-1/2 h-1 w-1 -translate-y-1/2 rotate-45 bg-[#dc2626]" />
-    </span>
+    <svg
+      viewBox="0 0 36 24"
+      aria-hidden="true"
+      className="h-4 w-6 overflow-hidden rounded-[3px] shadow-sm"
+    >
+      <rect width="36" height="8" fill="#007A3D" />
+      <rect y="8" width="36" height="8" fill="#FFFFFF" />
+      <rect y="16" width="36" height="8" fill="#000000" />
+      <path
+        fill="#CE1126"
+        d="M8.6 9.4l.75 2.27h2.38l-1.92 1.39.73 2.27-1.94-1.4-1.93 1.4.73-2.27-1.92-1.39h2.38l.74-2.27Zm9.4 0 .75 2.27h2.38l-1.92 1.39.73 2.27-1.94-1.4-1.93 1.4.73-2.27-1.92-1.39h2.38l.74-2.27Zm9.4 0 .75 2.27h2.38l-1.92 1.39.73 2.27-1.94-1.4-1.93 1.4.73-2.27-1.92-1.39h2.38l.74-2.27Z"
+      />
+    </svg>
   );
 }
 

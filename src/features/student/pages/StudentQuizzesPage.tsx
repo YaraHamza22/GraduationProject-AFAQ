@@ -5,22 +5,13 @@ import axios from "axios";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Clock, Loader2, PlayCircle, RefreshCw, Trophy } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { getStudentApiEndpoint, getStudentApiRequestUrl } from "@/features/student/studentApi";
-import { extractStudentUser, getStoredStudentId, getStudentToken, updateStoredStudentUser } from "@/features/student/studentSession";
+import { getStudentApiCached, getStudentApiEndpoint, getStudentApiRequestUrl, invalidateStudentApiCache } from "@/features/student/studentApi";
+import { extractStudentUser, getStudentToken, updateStoredStudentUser } from "@/features/student/studentSession";
 
 type LocalizedText = {
   en?: string;
   ar?: string;
   [key: string]: string | undefined;
-};
-
-type EnrollmentRow = {
-  course_id?: number;
-  course?: {
-    id: number;
-    title?: string;
-    title_translations?: LocalizedText;
-  };
 };
 
 type StudentQuiz = {
@@ -34,6 +25,12 @@ type StudentQuiz = {
   isPassed?: boolean;
   attemptId?: number | null;
   isTaken?: boolean;
+};
+
+type AggregatePayload = {
+  student: Record<string, unknown> | null;
+  quizzes: Record<string, unknown>[];
+  courses: Record<string, unknown>[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -94,42 +91,49 @@ function parseItem(payload: unknown): Record<string, unknown> | null {
   return isRecord(unwrapped) ? unwrapped : null;
 }
 
-function parsePagination(payload: unknown) {
-  const root = isRecord(payload) ? payload : null;
-  const unwrapped = unwrapApiPayload(payload);
-  const unwrappedRecord = isRecord(unwrapped) ? unwrapped : null;
-
-  const candidates = [
-    root?.pagination,
-    isRecord(root?.data) ? root.data.pagination : null,
-    unwrappedRecord?.pagination,
-  ];
-
-  for (const candidate of candidates) {
-    if (!isRecord(candidate)) continue;
-    const currentPage = readNumber(candidate.current_page) ?? 1;
-    const totalPages = readNumber(candidate.total_pages) ?? 1;
-    const perPage = readNumber(candidate.per_page) ?? 15;
-    return { currentPage, totalPages, perPage };
+function parseAggregatePayload(payload: unknown): AggregatePayload {
+  const item = parseItem(payload);
+  if (!item) {
+    return { student: null, quizzes: [], courses: [] };
   }
 
-  return { currentPage: 1, totalPages: 1, perPage: 15 };
+  return {
+    student: isRecord(item.student) ? item.student : null,
+    quizzes: Array.isArray(item.quizzes) ? item.quizzes.filter(isRecord) : [],
+    courses: Array.isArray(item.courses) ? item.courses.filter(isRecord) : [],
+  };
 }
 
-function parseAssessmentProgressRows(payload: unknown) {
-  const item = parseItem(payload);
-  if (!item) return [];
+function getCourseTitleFromRecord(
+  course: Record<string, unknown> | null | undefined,
+  locale: "en" | "ar",
+  fallbackLocale: "en" | "ar"
+) {
+  if (!course) return "";
 
-  if (Array.isArray(item.quizzes)) {
-    return item.quizzes.filter(isRecord);
+  return (
+    getLocalizedValue(course.title_translations, locale, fallbackLocale) ||
+    getLocalizedValue(course.title, locale, fallbackLocale) ||
+    readString(course.title, "")
+  );
+}
+
+function getCourseIdFromQuiz(quiz: Record<string, unknown>) {
+  const directCourseId = readNumber(quiz.course_id);
+  if (directCourseId) return directCourseId;
+
+  const quizableType = readString(quiz.quizable_type, "").toLowerCase();
+  if (quizableType === "course") {
+    const quizableId = readNumber(quiz.quizable_id);
+    if (quizableId) return quizableId;
   }
 
-  const progress = isRecord(item.progress) ? item.progress : null;
-  if (progress && Array.isArray(progress.quizzes)) {
-    return progress.quizzes.filter(isRecord);
-  }
+  const quizable = isRecord(quiz.quizable) ? quiz.quizable : null;
+  const quizableCourseId =
+    readNumber(quizable?.course_id) ??
+    readNumber(quizable?.id);
 
-  return [];
+  return quizableType === "course" ? (quizableCourseId ?? 0) : readNumber(quizable?.course_id) ?? 0;
 }
 
 function isHtml404AxiosError(error: unknown) {
@@ -157,34 +161,6 @@ async function requestWithProxyFallback<T>(path: string, config: Parameters<type
     if (!isHtml404AxiosError(error) && !isLocalProxy404(error)) throw error;
     return axios.request<T>({ ...config, url: getStudentApiEndpoint(path) });
   }
-}
-
-async function fetchAllPages(path: string, headers: Record<string, string>, params?: Record<string, unknown>) {
-  const perPage = 15;
-  const firstResponse = await requestWithProxyFallback(path, {
-    method: "GET",
-    headers,
-    params: { ...params, per_page: perPage, page: 1 },
-  });
-
-  const firstPageItems = parseList(firstResponse.data);
-  const pagination = parsePagination(firstResponse.data);
-  if (pagination.totalPages <= 1) return firstPageItems;
-
-  const remainingResponses = await Promise.all(
-    Array.from({ length: pagination.totalPages - 1 }, (_, index) =>
-      requestWithProxyFallback(path, {
-        method: "GET",
-        headers,
-        params: { ...params, per_page: perPage, page: index + 2 },
-      })
-    )
-  );
-
-  return [
-    ...firstPageItems,
-    ...remainingResponses.flatMap((response) => parseList(response.data)),
-  ];
 }
 
 function getAttemptIdFromProgress(item: Record<string, unknown>) {
@@ -244,232 +220,105 @@ export default function StudentQuizzesPage() {
     };
   }, []);
 
-  const resolveStudentId = useCallback(async () => {
-    const storedId = getStoredStudentId();
-    if (!headers) return storedId;
-
-    try {
-      const response = await requestWithProxyFallback("/auth/profile", {
-        method: "GET",
-        headers,
-      });
-      const profile = extractStudentUser(response.data);
-      if (profile) {
-        updateStoredStudentUser(profile);
-        return readNumber(profile.id) ?? storedId;
-      }
-    } catch {
-      // Keep using the stored id when profile refresh fails.
-    }
-
-    return storedId;
-  }, [headers]);
-
   const loadQuizzes = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
       if (!headers) throw new Error("missing_token");
+      const [aggregateResponse, attemptsResponse] = await Promise.all([
+        getStudentApiCached("/me/with-quizzes", { headers }, { force: true, ttlMs: 5_000 }),
+        getStudentApiCached("/attempts", { headers, params: { per_page: 100 } }, { force: true, ttlMs: 5_000 }),
+      ]);
 
-      const enrollments = await fetchAllPages("/enrollments", headers) as EnrollmentRow[];
+      const aggregate = parseAggregatePayload(aggregateResponse.data);
+      const profile = extractStudentUser(aggregate.student);
+      if (profile) {
+        updateStoredStudentUser(profile);
+      }
 
-      const enrolledCourses = enrollments
-        .map((enrollment) => {
-          const courseId = enrollment.course?.id ?? enrollment.course_id;
-          if (typeof courseId !== "number") return null;
-          const courseTitle =
-            getLocalizedValue(enrollment.course?.title_translations, locale, fallbackLocale) ||
-            readString(enrollment.course?.title, `Course #${courseId}`);
-          return { id: courseId, title: courseTitle };
-        })
-        .filter((item): item is { id: number; title: string } => item !== null);
+      const courseMap = new Map<number, string>();
+      aggregate.courses.forEach((course) => {
+        const courseId = readNumber(course.course_id) ?? readNumber(course.id);
+        if (!courseId) return;
+        courseMap.set(courseId, getCourseTitleFromRecord(course, locale, fallbackLocale) || `Course #${courseId}`);
+      });
 
-      const uniqueCourses = Array.from(new Map(enrolledCourses.map((course) => [course.id, course])).values());
-      let merged: StudentQuiz[] = [];
-
-      // Primary flow.
-      for (const course of uniqueCourses) {
-        try {
-          const availabilityResponse = await requestWithProxyFallback(`/courses/${course.id}/quiz-availability`, {
-            method: "GET",
-            headers,
-          });
-          const availability = parseItem(availabilityResponse.data);
-          const isEnrolled = availability ? Boolean(availability.is_enrolled) : true;
-          const hasQuiz = availability ? Boolean(availability.has_quiz) : false;
-          const quizzesCount = availability ? readNumber(availability.quizzes_count) ?? 0 : 0;
-          if (!isEnrolled || !hasQuiz || quizzesCount <= 0) continue;
-
-          const progressResponse = await requestWithProxyFallback(`/courses/${course.id}/assessment-progress`, {
-            method: "GET",
-            headers,
-          });
-          const progressRows = parseAssessmentProgressRows(progressResponse.data);
-
-          const available = progressRows
-            .map((row) => {
-              const quizId = readNumber(row.quiz_id) ?? (isRecord(row.quiz) ? readNumber(row.quiz.id) : null);
-              if (!quizId) return null;
-              const attemptsLeft = readNumber(row.attempts_left) ?? 0;
-              const isPassed = Boolean(row.is_passed);
-              const attemptId = getAttemptIdFromProgress(row);
-              const attemptStatus = readString(row.status, "");
-              const isTaken = isPassed || attemptsLeft <= 0 || isTakenStatus(attemptStatus);
-              return { quizId, attemptsLeft, isPassed, attemptId, isTaken };
-            })
-            .filter(
-              (item): item is { quizId: number; attemptsLeft: number; isPassed: boolean; attemptId: number | null; isTaken: boolean } =>
-                item !== null
+      const courseIds = Array.from(courseMap.keys());
+      const courseQuizResponses = await Promise.all(
+        courseIds.map(async (courseId) => {
+          try {
+            const response = await getStudentApiCached(
+              "/quizzes",
+              {
+                headers,
+                params: {
+                  course_id: courseId,
+                  per_page: 100,
+                  include_questions: false,
+                },
+              },
+              { force: true, ttlMs: 5_000 }
             );
 
-          for (const item of available) {
-            try {
-              const quizResponse = await requestWithProxyFallback(`/quizzes/${item.quizId}`, {
-                method: "GET",
-                headers,
-              });
-              const quizItem = parseItem(quizResponse.data);
-              if (!quizItem || !isPublishedQuiz(quizItem)) continue;
-              merged.push({
-                id: readNumber(quizItem.id) ?? item.quizId,
-                courseId: course.id,
-                courseTitle: course.title,
-                title: (quizItem.title as string | LocalizedText) ?? `Quiz #${item.quizId}`,
-                description: quizItem.description as string | LocalizedText | undefined,
-                duration_minutes: readNumber(quizItem.duration_minutes) ?? undefined,
-                attemptsLeft: item.attemptsLeft,
-                isPassed: item.isPassed,
-                attemptId: item.attemptId,
-                isTaken: item.isTaken,
-              });
-            } catch {
-              // skip bad quiz row
-            }
+            return parseList(response.data).filter(isRecord);
+          } catch {
+            return [];
           }
-        } catch {
-          // skip this course
-        }
-      }
+        })
+      );
 
-      // Fallback 1: enrolled course quizzes list.
-      if (!merged.length) {
-        const legacyRows = await Promise.all(
-          uniqueCourses.map(async (course) => {
-            try {
-              const response = await requestWithProxyFallback("/quizzes", {
-                method: "GET",
-                headers,
-                params: { course_id: course.id, per_page: 15 },
-              });
-              return parseList(response.data)
-                .filter(isRecord)
-                .filter(isPublishedQuiz)
-                .map((quiz): StudentQuiz | null => {
-                  const id = readNumber(quiz.id);
-                  if (!id) return null;
-                  return {
-                    id,
-                    courseId: course.id,
-                    courseTitle: course.title,
-                    title: (quiz.title as string | LocalizedText) ?? `Quiz #${id}`,
-                    description: quiz.description as string | LocalizedText | undefined,
-                    duration_minutes: readNumber(quiz.duration_minutes) ?? undefined,
-                    attemptsLeft: undefined,
-                    isPassed: false,
-                    attemptId: null,
-                    isTaken: false,
-                  };
-                })
-                .filter((item): item is StudentQuiz => item !== null);
-            } catch {
-              return [];
-            }
-          })
-        );
-        merged = legacyRows.flat();
-      }
+      const attempts = parseList(attemptsResponse.data).filter(isRecord);
+      const latestAttemptByQuiz = new Map<number, { id: number; status: string; isPassed: boolean }>();
 
-      // Fallback 2: global quizzes list.
-      if (!merged.length) {
-        try {
-          const allResponse = await requestWithProxyFallback("/quizzes", {
-            method: "GET",
-            headers,
-            params: { per_page: 15 },
-          });
-          merged = parseList(allResponse.data)
-            .filter(isRecord)
-            .filter(isPublishedQuiz)
-            .map((quiz): StudentQuiz | null => {
-              const id = readNumber(quiz.id);
-              if (!id) return null;
-              const courseId = readNumber(quiz.course_id) ?? readNumber(quiz.quizable_id) ?? 0;
-              return {
-                id,
-                courseId,
-                courseTitle: courseId ? `Course #${courseId}` : "Course",
-                title: (quiz.title as string | LocalizedText) ?? `Quiz #${id}`,
-                description: quiz.description as string | LocalizedText | undefined,
-                duration_minutes: readNumber(quiz.duration_minutes) ?? undefined,
-                attemptsLeft: undefined,
-                isPassed: false,
-                attemptId: null,
-                isTaken: false,
-              };
-            })
-            .filter((item): item is StudentQuiz => item !== null);
-        } catch {
-          // keep empty
-        }
-      }
-
-      const deduped = Array.from(new Map(merged.map((quiz) => [quiz.id, quiz])).values());
-
-      // Final safety check: mark quizzes as taken and backfill attempt ids from attempts list.
-      try {
-        const studentId = await resolveStudentId();
-        const attemptsResponse = await requestWithProxyFallback("/attempts", {
-          method: "GET",
-          headers,
-          params: {
-            ...(studentId ? { student_id: studentId } : {}),
-            per_page: 15,
-          },
+      attempts
+        .map((item) => ({
+          id: readNumber(item.id) ?? 0,
+          quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
+          status:
+            readString(item.status, "") ||
+            readString(item.attempt_status, "") ||
+            readString(item.grading_status, ""),
+          isPassed: Boolean(item.is_passed),
+        }))
+        .filter((item) => item.id > 0 && item.quizId > 0)
+        .sort((a, b) => b.id - a.id)
+        .forEach((item) => {
+          if (!latestAttemptByQuiz.has(item.quizId)) {
+            latestAttemptByQuiz.set(item.quizId, item);
+          }
         });
-        const attempts = parseList(attemptsResponse.data).filter(isRecord);
-        const latestAttemptByQuiz = new Map<number, { id: number; status: string }>();
-        const normalizedAttempts = attempts
-          .map((item) => ({
-            id: readNumber(item.id) ?? 0,
-            quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
-            studentId: readNumber(item.student_id) ?? 0,
-            status:
-              readString(item.status, "") ||
-              readString(item.attempt_status, "") ||
-              readString(item.grading_status, ""),
-          }))
-          .filter((item) => item.id > 0 && item.quizId > 0 && (!studentId || item.studentId === studentId))
-          .sort((a, b) => b.id - a.id);
 
-        for (const row of normalizedAttempts) {
-          if (!latestAttemptByQuiz.has(row.quizId)) {
-            latestAttemptByQuiz.set(row.quizId, { id: row.id, status: row.status });
-          }
-        }
+      const mergedQuizRecords = [...aggregate.quizzes, ...courseQuizResponses.flat()];
 
-        setQuizzes(
-          deduped.map((quiz) => {
-            const latestAttempt = latestAttemptByQuiz.get(quiz.id);
-            return {
-              ...quiz,
-              attemptId: quiz.attemptId ?? latestAttempt?.id ?? null,
-              isTaken: quiz.isTaken || Boolean(latestAttempt && isTakenStatus(latestAttempt.status)),
-            };
-          })
-        );
-      } catch {
-        setQuizzes(deduped);
-      }
+      const normalized = mergedQuizRecords
+        .filter(isPublishedQuiz)
+        .map((quiz): StudentQuiz | null => {
+          const id = readNumber(quiz.id);
+          if (!id) return null;
+
+          const courseId = getCourseIdFromQuiz(quiz);
+          const latestAttempt = latestAttemptByQuiz.get(id);
+
+          return {
+            id,
+            courseId,
+            courseTitle: courseMap.get(courseId) ?? (courseId ? `Course #${courseId}` : "Your course"),
+            title: (quiz.title as string | LocalizedText) ?? `Quiz #${id}`,
+            description: quiz.description as string | LocalizedText | undefined,
+            duration_minutes: readNumber(quiz.duration_minutes) ?? undefined,
+            attemptsLeft: readNumber(quiz.attempts_left) ?? undefined,
+            isPassed: Boolean(quiz.is_passed) || latestAttempt?.isPassed || false,
+            attemptId: latestAttempt?.id ?? getAttemptIdFromProgress(quiz) ?? null,
+            isTaken:
+              Boolean(quiz.is_taken) ||
+              Boolean(quiz.is_completed) ||
+              Boolean(quiz.is_passed) ||
+              Boolean(latestAttempt && isTakenStatus(latestAttempt.status)),
+          };
+        })
+        .filter((item): item is StudentQuiz => item !== null);
+
+      setQuizzes(Array.from(new Map(normalized.map((quiz) => [quiz.id, quiz])).values()));
     } catch (error) {
       let message = "Failed to load quizzes.";
       if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
@@ -479,7 +328,7 @@ export default function StudentQuizzesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [fallbackLocale, headers, locale, resolveStudentId]);
+  }, [fallbackLocale, headers, locale]);
 
   useEffect(() => {
     void loadQuizzes();
@@ -498,108 +347,15 @@ export default function StudentQuizzesPage() {
       setStartingQuizId(quiz.id);
       setErrorMessage(null);
       try {
-        const studentId = await resolveStudentId();
+        const workspaceResponse = await requestWithProxyFallback(`/attempts/workspace/${quiz.id}`, {
+          method: "GET",
+          headers,
+        });
+        const workspace = parseItem(workspaceResponse.data);
+        const attemptId = readNumber(workspace?.id) ?? readNumber(workspace?.attempt_id) ?? quiz.attemptId ?? null;
 
-        if (quiz.courseId) {
-          try {
-            const progressResponse = await requestWithProxyFallback(`/courses/${quiz.courseId}/assessment-progress`, {
-              method: "GET",
-              headers,
-            });
-            const latestProgress = parseAssessmentProgressRows(progressResponse.data)
-              .map((item) => ({
-                quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) : null),
-                attemptsLeft: readNumber(item.attempts_left) ?? 0,
-                isPassed: Boolean(item.is_passed),
-                isTaken: isTakenStatus(readString(item.status, "")),
-              }))
-              .find((item) => item.quizId === quiz.id);
-
-            if (latestProgress && (latestProgress.isPassed || latestProgress.attemptsLeft <= 0 || latestProgress.isTaken)) {
-              setErrorMessage("This quiz is already completed and cannot be taken again.");
-              return;
-            }
-          } catch {
-            // keep start flow
-          }
-        }
-
-        const createPayload: Record<string, unknown> = {
-          quiz_id: quiz.id,
-          ...(studentId ? { student_id: studentId } : {}),
-        };
-
-        let attemptId: number | null = quiz.attemptId ?? null;
-
-        try {
-          const createResponse = await requestWithProxyFallback("/attempts", {
-            method: "POST",
-            headers,
-            data: createPayload,
-          });
-          const createItem = parseItem(createResponse.data);
-          attemptId = (createItem ? readNumber(createItem.id) : null) ?? attemptId;
-        } catch {
-          // keep fallback paths
-        }
-
-        if (!attemptId && quiz.courseId) {
-          try {
-            const progressResponse = await requestWithProxyFallback(`/courses/${quiz.courseId}/assessment-progress`, {
-              method: "GET",
-              headers,
-            });
-            const row = parseAssessmentProgressRows(progressResponse.data)
-              .find((item) => (readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) : null)) === quiz.id);
-            attemptId = row ? getAttemptIdFromProgress(row) : null;
-          } catch {
-            // keep null
-          }
-        }
-
-        if (!attemptId) {
-          // Fallback: load attempts list and reuse latest in_progress attempt for this quiz.
-          try {
-            const attemptsResponse = await requestWithProxyFallback("/attempts", {
-              method: "GET",
-              headers,
-              params: {
-                quiz_id: quiz.id,
-                ...(studentId ? { student_id: studentId } : {}),
-                per_page: 15,
-              },
-            });
-            const attempts = parseList(attemptsResponse.data).filter(isRecord);
-            const openAttempt = attempts
-              .map((item) => ({
-                id: readNumber(item.id) ?? 0,
-                quizId: readNumber(item.quiz_id) ?? (isRecord(item.quiz) ? readNumber(item.quiz.id) ?? 0 : 0),
-                studentId: readNumber(item.student_id) ?? 0,
-                status: readString(item.status, ""),
-              }))
-              .filter((item) => item.id > 0 && item.quizId === quiz.id && (!studentId || item.studentId === studentId))
-              .sort((a, b) => b.id - a.id)
-              .find((item) => item.status === "in_progress");
-
-            if (openAttempt?.id) {
-              attemptId = openAttempt.id;
-            }
-          } catch {
-            // keep null
-          }
-        }
-
-        if (attemptId) {
-          try {
-            await requestWithProxyFallback(`/attempts/${attemptId}/start`, {
-              method: "POST",
-              headers,
-              data: {},
-            });
-          } catch {
-            // ignore already-started/invalid-state
-          }
-        }
+        invalidateStudentApiCache("/attempts");
+        invalidateStudentApiCache("/me/with-quizzes");
 
         const query = new URLSearchParams();
         if (quiz.courseId) {
@@ -621,7 +377,7 @@ export default function StudentQuizzesPage() {
         setStartingQuizId(null);
       }
     },
-    [headers, resolveStudentId, router]
+    [headers, router]
   );
 
   const openGrade = useCallback(
@@ -720,4 +476,3 @@ export default function StudentQuizzesPage() {
     </div>
   );
 }
-
