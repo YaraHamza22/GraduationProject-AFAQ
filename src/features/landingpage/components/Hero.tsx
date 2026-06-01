@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion, Variants } from "framer-motion";
 import { ArrowRight, Play, Sparkles, TrendingUp, Users } from "lucide-react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 
 const HeroScene = dynamic(() => import("./HeroScene").then((mod) => mod.HeroScene), {
   ssr: false,
@@ -106,11 +107,14 @@ export function Hero() {
 
           {/* CTA Buttons */}
           <motion.div variants={fadeUp} className="flex w-full flex-col items-center gap-4 sm:w-auto sm:flex-row sm:gap-5">
-            <button className="group relative z-10 inline-flex w-full items-center justify-center gap-3 rounded-full bg-white px-6 py-4 text-base font-semibold text-slate-950 transition-all hover:scale-[1.02] active:scale-95 sm:w-auto sm:px-8">
+            <Link
+              href="/login"
+              className="group relative z-10 inline-flex w-full items-center justify-center gap-3 rounded-full bg-white px-6 py-4 text-base font-semibold text-slate-950 transition-all hover:scale-[1.02] active:scale-95 sm:w-auto sm:px-8"
+            >
               <span className="absolute inset-0 rounded-full bg-white opacity-20 blur-md transition-opacity group-hover:opacity-40" />
               Start Exploring
               <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-            </button>
+            </Link>
             <button className="group inline-flex w-full items-center justify-center gap-3 rounded-full border border-white/8 bg-white/3 px-6 py-4 font-medium text-white backdrop-blur-md transition-all hover:bg-white/8 active:scale-95 sm:w-auto sm:px-8">
               <span className="ml-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors group-hover:bg-white/20">
                 <Play className="h-4 w-4 fill-white" />
