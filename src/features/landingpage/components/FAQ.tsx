@@ -3,33 +3,18 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Minus, HelpCircle } from "lucide-react";
-
-const faqs = [
-  {
-    question: "Do I need any previous technical experience?",
-    answer: "Our courses range from beginner to expert. Each program details the necessary prerequisites, ensuring you start exactly where your current knowledge ends.",
-  },
-  {
-    question: "How long is each certification valid?",
-    answer: "Afaq certifications are globally recognized and have no expiration date. However, we recommend retaking updated modules every 2 years to stay current with technology shifts.",
-  },
-  {
-    question: "Can I access the 3D simulations on mobile?",
-    answer: "Yes! Our engine is optimized for high-performance mobile browsers and tablets, allowing you to learn in the 'Knowledge Universe' from anywhere.",
-  },
-  {
-    question: "Is there mentorship support available?",
-    answer: "Absolutely. Depending on your course level, you get 1-on-1 sessions, group workshops, and 24/7 technical support from our lead industrial mentors.",
-  }
-];
+import { useLanguage } from "@/components/providers/LanguageProvider";
+import { landingContent } from "../content";
 
 export function FAQ() {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const { language, isRTL } = useLanguage();
+  const copy = landingContent[language].faq;
 
   return (
     <section className="relative py-32 bg-linear-to-b from-white to-slate-50 overflow-hidden">
       <div className="max-w-4xl mx-auto px-6 relative z-10">
-        <div className="text-center mb-24">
+        <div className={`text-center mb-24 ${isRTL ? "text-right sm:text-center" : ""}`}>
           <motion.div 
             initial={{ opacity: 0, scale: 0.8 }}
             whileInView={{ opacity: 1, scale: 1 }}
@@ -44,13 +29,13 @@ export function FAQ() {
             viewport={{ once: true }}
             className="text-4xl md:text-5xl font-black text-slate-900 tracking-tight"
           >
-            Curiosity <span className="text-indigo-600">Clarified</span>.
+            {copy.title} <span className="text-indigo-600">{copy.titleHighlight}</span>.
           </motion.h2>
-          <p className="text-slate-500 mt-6 text-lg font-medium">Finding answers to your most frequent explorations.</p>
+          <p className="text-slate-500 mt-6 text-lg font-medium">{copy.subtitle}</p>
         </div>
 
         <div className="space-y-6">
-          {faqs.map((faq, i) => (
+          {copy.items.map((faq, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 20 }}
@@ -65,7 +50,7 @@ export function FAQ() {
             >
               <button
                 onClick={() => setActiveIndex(activeIndex === i ? null : i)}
-                className="w-full px-8 py-8 flex items-center justify-between gap-6 text-left"
+                className={`w-full px-8 py-8 flex items-center justify-between gap-6 ${isRTL ? "flex-row-reverse text-right" : "text-left"}`}
               >
                 <span className={`text-xl font-bold transition-colors ${
                   activeIndex === i ? "text-white" : "text-slate-900"

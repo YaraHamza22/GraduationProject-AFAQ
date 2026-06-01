@@ -5,7 +5,7 @@ import axios from "axios";
 import { motion } from "framer-motion";
 import { AlertCircle, Award, BookOpen, Layout, Loader2, RefreshCw, Target } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { getStudentApiRequestUrl } from "@/features/student/studentApi";
+import { getStudentApiCached } from "@/features/student/studentApi";
 import { getStudentToken } from "@/features/student/studentSession";
 
 type DashboardData = {
@@ -78,7 +78,7 @@ export default function StudentDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (force = false) => {
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -86,12 +86,12 @@ export default function StudentDashboard() {
       const token = getStudentToken();
       if (!token) throw new Error("missing_token");
 
-      const response = await axios.get(getStudentApiRequestUrl("/student/dashboard"), {
+      const response = await getStudentApiCached("/student/dashboard", {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
         },
-      });
+      }, { ttlMs: 30_000, force });
 
       setDashboard(parseDashboard(response.data));
     } catch (error) {
@@ -130,7 +130,7 @@ export default function StudentDashboard() {
         <div className={`flex items-start justify-between ${isRTL ? "flex-row-reverse" : ""}`}>
           <h1 className="text-4xl md:text-6xl font-black tracking-tighter mb-3">{t("std.dashboard")}</h1>
           <button
-            onClick={() => void loadDashboard()}
+            onClick={() => void loadDashboard(true)}
             disabled={isLoading}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-[0.18em] dark:bg-white dark:text-slate-900"
           >

@@ -301,7 +301,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_20%_0%,#dbeafe_0%,#f8fafc_45%,#eef2ff_100%)] p-6 dark:bg-[radial-gradient(circle_at_20%_0%,#0f172a_0%,#020617_45%,#111827_100%)] md:p-10">
-      <div className="mx-auto max-w-[1600px] space-y-6 text-slate-900 dark:text-white">
+      <div className="mx-auto max-w-400 space-y-6 text-slate-900 dark:text-white">
         <section className="rounded-[28px] border border-white/70 bg-white/80 p-6 backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
@@ -376,7 +376,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
             <input value={sessionForm.description} onChange={(e) => setSessionForm((p) => ({ ...p, description: e.target.value }))} placeholder="description" className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
             <select value={sessionForm.status} onChange={(e) => setSessionForm((p) => ({ ...p, status: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40"><option value="draft">draft</option><option value="published">published</option><option value="cancelled">cancelled</option></select>
           </div>
-          <textarea value={sessionForm.metadata_json} onChange={(e) => setSessionForm((p) => ({ ...p, metadata_json: e.target.value }))} className="mt-2 min-h-[84px] w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-white/20 dark:bg-slate-950/40" />
+          <textarea value={sessionForm.metadata_json} onChange={(e) => setSessionForm((p) => ({ ...p, metadata_json: e.target.value }))} className="mt-2 min-h-21 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-white/20 dark:bg-slate-950/40" />
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={() => void createSession()} disabled={busy} className="rounded-xl bg-fuchsia-600 px-3 py-2 text-xs font-black uppercase text-white disabled:opacity-60">Create Session</button>
             <button onClick={() => void updateSession()} disabled={busy || editingSessionId === null} className="rounded-xl bg-amber-600 px-3 py-2 text-xs font-black uppercase text-white disabled:opacity-60">Save Session</button>

@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { BookOpen, Clock, FileText, Layers, Pencil, Plus, RefreshCcw, Save, Trash2, X } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { getStudentApiRequestUrl } from "@/features/student/studentApi";
+import { getStudentApiCached, getStudentApiRequestUrl, invalidateStudentApiCache } from "@/features/student/studentApi";
 import { getStoredStudentUser, getStudentToken } from "@/features/student/studentSession";
 
 type CourseListItem = {
@@ -161,7 +161,7 @@ export default function InstructorCoursesPage() {
   });
   const [isLessonSubmitting, setIsLessonSubmitting] = useState(false);
 
-  const loadCourses = async () => {
+  const loadCourses = useCallback(async (force = false) => {
     setErrorMessage(null);
     setSuccessMessage(null);
     setIsLoading(true);
@@ -169,12 +169,12 @@ export default function InstructorCoursesPage() {
       const token = getStudentToken();
       if (!token) throw new Error("missing_token");
 
-      const response = await axios.get(getStudentApiRequestUrl("/my-courses"), {
+      const response = await getStudentApiCached<{ data?: unknown }>("/my-courses", {
         headers: {
           Accept: "application/json",
           Authorization: `Bearer ${token}`,
         },
-      });
+      }, { ttlMs: 30_000, force });
 
       const allCourses = extractList(response.data);
       const ownCourses = allCourses.filter((course) => isOwnedByInstructor(course, currentInstructorId));
@@ -190,9 +190,9 @@ export default function InstructorCoursesPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentInstructorId]);
 
-  const resetUnitForm = () => {
+  const resetUnitForm = useCallback(() => {
     setEditingUnitId(null);
     setUnitForm({
       titleEn: "",
@@ -201,9 +201,9 @@ export default function InstructorCoursesPage() {
       unitOrder: "",
       durationMinutes: "",
     });
-  };
+  }, []);
 
-  const buildAuthHeaders = () => {
+  const buildAuthHeaders = useCallback(() => {
     const token = getStudentToken();
     if (!token) throw new Error("missing_token");
     return {
@@ -212,7 +212,7 @@ export default function InstructorCoursesPage() {
       "Accept-Language": language,
       "X-Locale": language,
     };
-  };
+  }, [language]);
 
   const extractUnitsList = (payload: unknown): UnitItem[] => {
     if (!payload || typeof payload !== "object") return [];
@@ -247,7 +247,7 @@ export default function InstructorCoursesPage() {
     return 0;
   };
 
-  const resetLessonForm = () => {
+  const resetLessonForm = useCallback(() => {
     setEditingLessonId(null);
     setLessonForm({
       titleEn: "",
@@ -259,25 +259,25 @@ export default function InstructorCoursesPage() {
       isRequired: true,
       durationMinutes: "",
     });
-  };
+  }, []);
 
-  const openCreateLessonModal = () => {
+  const openCreateLessonModal = useCallback(() => {
     resetLessonForm();
     setIsLessonModalOpen(true);
-  };
+  }, [resetLessonForm]);
 
-  const closeLessonModal = () => {
+  const closeLessonModal = useCallback(() => {
     setIsLessonModalOpen(false);
     resetLessonForm();
-  };
+  }, [resetLessonForm]);
 
-  const loadUnits = async (courseId: number | string) => {
+  const loadUnits = useCallback(async (courseId: number | string, force = false) => {
     setIsUnitsLoading(true);
     setErrorMessage(null);
     try {
-      const response = await axios.get(getStudentApiRequestUrl(`/my-courses/${courseId}/units`), {
+      const response = await getStudentApiCached<{ data?: unknown }>(`/my-courses/${courseId}/units`, {
         headers: buildAuthHeaders(),
-      });
+      }, { ttlMs: 20_000, force });
       setUnits(extractUnitsList(response.data));
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -288,19 +288,19 @@ export default function InstructorCoursesPage() {
     } finally {
       setIsUnitsLoading(false);
     }
-  };
+  }, [buildAuthHeaders]);
 
-  const loadLessons = async (courseId: number | string, unitId: number | string) => {
+  const loadLessons = useCallback(async (courseId: number | string, unitId: number | string, force = false) => {
     setIsLessonsLoading(true);
     setErrorMessage(null);
     try {
       const [listRes, countRes] = await Promise.all([
-        axios.get(getStudentApiRequestUrl(`/my-courses/${courseId}/units/${unitId}/lessons`), {
+        getStudentApiCached<{ data?: unknown }>(`/my-courses/${courseId}/units/${unitId}/lessons`, {
           headers: buildAuthHeaders(),
-        }),
-        axios.get(getStudentApiRequestUrl(`/my-courses/${courseId}/units/${unitId}/lessons/count`), {
+        }, { ttlMs: 15_000, force }),
+        getStudentApiCached<{ data?: unknown }>(`/my-courses/${courseId}/units/${unitId}/lessons/count`, {
           headers: buildAuthHeaders(),
-        }),
+        }, { ttlMs: 15_000, force }),
       ]);
 
       setLessons(extractLessonsList(listRes.data));
@@ -314,7 +314,7 @@ export default function InstructorCoursesPage() {
     } finally {
       setIsLessonsLoading(false);
     }
-  };
+  }, [buildAuthHeaders]);
 
   const selectUnitForLessons = async (unitId: number | string) => {
     if (!selectedCourseId) return;
@@ -330,9 +330,10 @@ export default function InstructorCoursesPage() {
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      const response = await axios.get(
-        getStudentApiRequestUrl(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons/${lessonId}`),
-        { headers: buildAuthHeaders() }
+      const response = await getStudentApiCached<{ data?: LessonItem }>(
+        `/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons/${lessonId}`,
+        { headers: buildAuthHeaders() },
+        { ttlMs: 15_000 }
       );
 
       const lesson = (response.data?.data ?? null) as LessonItem | null;
@@ -397,10 +398,11 @@ export default function InstructorCoursesPage() {
         { headers: buildAuthHeaders() }
       );
 
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons`);
       setSuccessMessage("Lesson created successfully.");
       setIsLessonModalOpen(false);
       resetLessonForm();
-      await loadLessons(selectedCourseId, selectedUnitId);
+      await loadLessons(selectedCourseId, selectedUnitId, true);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         setErrorMessage(error.response?.data?.message || "Failed to create lesson.");
@@ -449,10 +451,11 @@ export default function InstructorCoursesPage() {
         { headers: buildAuthHeaders() }
       );
 
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons`);
       setSuccessMessage("Lesson updated successfully.");
       setIsLessonModalOpen(false);
       resetLessonForm();
-      await loadLessons(selectedCourseId, selectedUnitId);
+      await loadLessons(selectedCourseId, selectedUnitId, true);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         setErrorMessage(error.response?.data?.message || "Failed to update lesson.");
@@ -473,11 +476,12 @@ export default function InstructorCoursesPage() {
         getStudentApiRequestUrl(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons/${lessonId}`),
         { headers: buildAuthHeaders() }
       );
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons`);
       setSuccessMessage("Lesson deleted successfully.");
       if (editingLessonId === lessonId) {
         resetLessonForm();
       }
-      await loadLessons(selectedCourseId, selectedUnitId);
+      await loadLessons(selectedCourseId, selectedUnitId, true);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         setErrorMessage(error.response?.data?.message || "Failed to delete lesson.");
@@ -491,9 +495,9 @@ export default function InstructorCoursesPage() {
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      const response = await axios.get(getStudentApiRequestUrl(`/my-courses/${courseId}/units/${unitId}`), {
+      const response = await getStudentApiCached<{ data?: UnitItem }>(`/my-courses/${courseId}/units/${unitId}`, {
         headers: buildAuthHeaders(),
-      });
+      }, { ttlMs: 20_000 });
       const unit = (response.data?.data ?? null) as UnitItem | null;
       if (!unit) return;
 
@@ -548,10 +552,12 @@ export default function InstructorCoursesPage() {
         headers: buildAuthHeaders(),
       });
 
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units`);
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}`);
       setSuccessMessage("Unit created successfully.");
       resetUnitForm();
-      await loadUnits(selectedCourseId);
-      await loadCourseDetails(selectedCourseId);
+      await loadUnits(selectedCourseId, true);
+      await loadCourseDetails(selectedCourseId, true);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         setErrorMessage(error.response?.data?.message || "Failed to create unit.");
@@ -591,10 +597,12 @@ export default function InstructorCoursesPage() {
         { headers: buildAuthHeaders() }
       );
 
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units`);
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}`);
       setSuccessMessage("Unit updated successfully.");
       resetUnitForm();
-      await loadUnits(selectedCourseId);
-      await loadCourseDetails(selectedCourseId);
+      await loadUnits(selectedCourseId, true);
+      await loadCourseDetails(selectedCourseId, true);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         setErrorMessage(error.response?.data?.message || "Failed to update unit.");
@@ -614,6 +622,8 @@ export default function InstructorCoursesPage() {
       await axios.delete(getStudentApiRequestUrl(`/my-courses/${selectedCourseId}/units/${unitId}`), {
         headers: buildAuthHeaders(),
       });
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units`);
+      invalidateStudentApiCache(`/my-courses/${selectedCourseId}`);
       setSuccessMessage("Unit deleted successfully.");
       if (editingUnitId === unitId) {
         resetUnitForm();
@@ -624,8 +634,8 @@ export default function InstructorCoursesPage() {
         setLessonsCount(0);
         resetLessonForm();
       }
-      await loadUnits(selectedCourseId);
-      await loadCourseDetails(selectedCourseId);
+      await loadUnits(selectedCourseId, true);
+      await loadCourseDetails(selectedCourseId, true);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         setErrorMessage(error.response?.data?.message || "Failed to delete unit.");
@@ -635,15 +645,15 @@ export default function InstructorCoursesPage() {
     }
   };
 
-  const loadCourseDetails = async (courseId: number | string) => {
+  const loadCourseDetails = async (courseId: number | string, force = false) => {
     setIsDetailsLoading(true);
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      const response = await axios.get(getStudentApiRequestUrl(`/my-courses/${courseId}`), {
+      const response = await getStudentApiCached<{ data?: CourseDetails }>(`/my-courses/${courseId}`, {
         params: { per_page:15 } ,
         headers: buildAuthHeaders(),
-      });
+      }, { ttlMs: 20_000, force });
 
       const details = (response.data?.data ?? null) as CourseDetails | null;
       setSelected(details);
@@ -652,7 +662,7 @@ export default function InstructorCoursesPage() {
       setLessons([]);
       setLessonsCount(0);
       resetLessonForm();
-      await loadUnits(courseId);
+      await loadUnits(courseId, force);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         setErrorMessage(error.response?.data?.message || "Failed to load course details.");
@@ -668,7 +678,7 @@ export default function InstructorCoursesPage() {
 
   useEffect(() => {
     void loadCourses();
-  }, []);
+  }, [loadCourses]);
 
   useEffect(() => {
     if (!isLessonModalOpen) return;
@@ -679,7 +689,7 @@ export default function InstructorCoursesPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isLessonModalOpen, isLessonSubmitting]);
+  }, [closeLessonModal, isLessonModalOpen, isLessonSubmitting]);
 
   const filteredCourses = useMemo(() => {
     if (!search.trim()) return courses;
@@ -700,7 +710,7 @@ export default function InstructorCoursesPage() {
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <button
-            onClick={() => void loadCourses()}
+            onClick={() => void loadCourses(true)}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2 text-sm font-bold hover:border-indigo-400/60"
           >
             <RefreshCcw className="h-4 w-4" />

@@ -1,5 +1,5 @@
-import ManagersManagement from "@/features/admin/pages/ManagersPage";
+import AuditorPage from "@/features/admin/pages/AuditorPage";
 
 export default function ManagersPage() {
-  return <ManagersManagement />;
+  return <AuditorPage />;
 }

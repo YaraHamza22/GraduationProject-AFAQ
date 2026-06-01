@@ -14,7 +14,6 @@ import {
   MessagesSquare,
   Moon,
   Shield,
-  ShieldCheck,
   Sun,
   Tags,
   UserCircle,
@@ -35,13 +34,13 @@ import { getAdminApiRequestUrl } from "@/features/admin/adminApi";
 import NotificationBell from "@/components/notifications/NotificationBell";
 
 const SyrianFlag = () => (
-  <svg width="20" height="14" viewBox="0 0 3 2" className="rounded-sm shadow-sm">
-    <rect width="3" height="2" fill="#3D8E33" />
-    <rect y=".667" width="3" height=".667" fill="#FFF" />
-    <rect y="1.333" width="3" height=".667" fill="#000" />
-    <path d="M0.75 0.85 L0.81 1.03 L1.0 1.03 L0.85 1.14 L0.91 1.32 L0.75 1.21 L0.59 1.32 L0.65 1.14 L0.5 1.03 L0.69 1.03 Z" fill="#CE1126" />
-    <path d="M1.5 0.85 L1.56 1.03 L1.75 1.03 L1.6 1.14 L1.66 1.32 L1.5 1.21 L1.34 1.32 L1.4 1.14 L1.25 1.03 L1.44 1.03 Z" fill="#CE1126" />
-    <path d="M2.25 0.85 L2.31 1.03 L2.5 1.03 L2.35 1.14 L2.41 1.32 L2.25 1.21 L2.09 1.32 L2.15 1.14 L2.0 1.03 L2.19 1.03 Z" fill="#CE1126" />
+  <svg width="20" height="14" viewBox="0 0 60 40" className="rounded-sm shadow-sm" aria-hidden="true">
+    <rect width="60" height="40" fill="#007a3d" />
+    <rect y="13.33" width="60" height="13.34" fill="#ffffff" />
+    <rect y="26.66" width="60" height="13.34" fill="#000000" />
+    <path d="M20 16.5l1.18 3.64H25l-3.09 2.24 1.18 3.62L20 23.78 16.91 26l1.18-3.62L15 20.14h3.82Z" fill="#ce1126" />
+    <path d="M30 16.5l1.18 3.64H35l-3.09 2.24 1.18 3.62L30 23.78 26.91 26l1.18-3.62L25 20.14h3.82Z" fill="#ce1126" />
+    <path d="M40 16.5l1.18 3.64H45l-3.09 2.24 1.18 3.62L40 23.78 36.91 26l1.18-3.62L35 20.14h3.82Z" fill="#ce1126" />
   </svg>
 );
 
@@ -95,6 +94,16 @@ type AdminNavItem = {
 
 const managementItems: AdminNavItem[] = [
   { name: "Students", href: "/admin/students", icon: GraduationCap, label: "adm.students" },
+  {
+    name: "Employees",
+    href: "/admin/managers",
+    icon: Users,
+    label: "adm.employees",
+    children: [
+      { name: "Auditors", href: "/admin/managers", label: "mng.auditors" },
+      { name: "Instructors", href: "/admin/instructors", label: "adm.all_instructors" },
+    ],
+  },
   { name: "Courses", href: "/admin/courses", icon: BookOpen, label: "adm.courses" },
   { name: "Course Category", href: "/admin/course-categories", icon: Tags, label: "adm.course_category" },
   { name: "Virtual Meet", href: "/admin/virtual-meet", icon: Video, label: "Virtual Meet" },
@@ -105,14 +114,6 @@ const managementItems: AdminNavItem[] = [
     label: "Chatting",
     children: [{ name: "Forum", href: "/admin/forum", icon: MessageSquare, label: "Forum" }],
   },
-  {
-    name: "Instructors",
-    href: "/admin/instructors",
-    icon: Users,
-    label: "adm.instructors",
-    children: [{ name: "All Instructors", href: "/admin/instructors", label: "adm.all_instructors" }],
-  },
-  { name: "Managers", href: "/admin/managers", icon: ShieldCheck, label: "adm.managers" },
 ];
 
 export default function AdminNavbar() {

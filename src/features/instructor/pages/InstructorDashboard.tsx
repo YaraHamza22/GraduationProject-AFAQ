@@ -14,7 +14,7 @@ import {
   Zap
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { getStudentApiRequestUrl } from "@/features/student/studentApi";
+import { getStudentApiCached } from "@/features/student/studentApi";
 import { getStudentToken } from "@/features/student/studentSession";
 
 const statCards = [
@@ -47,12 +47,21 @@ export default function InstructorDashboard() {
         const token = getStudentToken();
         if (!token) throw new Error("missing_token");
 
-        const response = await axios.get(getStudentApiRequestUrl("/instructor/dashboard"), {
+        const response = await getStudentApiCached<{
+          data?: {
+            summary?: {
+              total_courses?: number;
+              total_students?: number;
+              pending_assignments?: number;
+            };
+            top_performing_courses?: unknown[];
+          };
+        }>("/instructor/dashboard", {
           headers: {
             Accept: "application/json",
             Authorization: `Bearer ${token}`,
           },
-        });
+        }, { ttlMs: 30_000 });
 
         const data = response.data?.data ?? {};
         const nextSummary = data?.summary ?? {};

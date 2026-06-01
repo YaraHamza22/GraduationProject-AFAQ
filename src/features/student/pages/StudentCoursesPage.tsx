@@ -16,7 +16,7 @@ import {
   User
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { getStudentApiRequestUrl } from "@/features/student/studentApi";
+import { getStudentApiCached, getStudentApiRequestUrl, invalidateStudentApiCache } from "@/features/student/studentApi";
 import { getStoredStudentId, getStudentToken } from "@/features/student/studentSession";
 import { motion, AnimatePresence } from "framer-motion";
 import { getStudentApiBaseUrl } from "@/features/student/studentApi";
@@ -157,18 +157,24 @@ export default function StudentCoursesPage() {
   const [enrolledPage, setEnrolledPage] = useState(1);
   const [discoverPage, setDiscoverPage] = useState(1);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (force = false) => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
       const token = getStudentToken();
       if (!token) throw new Error("missing_token");
 
-      // Fetch enrolled courses from /enrollments (supports filters + pagination)
-      const enrolledRes = await axios.get(getStudentApiRequestUrl("/enrollments"), {
-        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-        params: { per_page: 15 },
-      });
+      const headers = { Accept: "application/json", Authorization: `Bearer ${token}` };
+      const [enrolledRes, discoverRes] = await Promise.all([
+        getStudentApiCached<{ data?: Enrollment[] | { data?: Enrollment[] } }>("/enrollments", {
+          headers,
+          params: { per_page: 15 },
+        }, { ttlMs: 20_000, force }),
+        getStudentApiCached<{ data?: EnrollableCourse[] | { data?: EnrollableCourse[] } }>("/courses", {
+          headers,
+          params: { per_page: 15 },
+        }, { ttlMs: 20_000, force }),
+      ]);
 
       const enrolledPayload = enrolledRes.data?.data;
       const enrollments: Enrollment[] = Array.isArray(enrolledPayload)
@@ -179,11 +185,6 @@ export default function StudentCoursesPage() {
 
       setEnrolledCourses(enrollments);
 
-      // Fetch visible courses, then exclude already enrolled ones client-side.
-      const discoverRes = await axios.get(getStudentApiRequestUrl("/courses"), {
-        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-        params: { per_page: 15 },
-      });
       const discoverPayload = discoverRes.data?.data;
       const allDiscoverable: EnrollableCourse[] = Array.isArray(discoverPayload)
         ? discoverPayload
@@ -206,9 +207,9 @@ export default function StudentCoursesPage() {
       const mediaEntries: Array<CourseMediaEntry | null> = await Promise.all(
         enrolledCourseIds.map(async (courseId: number) => {
           try {
-            const response = await axios.get(getStudentApiRequestUrl(`/courses/${courseId}`), {
-              headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-            });
+            const response = await getStudentApiCached<{ data?: { data?: Record<string, unknown> } | Record<string, unknown> }>(`/courses/${courseId}`, {
+              headers,
+            }, { ttlMs: 60_000, force });
             const coursePayload = response.data?.data?.data ?? response.data?.data ?? response.data;
             if (!coursePayload || typeof coursePayload !== "object") return null;
             const courseMedia: CourseMediaDetails = {
@@ -270,7 +271,8 @@ export default function StudentCoursesPage() {
         { headers: { Accept: "application/json", Authorization: `Bearer ${token}` } }
       );
       setSuccessMessage("Successfully enrolled in the course!");
-      void fetchData(); // Refresh both lists
+      invalidateStudentApiCache(/\/(enrollments|courses)(\?|\/|\|)/);
+      void fetchData(true); // Refresh both lists
       setActiveTab("my-learning");
     } catch (error) {
       const apiMessage =
@@ -296,9 +298,9 @@ export default function StudentCoursesPage() {
         return next;
       });
       const token = getStudentToken();
-      const res = await axios.get(getStudentApiRequestUrl(`/enrollments/${enrollmentId}/progress`), {
+      const res = await getStudentApiCached<{ data: ProgressDetails }>(`/enrollments/${enrollmentId}/progress`, {
         headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-      });
+      }, { ttlMs: 30_000 });
       setProgressData(prev => ({ ...prev, [enrollmentId]: res.data.data }));
     } catch (error) {
       console.error("Failed to fetch progress:", error);
