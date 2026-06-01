@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/app.dart';
+import '../../../core/theme/afaq_colors.dart';
 import '../../../core/widgets/afaq_panel.dart';
 import '../data/student_profile_service.dart';
 import 'student_page_shared.dart';
@@ -104,7 +105,7 @@ class _StudentProfilePageState extends State<StudentProfilePage> {
                                   _ProfileTile(label: 'Gender', value: _profile!.gender, width: tileWidth),
                                   _ProfileTile(
                                     label: 'Date of Birth',
-                                    value: _profile!.dateOfBirth,
+                                    value: _profile!.dateOfBirthLabel,
                                     width: tileWidth,
                                   ),
                                   _ProfileTile(
@@ -156,6 +157,8 @@ class _ProfileData {
   final String dateOfBirth;
   final String address;
 
+  String get dateOfBirthLabel => _readableDate(dateOfBirth);
+
   String get initials {
     final parts = name.split(RegExp(r'[\s@._-]+')).where((item) => item.isNotEmpty).take(2);
     final value = parts.map((item) => item[0].toUpperCase()).join();
@@ -194,10 +197,18 @@ class _ProfileTile extends StatelessWidget {
     return SizedBox(
       width: width,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          color: Colors.black.withValues(alpha: .03),
+          borderRadius: BorderRadius.circular(22),
+          gradient: const LinearGradient(
+            colors: [
+              Color(0xFFF9FBFF),
+              Color(0xFFF4F7FF),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(color: const Color(0xFFE4ECF8)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,13 +217,49 @@ class _ProfileTile extends StatelessWidget {
               label,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
                 fontWeight: FontWeight.w800,
+                color: AfaqColors.slate500,
               ),
             ),
             const SizedBox(height: 8),
-            Text(value),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 20,
+                height: 1.3,
+                fontWeight: FontWeight.w800,
+                color: AfaqColors.slate900,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+}
+
+String _readableDate(String raw) {
+  final value = raw.trim();
+  if (value.isEmpty || value.toLowerCase() == 'not provided') {
+    return 'Not provided';
+  }
+
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return value;
+
+  const months = <String>[
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+
+  return '${months[parsed.month - 1]} ${parsed.day}, ${parsed.year}';
 }

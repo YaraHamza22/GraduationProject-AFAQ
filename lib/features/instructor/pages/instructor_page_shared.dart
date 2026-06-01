@@ -149,6 +149,9 @@ class InstructorPageScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final subtitleColor = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
 
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
@@ -171,13 +174,14 @@ class InstructorPageScaffold extends StatelessWidget {
                     title,
                     style: Theme.of(context).textTheme.displaySmall?.copyWith(
                       fontWeight: FontWeight.w900,
+                      color: titleColor,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                      color: AfaqColors.slate500,
+                    style: TextStyle(
+                      color: subtitleColor,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -247,6 +251,7 @@ class InstructorEmptyPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return AfaqPanel(
       child: Center(
         child: Padding(
@@ -259,8 +264,8 @@ class InstructorEmptyPanel extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AfaqColors.slate500,
+                style: TextStyle(
+                  color: isDark ? AfaqColors.slate300 : AfaqColors.slate500,
                   fontWeight: FontWeight.w700,
                 ),
               ),

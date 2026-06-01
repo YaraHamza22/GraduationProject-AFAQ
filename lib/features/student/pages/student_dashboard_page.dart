@@ -240,6 +240,10 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+    final valueColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,8 +260,8 @@ class _StatCard extends StatelessWidget {
           const Spacer(),
           Text(
             label,
-            style: const TextStyle(
-              color: AfaqColors.slate500,
+            style: TextStyle(
+              color: labelColor,
               fontWeight: FontWeight.w800,
               fontSize: 12,
             ),
@@ -267,6 +271,7 @@ class _StatCard extends StatelessWidget {
             value,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w900,
+              color: valueColor,
             ),
           ),
         ],
@@ -286,6 +291,13 @@ class _CoursesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final itemBg = isDark
+        ? Colors.white.withValues(alpha: .06)
+        : AfaqColors.slate100.withValues(alpha: .55);
+    final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -294,28 +306,37 @@ class _CoursesPanel extends StatelessWidget {
             title,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w900,
+              color: titleColor,
             ),
           ),
           const SizedBox(height: 16),
           if (courses.isEmpty)
-            const Text('No recent courses yet.')
+            Text(
+              'No recent courses yet.',
+              style: TextStyle(color: secondary),
+            )
           else
             for (final course in courses)
               Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AfaqColors.slate100.withValues(alpha: .55),
+                  color: itemBg,
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Row(
                   children: [
                     const Icon(Icons.book_outlined, color: AfaqColors.blue500),
                     const SizedBox(width: 12),
-                    Expanded(child: Text(course.title)),
+                    Expanded(
+                      child: Text(
+                        course.title,
+                        style: TextStyle(color: titleColor),
+                      ),
+                    ),
                     Text(
                       '#${course.id}',
-                      style: const TextStyle(color: AfaqColors.slate500),
+                      style: TextStyle(color: secondary),
                     ),
                   ],
                 ),
@@ -337,6 +358,10 @@ class _ProgressPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -345,11 +370,15 @@ class _ProgressPanel extends StatelessWidget {
             title,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w900,
+              color: titleColor,
             ),
           ),
           const SizedBox(height: 16),
           if (rows.isEmpty)
-            const Text('No progress records yet.')
+            Text(
+              'No progress records yet.',
+              style: TextStyle(color: secondary),
+            )
           else
             for (final row in rows)
               Padding(
@@ -359,10 +388,18 @@ class _ProgressPanel extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Expanded(child: Text(row.title)),
+                        Expanded(
+                          child: Text(
+                            row.title,
+                            style: TextStyle(color: titleColor),
+                          ),
+                        ),
                         Text(
                           '${row.progress.toStringAsFixed(1)}%',
-                          style: const TextStyle(fontWeight: FontWeight.w800),
+                          style: TextStyle(
+                            color: titleColor,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ],
                     ),

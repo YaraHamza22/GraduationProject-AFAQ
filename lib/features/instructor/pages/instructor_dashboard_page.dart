@@ -220,6 +220,10 @@ class _InstructorStatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+    final valueColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,8 +240,8 @@ class _InstructorStatCard extends StatelessWidget {
           const Spacer(),
           Text(
             label,
-            style: const TextStyle(
-              color: AfaqColors.slate500,
+            style: TextStyle(
+              color: labelColor,
               fontWeight: FontWeight.w800,
               fontSize: 12,
             ),
@@ -247,6 +251,7 @@ class _InstructorStatCard extends StatelessWidget {
             value,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w900,
+              color: valueColor,
             ),
           ),
         ],
@@ -262,6 +267,13 @@ class _InstructorCoursesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+    final itemBg = isDark
+        ? Colors.white.withValues(alpha: .06)
+        : AfaqColors.slate100.withValues(alpha: .55);
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,18 +282,22 @@ class _InstructorCoursesPanel extends StatelessWidget {
             'Active Courses',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w900,
+              color: titleColor,
             ),
           ),
           const SizedBox(height: 16),
           if (courses.isEmpty)
-            const Text('No courses found for this instructor.')
+            Text(
+              'No courses found for this instructor.',
+              style: TextStyle(color: secondary),
+            )
           else
             for (final course in courses.take(6))
               Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AfaqColors.slate100.withValues(alpha: .55),
+                  color: itemBg,
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Row(
@@ -302,12 +318,15 @@ class _InstructorCoursesPanel extends StatelessWidget {
                         children: [
                           Text(
                             course.title,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
+                            style: TextStyle(
+                              color: titleColor,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             '${course.unitsCount} units • ${course.status}',
-                            style: const TextStyle(color: AfaqColors.slate500),
+                            style: TextStyle(color: secondary),
                           ),
                         ],
                       ),
@@ -328,6 +347,8 @@ class _InstructorMetricsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
     final totalCourses = (data?.totalCourses ?? 0).toDouble();
     final students = (data?.totalStudents ?? 0).toDouble();
     final pending = (data?.pendingAssignments ?? 0).toDouble();
@@ -376,6 +397,7 @@ class _InstructorMetricsPanel extends StatelessWidget {
                 'Performance',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w900,
+                  color: titleColor,
                 ),
               ),
               const SizedBox(height: 16),
@@ -398,13 +420,24 @@ class _MetricBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Expanded(child: Text(label)),
-            Text('${(value * 100).round()}%'),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(color: textColor),
+              ),
+            ),
+            Text(
+              '${(value * 100).round()}%',
+              style: TextStyle(color: textColor),
+            ),
           ],
         ),
         const SizedBox(height: 8),

@@ -195,6 +195,10 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelColor = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+    final valueColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,9 +213,21 @@ class _MetricCard extends StatelessWidget {
             child: Icon(icon, color: color),
           ),
           const Spacer(),
-          Text(label, style: const TextStyle(color: AfaqColors.slate500, fontWeight: FontWeight.w800)),
+          Text(
+            label,
+            style: TextStyle(
+              color: labelColor,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
           const SizedBox(height: 6),
-          Text(value, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: valueColor,
+            ),
+          ),
         ],
       ),
     );
@@ -225,6 +241,10 @@ class _SelectedCoursePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+
     final course = data?.courses.isNotEmpty == true ? data!.courses.first : null;
     return AfaqPanel(
       child: Column(
@@ -232,18 +252,27 @@ class _SelectedCoursePanel extends StatelessWidget {
         children: [
           Text(
             'Priority Review',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w900,
+              color: titleColor,
+            ),
           ),
           const SizedBox(height: 16),
           if (course == null)
-            const Text('No courses currently waiting for review.')
+            Text(
+              'No courses currently waiting for review.',
+              style: TextStyle(color: secondary),
+            )
           else ...[
             Text(
               course.title,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: titleColor,
+              ),
             ),
             const SizedBox(height: 8),
-            Text(course.description, style: const TextStyle(color: AfaqColors.slate500)),
+            Text(course.description, style: TextStyle(color: secondary)),
             const SizedBox(height: 16),
             AuditorStatusChip(
               label: course.status,
@@ -265,6 +294,10 @@ class _QuickPanels extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+
     return Column(
       children: [
         AfaqPanel(
@@ -273,10 +306,16 @@ class _QuickPanels extends StatelessWidget {
             children: [
               Text(
                 'Workspace',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: titleColor,
+                ),
               ),
               const SizedBox(height: 12),
-              Text('Signed in as ${data?.auditorName ?? 'Auditor'}'),
+              Text(
+                'Signed in as ${data?.auditorName ?? 'Auditor'}',
+                style: TextStyle(color: secondary),
+              ),
             ],
           ),
         ),
@@ -287,11 +326,17 @@ class _QuickPanels extends StatelessWidget {
             children: [
               Text(
                 'Recent Queue',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: titleColor,
+                ),
               ),
               const SizedBox(height: 12),
               if (data?.courses.isEmpty ?? true)
-                const Text('No queued courses.')
+                Text(
+                  'No queued courses.',
+                  style: TextStyle(color: secondary),
+                )
               else
                 for (final course in data!.courses.take(4))
                   Padding(
@@ -300,7 +345,12 @@ class _QuickPanels extends StatelessWidget {
                       children: [
                         const Icon(Icons.article_outlined, color: AfaqColors.primary),
                         const SizedBox(width: 10),
-                        Expanded(child: Text(course.title)),
+                        Expanded(
+                          child: Text(
+                            course.title,
+                            style: TextStyle(color: titleColor),
+                          ),
+                        ),
                       ],
                     ),
                   ),

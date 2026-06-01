@@ -105,6 +105,9 @@ class AuditorPageScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final subtitleColor = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
     return SingleChildScrollView(
       padding: EdgeInsets.symmetric(
         horizontal: width >= 1400 ? 48 : width >= 900 ? 32 : 16,
@@ -125,13 +128,14 @@ class AuditorPageScaffold extends StatelessWidget {
                     title,
                     style: Theme.of(context).textTheme.displaySmall?.copyWith(
                       fontWeight: FontWeight.w900,
+                      color: titleColor,
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     subtitle,
-                    style: const TextStyle(
-                      color: AfaqColors.slate500,
+                    style: TextStyle(
+                      color: subtitleColor,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -197,6 +201,7 @@ class AuditorEmptyPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return AfaqPanel(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -209,8 +214,8 @@ class AuditorEmptyPanel extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AfaqColors.slate500,
+                style: TextStyle(
+                  color: isDark ? AfaqColors.slate300 : AfaqColors.slate500,
                   fontWeight: FontWeight.w700,
                 ),
               ),

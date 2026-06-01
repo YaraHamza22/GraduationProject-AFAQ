@@ -445,6 +445,7 @@ class _StudentForumPageState extends State<StudentForumPage> {
               separatorBuilder: (_, __) => const SizedBox(height: 16),
               itemBuilder: (context, index) {
                 final thread = _threads[index];
+                final isDark = Theme.of(context).brightness == Brightness.dark;
                 return AfaqPanel(
                   child: InkWell(
                     onTap: () => _openThread(thread),
@@ -482,6 +483,9 @@ class _StudentForumPageState extends State<StudentForumPage> {
                                     thread.title,
                                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                       fontWeight: FontWeight.w900,
+                                      color: isDark
+                                          ? AfaqColors.foregroundDark
+                                          : AfaqColors.foregroundLight,
                                     ),
                                   ),
                                 ],
@@ -511,9 +515,14 @@ class _StudentForumPageState extends State<StudentForumPage> {
                                   child: Text('Open'),
                                 ),
                               ],
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(Icons.more_vert_rounded),
+                              child: Padding(
+                                padding: const EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.more_vert_rounded,
+                                  color: isDark
+                                      ? AfaqColors.slate300
+                                      : AfaqColors.slate700,
+                                ),
                               ),
                             ),
                           ],
@@ -523,7 +532,11 @@ class _StudentForumPageState extends State<StudentForumPage> {
                           thread.body,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AfaqColors.slate500),
+                          style: TextStyle(
+                            color: isDark
+                                ? AfaqColors.slate300
+                                : AfaqColors.slate500,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         Wrap(

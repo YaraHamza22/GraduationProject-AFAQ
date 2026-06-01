@@ -320,19 +320,24 @@ class _TabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
         decoration: BoxDecoration(
-          color: active ? Colors.white : Colors.transparent,
+          color: active
+              ? (isDark ? Colors.white.withValues(alpha: .12) : Colors.white)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Text(
           label,
           style: TextStyle(
             fontWeight: FontWeight.w800,
-            color: active ? AfaqColors.slate900 : AfaqColors.slate500,
+            color: active
+                ? (isDark ? AfaqColors.foregroundDark : AfaqColors.slate900)
+                : (isDark ? AfaqColors.slate300 : AfaqColors.slate500),
           ),
         ),
       ),
@@ -355,6 +360,10 @@ class _EnrollmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -372,6 +381,7 @@ class _EnrollmentCard extends StatelessWidget {
             enrollment.title,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w900,
+              color: titleColor,
             ),
           ),
           const SizedBox(height: 8),
@@ -379,12 +389,15 @@ class _EnrollmentCard extends StatelessWidget {
             enrollment.description,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AfaqColors.slate500),
+            style: TextStyle(color: secondary),
           ),
           const Spacer(),
           Text(
             'Progress ${enrollment.progress.toStringAsFixed(1)}%',
-            style: const TextStyle(fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: titleColor,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 8),
           LinearProgressIndicator(
@@ -445,6 +458,10 @@ class _DiscoverCourseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight;
+    final secondary = isDark ? AfaqColors.slate300 : AfaqColors.slate500;
+
     return AfaqPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -462,6 +479,7 @@ class _DiscoverCourseCard extends StatelessWidget {
             course.title,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w900,
+              color: titleColor,
             ),
           ),
           const SizedBox(height: 8),
@@ -469,7 +487,7 @@ class _DiscoverCourseCard extends StatelessWidget {
             course.description,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AfaqColors.slate500),
+            style: TextStyle(color: secondary),
           ),
           const Spacer(),
           Wrap(
@@ -508,15 +526,19 @@ class _MetaChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: AfaqColors.slate100.withValues(alpha: .8),
+        color: isDark
+            ? Colors.white.withValues(alpha: .10)
+            : AfaqColors.slate100.withValues(alpha: .8),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
+          color: isDark ? AfaqColors.foregroundDark : AfaqColors.foregroundLight,
           fontSize: 12,
           fontWeight: FontWeight.w700,
         ),

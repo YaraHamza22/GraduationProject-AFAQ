@@ -75,6 +75,121 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
     return 0;
   }
 
+  Future<List<_QuizRow>> _loadCourseQuizzes(
+    _CourseEntry course,
+    String lang,
+  ) async {
+    try {
+      final responses = await Future.wait([
+        _quizService.getQuizAvailability(course.id),
+        _quizService.getAssessmentProgress(course.id),
+      ]);
+
+      final availabilityMap = unwrapDataMap(responses[0].data);
+      final hasQuiz = availabilityMap['has_quiz'] == true;
+      final isEnrolled = availabilityMap['is_enrolled'] != false;
+      final quizzesCount = readInt(availabilityMap['quizzes_count']);
+      if (!isEnrolled || !hasQuiz || quizzesCount <= 0) {
+        return const [];
+      }
+
+      final rows = _parseAssessmentProgressRows(
+        unwrapDataMap(responses[1].data),
+      );
+      final quizFutures = rows.map((row) async {
+        final quizId = readInt(row['quiz_id'] ?? asMap(row['quiz'])?['id']);
+        if (quizId == 0) return null;
+
+        try {
+          final detailsResponse = await _quizService.getQuiz(quizId);
+          final details = unwrapDataMap(detailsResponse.data);
+          if (!_isPublishedQuiz(details)) return null;
+
+          final attemptsLeft = readInt(row['attempts_left'], fallback: -1);
+          final isPassed = row['is_passed'] == true;
+          final attemptId = _attemptIdFromProgress(row);
+          final status = readString(
+            row['status'] ?? row['attempt_status'] ?? row['grading_status'],
+          );
+
+          return _QuizRow(
+            id: readInt(details['id'], fallback: quizId),
+            title: localizedValue(
+              details['title'],
+              lang,
+              fallback: 'Quiz #$quizId',
+            ),
+            description: localizedValue(
+              details['description'],
+              lang,
+              fallback: 'No description.',
+            ),
+            courseId: course.id,
+            courseTitle: course.title,
+            durationMinutes: readInt(details['duration_minutes']),
+            attemptsLeft: attemptsLeft,
+            isPassed: isPassed,
+            attemptId: attemptId,
+            isTaken: isPassed ||
+                (attemptsLeft == 0 && attemptsLeft != -1) ||
+                _isTakenStatus(status),
+          );
+        } catch (_) {
+          return null;
+        }
+      });
+
+      return (await Future.wait(quizFutures))
+          .whereType<_QuizRow>()
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<_QuizRow>> _loadFallbackCourseQuizzes(
+    _CourseEntry course,
+    String lang,
+  ) async {
+    try {
+      final response = await _quizService.getQuizzes(
+        courseId: course.id,
+        perPage: 100,
+      );
+      final rows = unwrapDataList(response.data);
+      return rows
+          .where(_isPublishedQuiz)
+          .map((quiz) {
+            final id = readInt(quiz['id']);
+            if (id == 0) return null;
+            return _QuizRow(
+              id: id,
+              title: localizedValue(
+                quiz['title'],
+                lang,
+                fallback: 'Quiz #$id',
+              ),
+              description: localizedValue(
+                quiz['description'],
+                lang,
+                fallback: 'No description.',
+              ),
+              courseId: course.id,
+              courseTitle: course.title,
+              durationMinutes: readInt(quiz['duration_minutes']),
+              attemptsLeft: -1,
+              isPassed: false,
+              attemptId: 0,
+              isTaken: false,
+            );
+          })
+          .whereType<_QuizRow>()
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
@@ -107,112 +222,19 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
         for (final course in enrolledCourses) course.id: course,
       }.values.toList(growable: false);
 
-      final merged = <_QuizRow>[];
-      for (final course in uniqueCourses) {
-        try {
-          final availabilityResponse = await _quizService.getQuizAvailability(
-            course.id,
-          );
-          final availabilityMap = unwrapDataMap(availabilityResponse.data);
-          final hasQuiz = availabilityMap['has_quiz'] == true;
-          final isEnrolled = availabilityMap['is_enrolled'] != false;
-          final quizzesCount = readInt(availabilityMap['quizzes_count']);
-          if (!isEnrolled || !hasQuiz || quizzesCount <= 0) continue;
-
-          final progressResponse = await _quizService.getAssessmentProgress(
-            course.id,
-          );
-          final rows = _parseAssessmentProgressRows(
-            unwrapDataMap(progressResponse.data),
-          );
-
-          for (final row in rows) {
-            final quizId = readInt(row['quiz_id'] ?? asMap(row['quiz'])?['id']);
-            if (quizId == 0) continue;
-
-            try {
-              final detailsResponse = await _quizService.getQuiz(quizId);
-              final details = unwrapDataMap(detailsResponse.data);
-              if (!_isPublishedQuiz(details)) continue;
-
-              final attemptsLeft = readInt(row['attempts_left'], fallback: -1);
-              final isPassed = row['is_passed'] == true;
-              final attemptId = _attemptIdFromProgress(row);
-              final status = readString(
-                row['status'] ?? row['attempt_status'] ?? row['grading_status'],
-              );
-              merged.add(
-                _QuizRow(
-                  id: readInt(details['id'], fallback: quizId),
-                  title: localizedValue(
-                    details['title'],
-                    lang,
-                    fallback: 'Quiz #$quizId',
-                  ),
-                  description: localizedValue(
-                    details['description'],
-                    lang,
-                    fallback: 'No description.',
-                  ),
-                  courseId: course.id,
-                  courseTitle: course.title,
-                  durationMinutes: readInt(details['duration_minutes']),
-                  attemptsLeft: attemptsLeft,
-                  isPassed: isPassed,
-                  attemptId: attemptId,
-                  isTaken: isPassed ||
-                      (attemptsLeft == 0 && attemptsLeft != -1) ||
-                      _isTakenStatus(status),
-                ),
-              );
-            } catch (_) {
-              continue;
-            }
-          }
-        } catch (_) {
-          continue;
-        }
-      }
+      final merged = (await Future.wait(
+        uniqueCourses.map((course) => _loadCourseQuizzes(course, lang)),
+      ))
+          .expand((rows) => rows)
+          .toList(growable: true);
 
       if (merged.isEmpty) {
-        for (final course in uniqueCourses) {
-          try {
-            final response = await _quizService.getQuizzes(
-              courseId: course.id,
-              perPage: 100,
-            );
-            final rows = unwrapDataList(response.data);
-            for (final quiz in rows) {
-              if (!_isPublishedQuiz(quiz)) continue;
-              final id = readInt(quiz['id']);
-              if (id == 0) continue;
-              merged.add(
-                _QuizRow(
-                  id: id,
-                  title: localizedValue(
-                    quiz['title'],
-                    lang,
-                    fallback: 'Quiz #$id',
-                  ),
-                  description: localizedValue(
-                    quiz['description'],
-                    lang,
-                    fallback: 'No description.',
-                  ),
-                  courseId: course.id,
-                  courseTitle: course.title,
-                  durationMinutes: readInt(quiz['duration_minutes']),
-                  attemptsLeft: -1,
-                  isPassed: false,
-                  attemptId: 0,
-                  isTaken: false,
-                ),
-              );
-            }
-          } catch (_) {
-            continue;
-          }
-        }
+        merged.addAll(
+          (await Future.wait(
+            uniqueCourses.map((course) => _loadFallbackCourseQuizzes(course, lang)),
+          ))
+              .expand((rows) => rows),
+        );
       }
 
       if (merged.isEmpty) {
@@ -340,12 +362,16 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
           final rows = _parseAssessmentProgressRows(
             unwrapDataMap(progressResponse.data),
           );
-          final match = rows.where((row) {
-            final quizId = readInt(row['quiz_id'] ?? asMap(row['quiz'])?['id']);
-            return quizId == quiz.id;
-          }).cast<Map<String, dynamic>>().toList(growable: false);
-          if (match.isNotEmpty) {
-            final row = match.first;
+          Map<String, dynamic>? row;
+          for (final item in rows) {
+            final quizId = readInt(item['quiz_id'] ?? asMap(item['quiz'])?['id']);
+            if (quizId == quiz.id) {
+              row = item;
+              break;
+            }
+          }
+
+          if (row != null) {
             final attemptsLeft = readInt(row['attempts_left'], fallback: -1);
             final blocked = row['is_passed'] == true ||
                 (attemptsLeft >= 0 && attemptsLeft <= 0) ||
@@ -479,14 +505,22 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
                       itemBuilder: (context, index) {
                         final quiz = _quizzes[index];
                         final isBusy = _busyQuizId == quiz.id;
+                        final isDark =
+                            Theme.of(context).brightness == Brightness.dark;
+                        final titleColor = isDark
+                            ? AfaqColors.foregroundDark
+                            : AfaqColors.foregroundLight;
+                        final secondary = isDark
+                            ? AfaqColors.slate300
+                            : AfaqColors.slate500;
                         return AfaqPanel(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 quiz.courseTitle,
-                                style: const TextStyle(
-                                  color: AfaqColors.slate500,
+                                style: TextStyle(
+                                  color: secondary,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -494,14 +528,17 @@ class _StudentQuizzesPageState extends State<StudentQuizzesPage> {
                               Text(
                                 quiz.title,
                                 style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w900),
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w900,
+                                      color: titleColor,
+                                    ),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 quiz.description,
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: AfaqColors.slate500),
+                                style: TextStyle(color: secondary),
                               ),
                               const Spacer(),
                               Wrap(
