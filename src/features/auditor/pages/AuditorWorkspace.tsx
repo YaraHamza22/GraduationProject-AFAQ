@@ -41,7 +41,7 @@ import {
 } from "@/features/auditor/auditorTypes";
 
 type WorkspaceMode = "dashboard" | "profile" | "courses" | "quizzes" | "notifications";
-type Verdict = "approved" | "changes_requested" | "rejected";
+type Verdict = "approved" | "changes_requested" | "follow_up";
 
 type LoadState = {
   loading: boolean;
@@ -51,7 +51,7 @@ type LoadState = {
 const verdicts: { value: Verdict; label: string; tone: string }[] = [
   { value: "approved", label: "Approved", tone: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300" },
   { value: "changes_requested", label: "Changes", tone: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-300" },
-  { value: "rejected", label: "Rejected", tone: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300" },
+  { value: "follow_up", label: "Follow Up", tone: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300" },
 ];
 
 function classNames(...values: Array<string | false | null | undefined>) {
@@ -120,6 +120,7 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
   const [verdict, setVerdict] = React.useState<Verdict>("changes_requested");
   const [notes, setNotes] = React.useState("");
   const [lastReview, setLastReview] = React.useState<ContentReview | null>(null);
+  const [reviewScope, setReviewScope] = React.useState<"course" | "lesson">("course");
 
   const loadAll = React.useCallback(async () => {
     setState({ loading: true, error: null });
@@ -250,8 +251,8 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
       return;
     }
 
-    if (!selectedLesson?.id) {
-      setActionState({ loading: false, error: "Select a lesson before submitting a review." });
+    if (reviewScope === "lesson" && !selectedLesson?.id) {
+      setActionState({ loading: false, error: "Select a lesson before submitting a lesson review." });
       return;
     }
 
@@ -259,7 +260,7 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
       const payload = await auditorPost<ContentReview>(`/auditor/courses/${selectedCourse.id}/content-reviews`, {
         verdict,
         notes: notes.trim() || "Reviewed by auditor.",
-        lesson_id: selectedLesson.id,
+        ...(reviewScope === "lesson" && selectedLesson?.id ? { lesson_id: selectedLesson.id } : {}),
       });
 
       setLastReview(extractSingle<ContentReview>(payload));
@@ -443,6 +444,12 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
                         <p className="text-xs font-black uppercase tracking-widest text-slate-400">Selected course</p>
                         <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950 dark:text-white">{textOf(selectedCourseDetail?.title ?? selectedCourse?.title)}</h2>
                         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-white/50">{selectedCourseDetail?.description || selectedCourse?.description || "No description available."}</p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <StatusPill tone="hot">{reviewScope === "course" ? "Whole course review" : "Specific lesson review"}</StatusPill>
+                          {selectedLesson?.title && reviewScope === "lesson" ? (
+                            <StatusPill tone="warn">{textOf(selectedLesson.title)}</StatusPill>
+                          ) : null}
+                        </div>
                       </div>
                       <StatusPill tone="hot">{allLessons.length} lessons</StatusPill>
                     </div>
@@ -477,6 +484,68 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
 
                     <div className="p-5">
                       <p className="text-xs font-black uppercase tracking-widest text-slate-400">Submit review</p>
+                      <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                        <p className="text-xs font-black uppercase tracking-widest text-slate-400">Review target</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setReviewScope("course")}
+                            className={classNames(
+                              "rounded-2xl border px-3 py-3 text-xs font-black transition",
+                              reviewScope === "course"
+                                ? "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300"
+                                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white/50"
+                            )}
+                          >
+                            Whole course review
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReviewScope("lesson");
+                              if (!selectedLesson) {
+                                setSelectedLesson(allLessons[0] ?? null);
+                              }
+                            }}
+                            className={classNames(
+                              "rounded-2xl border px-3 py-3 text-xs font-black transition",
+                              reviewScope === "lesson"
+                                ? "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/25 dark:bg-indigo-500/10 dark:text-indigo-300"
+                                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-white/50"
+                            )}
+                          >
+                            Specific lesson review
+                          </button>
+                        </div>
+                        <p className="mt-3 text-sm font-semibold leading-6 text-slate-500 dark:text-white/50">
+                          The backend accepts an optional <code>lesson_id</code>. Leave it empty for a whole-course review, or choose one lesson to target a specific content issue.
+                        </p>
+                      </div>
+
+                      {reviewScope === "lesson" ? (
+                        <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+                          <p className="text-xs font-black uppercase tracking-widest text-slate-400">Lesson target</p>
+                          <select
+                            value={selectedLesson?.id ?? ""}
+                            onChange={(event) => {
+                              const lessonId = Number(event.target.value);
+                              const lesson = allLessons.find((item) => item.id === lessonId) ?? null;
+                              setSelectedLesson(lesson);
+                            }}
+                            className="mt-3 h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold outline-none transition dark:border-white/10 dark:bg-white/5 dark:text-white"
+                          >
+                            <option value="">Select lesson</option>
+                            {units.map((unit) =>
+                              (unit.lessons ?? []).map((lesson) => (
+                                <option key={lesson.id} value={lesson.id}>
+                                  {`${textOf(unit.title)} - ${textOf(lesson.title)}`}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
+                      ) : null}
+
                       <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                         {verdicts.map((item) => (
                           <button
@@ -515,6 +584,9 @@ export default function AuditorWorkspace({ mode }: { mode: WorkspaceMode }) {
                         <div className="mt-4 rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-200">
                           <p className="font-black">Review #{lastReview.id}</p>
                           <p className="mt-1 font-semibold">{formatStatus(lastReview.verdict)} - {compactDate(lastReview.created_at)}</p>
+                          <p className="mt-1 font-semibold">
+                            {lastReview.lesson_id ? `Lesson #${lastReview.lesson_id}` : "Whole course review"}
+                          </p>
                         </div>
                       ) : null}
                     </div>
