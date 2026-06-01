@@ -33,6 +33,9 @@ class _StudentChatPageState extends State<StudentChatPage> {
   List<_ChatContact> _contacts = const [];
   List<_ChatParticipant> _participants = const [];
   List<_ChatMessage> _messages = const [];
+  final Map<int, _ChatContact> _contactById = {};
+  final Map<int, List<_ChatParticipant>> _participantsByThreadId = {};
+  final Map<int, List<_ChatMessage>> _messagesByThreadId = {};
 
   _ChatThread? _selectedThread;
   int? _selectedContactId;
@@ -43,6 +46,15 @@ class _StudentChatPageState extends State<StudentChatPage> {
 
   int get _myId => SessionStore.instance.userId ?? 0;
   String get _lang => localeNotifier.value.languageCode;
+
+  bool _isGenericName(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == 'user' ||
+        normalized == 'instructor' ||
+        normalized.startsWith('user #') ||
+        normalized.startsWith('instructor #');
+  }
 
   @override
   void initState() {
@@ -85,17 +97,21 @@ class _StudentChatPageState extends State<StudentChatPage> {
       if (!mounted) return;
 
       if (contacts.isEmpty) {
-        setState(() {
-          _contacts = const [];
-          _selectedContactId = null;
-        });
-        return;
-      }
+      setState(() {
+        _contacts = const [];
+        _selectedContactId = null;
+        _contactById.clear();
+      });
+      return;
+    }
 
       final selectedId = _selectedContactId ?? contacts.first.id;
       setState(() {
         _contacts = contacts;
         _selectedContactId = selectedId;
+        _contactById
+          ..clear()
+          ..addEntries(contacts.map((contact) => MapEntry(contact.id, contact)));
       });
       await _loadSelectedInstructorDetails(selectedId);
     } catch (_) {
@@ -103,6 +119,7 @@ class _StudentChatPageState extends State<StudentChatPage> {
       setState(() {
         _contacts = const [];
         _selectedContactId = null;
+        _contactById.clear();
       });
     }
   }
@@ -111,11 +128,8 @@ class _StudentChatPageState extends State<StudentChatPage> {
     if (contactId == 0) return;
 
     final current = _contacts.where((item) => item.id == contactId).firstOrNull;
-    final hasEnoughDetails = current != null &&
-        (current.email.isNotEmpty ||
-            current.name.trim().isNotEmpty &&
-                current.name != 'Instructor' &&
-                current.name != 'User #$contactId');
+    final hasEnoughDetails =
+        current != null && (current.email.isNotEmpty || !_isGenericName(current.name));
     if (hasEnoughDetails) return;
 
     try {
@@ -127,6 +141,7 @@ class _StudentChatPageState extends State<StudentChatPage> {
         _contacts = _contacts
             .map((contact) => contact.id == contactId ? contact.merge(details) : contact)
             .toList(growable: false);
+        _contactById[contactId] = (_contactById[contactId] ?? details).merge(details);
       });
     } catch (_) {
       // Keep list response if details endpoint is unavailable.
@@ -153,11 +168,17 @@ class _StudentChatPageState extends State<StudentChatPage> {
             : threads.any((thread) => thread.id == _selectedThread?.id)
                 ? threads.firstWhere((thread) => thread.id == _selectedThread!.id)
                 : threads.first;
+        if (_selectedThread != null) {
+          _participants = _participantsByThreadId[_selectedThread!.id] ?? const [];
+          _messages = _messagesByThreadId[_selectedThread!.id] ?? const [];
+        }
       });
 
       if (_selectedThread != null) {
-        await _loadParticipants(_selectedThread!.id);
-        await _loadMessages(_selectedThread!.id);
+        await Future.wait([
+          _loadParticipants(_selectedThread!.id),
+          _loadMessages(_selectedThread!.id),
+        ]);
       } else if (mounted) {
         setState(() {
           _participants = const [];
@@ -186,15 +207,32 @@ class _StudentChatPageState extends State<StudentChatPage> {
     try {
       final response = await _service.getParticipants(threadId);
       if (!mounted) return;
+      final participants = unwrapDataList(response.data)
+          .map(_ChatParticipant.fromMap)
+          .where((item) => item.userId != 0)
+          .toList(growable: false);
       setState(() {
-        _participants = unwrapDataList(response.data)
-            .map(_ChatParticipant.fromMap)
-            .where((item) => item.userId != 0)
-            .toList(growable: false);
+        _participantsByThreadId[threadId] = participants;
+        if (_selectedThread?.id == threadId) {
+          _participants = participants;
+          final peer = participants.where((item) => item.userId != _myId).firstOrNull;
+          if (peer != null) {
+            _selectedContactId = peer.userId;
+          }
+        }
+        for (final participant in participants) {
+          if (participant.contact != null) {
+            _contactById[participant.userId] = participant.contact!;
+          }
+        }
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _participants = const []);
+      setState(() {
+        if (_selectedThread?.id == threadId) {
+          _participants = const [];
+        }
+      });
     }
   }
 
@@ -220,10 +258,16 @@ class _StudentChatPageState extends State<StudentChatPage> {
 
       if (!mounted) return;
       setState(() {
+        _messagesByThreadId[threadId] = messages;
         _messages = messages;
         _messagePage = readInt(pagination?['current_page'], fallback: 1);
         _messageTotalPages = readInt(pagination?['total_pages'], fallback: 1);
         _selectedThread = _threads.where((item) => item.id == threadId).firstOrNull ?? _selectedThread;
+        for (final message in messages) {
+          if (message.contact != null) {
+            _contactById[message.authorId] = message.contact!;
+          }
+        }
       });
     } catch (_) {
       if (!mounted) return;
@@ -237,24 +281,31 @@ class _StudentChatPageState extends State<StudentChatPage> {
 
   Future<int?> _findThreadByParticipantWithMessages(int userId) async {
     for (final thread in _threads) {
+      final cachedParticipants = _participantsByThreadId[thread.id];
+      if (cachedParticipants != null && !cachedParticipants.any((item) => item.userId == userId)) {
+        continue;
+      }
+
       try {
-        final participantsResponse = await _service.getParticipants(thread.id);
-        final rows = unwrapDataList(participantsResponse.data)
-            .map(_ChatParticipant.fromMap)
-            .toList(growable: false);
+        final rows = cachedParticipants ??
+            unwrapDataList((await _service.getParticipants(thread.id)).data)
+                .map(_ChatParticipant.fromMap)
+                .toList(growable: false);
+        _participantsByThreadId[thread.id] = rows;
         if (!rows.any((item) => item.userId == userId)) {
           continue;
         }
 
-        final messagesResponse = await _service.getMessages(
-          threadId: thread.id,
-          page: 1,
-          perPage: 1,
-        );
-        final messages = unwrapDataList(messagesResponse.data)
-            .map(_ChatMessage.fromMap)
-            .where((item) => item.id != 0)
-            .toList(growable: false);
+        final messages = _messagesByThreadId[thread.id] ??
+            (unwrapDataList(
+              (await _service.getMessages(
+                threadId: thread.id,
+                page: 1,
+                perPage: 1,
+              ))
+                  .data,
+            ).map(_ChatMessage.fromMap).where((item) => item.id != 0).toList(growable: false));
+        _messagesByThreadId[thread.id] = messages;
 
         if (messages.isNotEmpty) {
           return thread.id;
@@ -270,9 +321,17 @@ class _StudentChatPageState extends State<StudentChatPage> {
     setState(() {
       _selectedThread = thread;
       _ok = null;
+      _participants = _participantsByThreadId[thread.id] ?? const [];
+      _messages = _messagesByThreadId[thread.id] ?? const [];
     });
-    await _loadParticipants(thread.id);
-    await _loadMessages(thread.id);
+    await Future.wait([
+      _loadParticipants(thread.id),
+      _loadMessages(thread.id),
+    ]);
+    final peer = _peerParticipant;
+    if (peer != null) {
+      await _loadSelectedInstructorDetails(peer.userId);
+    }
   }
 
   Future<void> _createOrOpenDirectThread() async {
@@ -367,17 +426,94 @@ class _StudentChatPageState extends State<StudentChatPage> {
     }
   }
 
+  _ChatContact? _contactForUserId(int userId) => _contactById[userId];
+
+  Map<int, _ChatParticipant> get _participantByUserId => {
+        for (final participant in _participants) participant.userId: participant,
+      };
+
+  String _displayNameForUserId(
+    int userId, {
+    String? fallbackName,
+  }) {
+    if (userId == _myId) return 'You';
+
+    final contact = _contactForUserId(userId);
+    if (contact != null && !_isGenericName(contact.name)) {
+      return contact.name;
+    }
+
+    final participant = _participantByUserId[userId];
+    if (participant?.displayName case final name? when !_isGenericName(name)) {
+      return name;
+    }
+
+    if (fallbackName != null && !_isGenericName(fallbackName)) {
+      return fallbackName.trim();
+    }
+
+    return 'User #$userId';
+  }
+
   String _contactLabel(_ChatParticipant participant) {
-    final contact = _contacts.where((item) => item.id == participant.userId).firstOrNull;
-    if (contact != null) return contact.name;
-    if (participant.userId == _myId) return 'You';
-    return 'User #${participant.userId}';
+    return _displayNameForUserId(
+      participant.userId,
+      fallbackName: participant.displayName,
+    );
+  }
+
+  _ChatParticipant? get _peerParticipant {
+    if (_selectedThread == null) return null;
+    for (final participant in _participants) {
+      if (participant.userId != _myId) {
+        return participant;
+      }
+    }
+    return null;
+  }
+
+  int? get _activePeerUserId => _peerParticipant?.userId;
+
+  _ChatContact? get _activePeerContact {
+    final userId = _activePeerUserId;
+    if (userId == null) return null;
+    return _contactForUserId(userId) ?? _peerParticipant?.contact;
+  }
+
+  String get _activeChatTitle {
+    final contact = _activePeerContact;
+    if (contact != null && !_isGenericName(contact.name)) {
+      return contact.name;
+    }
+
+    final peer = _peerParticipant;
+    if (peer?.displayName case final name? when !_isGenericName(name)) {
+      return name;
+    }
+
+    final userId = _activePeerUserId;
+    if (userId != null) {
+      return 'User #$userId';
+    }
+
+    return 'Messages';
+  }
+
+  String get _activeChatSubtitle {
+    final contact = _activePeerContact;
+    if (contact != null && contact.email.isNotEmpty) {
+      return contact.email;
+    }
+
+    return _selectedThread == null
+        ? 'Choose an instructor to begin.'
+        : 'Secure direct chat';
   }
 
   _ChatContact? get _selectedContact {
     final contactId = _selectedContactId;
     if (contactId == null) return null;
-    return _contacts.where((item) => item.id == contactId).firstOrNull;
+    return _contactById[contactId];
   }
 
   List<_ChatContact> get _filteredContacts {
@@ -858,8 +994,6 @@ class _StudentChatPageState extends State<StudentChatPage> {
   }
 
   Widget _buildMessagesPanel(double width, double height) {
-    final selectedContact = _selectedContact;
-
     return SizedBox(
       width: width,
       child: AfaqPanel(
@@ -883,7 +1017,7 @@ class _StudentChatPageState extends State<StudentChatPage> {
                       radius: 24,
                       backgroundColor: AfaqColors.emerald500.withValues(alpha: .14),
                       child: Text(
-                        _initialsFor(selectedContact?.name ?? (_selectedThread?.title ?? 'Chat')),
+                        _initialsFor(_activeChatTitle),
                         style: const TextStyle(
                           color: AfaqColors.emerald600,
                           fontWeight: FontWeight.w900,
@@ -896,18 +1030,14 @@ class _StudentChatPageState extends State<StudentChatPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            selectedContact?.name ?? _selectedThread?.title ?? 'Messages',
+                            _activeChatTitle,
                             style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                   fontWeight: FontWeight.w900,
                                 ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            selectedContact?.email.isNotEmpty == true
-                                ? selectedContact!.email
-                                : _selectedThread == null
-                                    ? 'Choose an instructor to begin.'
-                                    : 'Secure direct chat',
+                            _activeChatSubtitle,
                             style: const TextStyle(
                               color: AfaqColors.slate500,
                               fontSize: 13,
@@ -1065,7 +1195,10 @@ class _StudentChatPageState extends State<StudentChatPage> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            mine ? 'You' : message.author,
+                                            _displayNameForUserId(
+                                              message.authorId,
+                                              fallbackName: message.author,
+                                            ),
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w800,
                                             ),
@@ -1263,15 +1396,28 @@ class _ChatParticipant {
   const _ChatParticipant({
     required this.userId,
     required this.role,
+    this.displayName,
+    this.contact,
   });
 
   final int userId;
   final String role;
+  final String? displayName;
+  final _ChatContact? contact;
 
   factory _ChatParticipant.fromMap(Map<String, dynamic> map) {
+    final user = asMap(map['user']);
+    final participantUser = user ?? map;
+    final contact = _ChatContact.fromMap(map);
     return _ChatParticipant(
-      userId: readInt(map['user_id']),
+      userId: readInt(map['user_id'] ?? participantUser['id']),
       role: readString(map['role'], fallback: 'member'),
+      displayName: readString(
+        participantUser['name'] ??
+            participantUser['full_name'] ??
+            participantUser['username'],
+      ),
+      contact: contact.id == 0 ? null : contact,
     );
   }
 }
@@ -1283,6 +1429,7 @@ class _ChatMessage {
     required this.authorId,
     required this.body,
     required this.createdAt,
+    this.contact,
   });
 
   final int id;
@@ -1290,6 +1437,7 @@ class _ChatMessage {
   final int authorId;
   final String body;
   final DateTime? createdAt;
+  final _ChatContact? contact;
 
   int get sortStamp => createdAt?.millisecondsSinceEpoch ?? 0;
 
@@ -1297,6 +1445,7 @@ class _ChatMessage {
     final user = asMap(map['user']);
     final sender = asMap(map['sender']);
     final author = user ?? sender;
+    final contact = author == null ? null : _ChatContact.fromMap({'user': author});
 
     return _ChatMessage(
       id: readInt(map['id']),
@@ -1309,6 +1458,7 @@ class _ChatMessage {
       createdAt: DateTime.tryParse(
         readString(map['updated_at'] ?? map['created_at']),
       ),
+      contact: contact != null && contact.id != 0 ? contact : null,
     );
   }
 }
