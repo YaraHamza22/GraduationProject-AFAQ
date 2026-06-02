@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../app/app.dart';
 import '../../../core/widgets/afaq_shell.dart';
 import '../../../core/widgets/afaq_sidebar.dart';
+import '../../virtual_meet/pages/role_virtual_meet_join_page.dart';
 import 'auditor_courses_page.dart';
 import 'auditor_dashboard_page.dart';
 import 'auditor_notifications_page.dart';
@@ -32,6 +33,12 @@ class AuditorArea extends StatelessWidget {
             route: '/auditor/review',
           ),
           AfaqNavItem(
+            id: 'meet',
+            label: lang == 'ar' ? 'الاجتماعات المباشرة' : 'Live Meet',
+            icon: Icons.videocam_outlined,
+            route: '/auditor/live-meet',
+          ),
+          AfaqNavItem(
             id: 'notifications',
             label: auditorText('notifications', lang),
             icon: Icons.notifications_active_outlined,
@@ -52,6 +59,7 @@ class AuditorArea extends StatelessWidget {
           pages: {
             'dashboard': const AuditorDashboardPage(),
             'review': const AuditorCoursesPage(),
+            'meet': const RoleVirtualMeetJoinPage(role: VirtualMeetJoinRole.auditor),
             'notifications': const AuditorNotificationsPage(),
             'profile': const AuditorProfilePage(),
           },

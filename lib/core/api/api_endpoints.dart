@@ -39,6 +39,9 @@ class ApiEndpoints {
 
   static const chatThreads = '/chat-threads';
   static const chatMessages = '/chat-messages';
+  static const offlinePackages = '/offline-packages';
+  static const offlineSyncLogs = '/offline-sync-logs';
+  static const offlineSyncLogsBatch = '/offline-sync-logs/batch';
 
   static String myLearningUnits(String courseSlug) {
     return '/my-learning/$courseSlug/units';
@@ -177,6 +180,26 @@ class ApiEndpoints {
 
   static String virtualSessionAttendance(int sessionId) {
     return '/virtual-sessions/$sessionId/attendance';
+  }
+
+  static String offlinePackage(int packageId) {
+    return '/offline-packages/$packageId';
+  }
+
+  static String offlinePackageTokens(int packageId) {
+    return '/offline-packages/$packageId/tokens';
+  }
+
+  static String revokeOfflineToken(String tokenId) {
+    return '/offline-packages/tokens/$tokenId/revoke';
+  }
+
+  static String offlineDownload(String token) {
+    return '/offline-packages/download/$token';
+  }
+
+  static String offlineDelta(int courseId) {
+    return '/offline-packages/course/$courseId/delta';
   }
 
   static String auditorContentReview(int courseId) {

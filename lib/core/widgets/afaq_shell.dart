@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../app/app.dart';
 import '../../features/auth/data/auth_service.dart';
@@ -50,6 +51,36 @@ class _AfaqShellState extends State<AfaqShell> {
     );
   }
 
+  Future<void> _handleAppExit() async {
+    final locale = localeNotifier.value.languageCode;
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Text(locale == 'ar' ? 'مغادرة التطبيق؟' : 'Leave the app?'),
+        content: Text(
+          locale == 'ar'
+              ? 'هل تريد إغلاق تطبيق Afaq الآن؟'
+              : 'Do you want to close Afaq now?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(locale == 'ar' ? 'إلغاء' : 'Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(locale == 'ar' ? 'إغلاق' : 'Exit'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldExit == true) {
+      await SystemNavigator.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
@@ -74,86 +105,77 @@ class _AfaqShellState extends State<AfaqShell> {
 
         return Directionality(
           textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
-          child: Scaffold(
-            backgroundColor: background,
-            body: isMobile
-                ? Stack(
-                    children: [
-                      // Scrollable content page with top & bottom margins for floating bars
-                      Positioned.fill(
-                        child: Padding(
-                          padding: EdgeInsets.only(
-                            top: topInset,
-                            bottom: bottomInset,
+          child: PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, _) async {
+              if (didPop) return;
+              await _handleAppExit();
+            },
+            child: Scaffold(
+              backgroundColor: background,
+              body: isMobile
+                  ? Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              top: topInset,
+                              bottom: bottomInset,
+                            ),
+                            child: widget.pages[_activeId] ?? widget.pages.values.first,
                           ),
-                          child:
-                              widget.pages[_activeId] ??
-                              widget.pages.values.first,
                         ),
-                      ),
-
-                      // Floating top Glassmorphic Shared Header
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 0,
-                        child: AfaqHeader(role: widget.role),
-                      ),
-
-                      // Floating bottom Glassmorphic Navigation Dock
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          top: 0,
+                          child: AfaqHeader(role: widget.role),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
                           child: AfaqBottomDock(
+                            role: widget.role,
+                            items: widget.items,
+                            activeId: _activeId,
+                            onSelect: (item) => setState(() => _activeId = item.id),
+                            onLogout: _handleLogout,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        AfaqSidebar(
                           role: widget.role,
                           items: widget.items,
                           activeId: _activeId,
-                          onSelect: (item) =>
-                              setState(() => _activeId = item.id),
+                          width: sidebarWidth,
+                          onSelect: (item) => setState(() => _activeId = item.id),
                           onLogout: _handleLogout,
                         ),
-                      ),
-                    ],
-                  )
-                : Row(
-                    children: [
-                      // Floating Left Sidebar Dock (or Right Dock in Arabic RTL mode)
-                      AfaqSidebar(
-                        role: widget.role,
-                        items: widget.items,
-                        activeId: _activeId,
-                        width: sidebarWidth,
-                        onSelect: (item) => setState(() => _activeId = item.id),
-                        onLogout: _handleLogout,
-                      ),
-
-                      // Wide Content Workspace
-                      Expanded(
-                        child: Stack(
-                          children: [
-                            // Scrollable content with top margin for floating header
-                            Positioned.fill(
-                              child: Padding(
-                                padding: EdgeInsets.only(top: topInset),
-                                child:
-                                    widget.pages[_activeId] ??
-                                    widget.pages.values.first,
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: Padding(
+                                  padding: EdgeInsets.only(top: topInset),
+                                  child: widget.pages[_activeId] ?? widget.pages.values.first,
+                                ),
                               ),
-                            ),
-
-                            // Floating top Shared Header
-                            Positioned(
-                              left: 0,
-                              right: 0,
-                              top: 0,
-                              child: AfaqHeader(role: widget.role),
-                            ),
-                          ],
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                top: 0,
+                                child: AfaqHeader(role: widget.role),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+            ),
           ),
         );
       },

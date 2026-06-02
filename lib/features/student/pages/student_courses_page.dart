@@ -4,6 +4,7 @@ import '../../../app/app.dart';
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/toast/afaq_toast.dart';
 import '../../../core/widgets/afaq_panel.dart';
+import '../../offline/pages/offline_course_page.dart';
 import '../data/courses_service.dart';
 import 'student_page_shared.dart';
 
@@ -196,6 +197,14 @@ class _StudentCoursesPageState extends State<StudentCoursesPage> {
                   progress: _progressByEnrollment[enrollment.enrollmentId],
                   loadingProgress: _loadingProgress.contains(enrollment.enrollmentId),
                   onProgress: () => _loadProgress(enrollment),
+                  onOffline: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => OfflineCoursePage(
+                        courseId: enrollment.courseId,
+                        courseTitle: enrollment.title,
+                      ),
+                    ),
+                  ),
                 );
               },
             ),
@@ -351,12 +360,14 @@ class _EnrollmentCard extends StatelessWidget {
     required this.progress,
     required this.loadingProgress,
     required this.onProgress,
+    required this.onOffline,
   });
 
   final _EnrollmentRow enrollment;
   final _EnrollmentProgress? progress;
   final bool loadingProgress;
   final VoidCallback onProgress;
+  final VoidCallback onOffline;
 
   @override
   Widget build(BuildContext context) {
@@ -415,16 +426,27 @@ class _EnrollmentCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          OutlinedButton.icon(
-            onPressed: onProgress,
-            icon: loadingProgress
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.insights_outlined),
-            label: const Text('Progress Details'),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onProgress,
+                icon: loadingProgress
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.insights_outlined),
+                label: const Text('Progress Details'),
+              ),
+              FilledButton.icon(
+                onPressed: onOffline,
+                icon: const Icon(Icons.download_for_offline_rounded),
+                label: const Text('Offline Package'),
+              ),
+            ],
           ),
           if (progress != null) ...[
             const SizedBox(height: 12),
