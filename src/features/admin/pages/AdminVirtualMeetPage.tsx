@@ -10,6 +10,7 @@ export default function AdminVirtualMeetPage() {
       roleLabel="Super Admin"
       getRequestUrl={getAdminApiRequestUrl}
       getToken={getAdminToken}
+      liveRouteBase="/admin/live"
     />
   );
 }

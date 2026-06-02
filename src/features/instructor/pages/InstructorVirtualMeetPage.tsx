@@ -10,6 +10,7 @@ export default function InstructorVirtualMeetPage() {
       roleLabel="Instructor"
       getRequestUrl={getStudentApiRequestUrl}
       getToken={getStudentToken}
+      liveRouteBase="/instructor/live"
     />
   );
 }

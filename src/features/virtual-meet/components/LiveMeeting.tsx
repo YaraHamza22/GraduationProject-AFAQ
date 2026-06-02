@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { 
   Camera, CameraOff, Mic, MicOff, PhoneOff, 
   MonitorUp, ScreenShareOff, Users, MessageSquare, 
-  Settings, Maximize, Grid, Layout, Send, X, Shield, Info
+  Send, X, Shield, Info
 } from "lucide-react";
 
 interface RemotePeer {
@@ -28,92 +28,211 @@ interface LiveMeetingProps {
   userName: string;
   onExit: () => void;
   wsUrl?: string;
+  attendance?: {
+    endpointUrl: string;
+    token: string;
+    userId: number | string;
+  } | null;
 }
 
-export default function LiveMeeting({ roomId, userName, onExit, wsUrl = "ws://localhost:8080" }: LiveMeetingProps) {
+type PresenceMessage =
+  | { type: "join"; peerId: string; roomId: string; name: string; audioEnabled: boolean; videoEnabled: boolean }
+  | { type: "leave"; peerId: string; roomId: string }
+  | { type: "sync-request"; peerId: string; roomId: string }
+  | { type: "sync-response"; peerId: string; roomId: string; name: string; audioEnabled: boolean; videoEnabled: boolean; targetPeerId: string }
+  | { type: "status"; peerId: string; roomId: string; audioEnabled: boolean; videoEnabled: boolean }
+  | { type: "chat"; peerId: string; roomId: string; sender: string; text: string; time: string };
+
+export default function LiveMeeting({ roomId, userName, onExit, wsUrl = "ws://localhost:8080", attendance = null }: LiveMeetingProps) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remotePeers, setRemotePeers] = useState<RemotePeer[]>([]);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCamOn, setIsCamOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "speaker">("grid");
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
+  const [peerId] = useState(() => `peer-${crypto.randomUUID().slice(0, 8)}`);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [isMediaPending, setIsMediaPending] = useState(true);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const pcMap = useRef<Map<string, RTCPeerConnection>>(new Map());
   const ws = useRef<WebSocket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remotePeersRef = useRef<RemotePeer[]>([]);
+  const micStateRef = useRef(true);
+  const camStateRef = useRef(true);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const joinedAtRef = useRef<string>(new Date().toISOString());
+  const attendanceSubmittedRef = useRef(false);
 
   // Media initialization helper
 
-  const createPeerConnection = useCallback((peerId: string, peerName: string, isOffer: boolean) => {
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-    });
+  const broadcastPresence = useCallback((message: PresenceMessage) => {
+    channelRef.current?.postMessage(message);
+  }, []);
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({
-          type: "ice",
-          roomId,
-          from: userName,
-          to: peerId,
-          payload: event.candidate
-        }));
-      }
-    };
-
-    pc.ontrack = (event) => {
-      setRemotePeers(prev => {
-        const existing = prev.find(p => p.id === peerId);
-        if (existing) {
-          return prev.map(p => p.id === peerId ? { ...p, stream: event.streams[0] } : p);
-        }
-        return [...prev, { id: peerId, name: peerName, stream: event.streams[0], audioEnabled: true, videoEnabled: true }];
-      });
-    };
-
-    localStreamRef.current?.getTracks().forEach(track => {
-      if (localStreamRef.current) pc.addTrack(track, localStreamRef.current);
-    });
-
-    if (isOffer) {
-      pc.createOffer().then(offer => {
-        pc.setLocalDescription(offer);
-        ws.current?.send(JSON.stringify({
-          type: "offer",
-          roomId,
-          from: userName,
-          to: peerId,
-          payload: offer
-        }));
-      });
+  const submitAttendance = useCallback(async () => {
+    if (!attendance || attendanceSubmittedRef.current) {
+      return;
     }
 
-    pcMap.current.set(peerId, pc);
-    return pc;
-  }, [roomId, userName]);
+    attendanceSubmittedRef.current = true;
+
+    const leftAt = new Date();
+    const joinedAtDate = new Date(joinedAtRef.current);
+    const durationMinutes = Math.max(1, Math.round((leftAt.getTime() - joinedAtDate.getTime()) / 60000));
+
+    try {
+      await fetch(attendance.endpointUrl, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${attendance.token}`,
+        },
+        body: JSON.stringify({
+          user_id: attendance.userId,
+          joined_at: joinedAtRef.current,
+          left_at: leftAt.toISOString(),
+          duration_minutes: durationMinutes,
+        }),
+        keepalive: true,
+      });
+    } catch (error) {
+      console.error("Failed to store session attendance:", error);
+      attendanceSubmittedRef.current = false;
+    }
+  }, [attendance]);
+
+  const upsertRemotePeer = useCallback((peer: Omit<RemotePeer, "stream"> & { stream?: MediaStream | null }) => {
+    setRemotePeers((prev) => {
+      const existing = prev.find((item) => item.id === peer.id);
+      if (existing) {
+        return prev.map((item) =>
+          item.id === peer.id
+            ? {
+                ...item,
+                name: peer.name,
+                audioEnabled: peer.audioEnabled,
+                videoEnabled: peer.videoEnabled,
+                stream: peer.stream ?? item.stream,
+              }
+            : item
+        );
+      }
+
+      return [
+        ...prev,
+        {
+          id: peer.id,
+          name: peer.name,
+          audioEnabled: peer.audioEnabled,
+          videoEnabled: peer.videoEnabled,
+          stream: peer.stream ?? null,
+        },
+      ];
+    });
+  }, []);
+
+  useEffect(() => {
+    remotePeersRef.current = remotePeers;
+  }, [remotePeers]);
+
+  useEffect(() => {
+    joinedAtRef.current = new Date().toISOString();
+    attendanceSubmittedRef.current = false;
+  }, [roomId]);
+
+  useEffect(() => {
+    if (!localVideoRef.current) {
+      return;
+    }
+
+    if (!localStream) {
+      localVideoRef.current.srcObject = null;
+      return;
+    }
+
+    localVideoRef.current.srcObject = localStream;
+    void localVideoRef.current.play().catch(() => {
+      // Browser autoplay can delay playback even when the stream is attached.
+    });
+  }, [localStream]);
+
+  useEffect(() => {
+    micStateRef.current = isMicOn;
+  }, [isMicOn]);
+
+  useEffect(() => {
+    camStateRef.current = isCamOn;
+  }, [isCamOn]);
 
   useEffect(() => {
     let isMounted = true;
 
     const startMedia = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true
-        });
-        if (isMounted) {
-          setLocalStream(stream);
-          localStreamRef.current = stream;
-          if (localVideoRef.current) {
-            localVideoRef.current.srcObject = stream;
+        setMediaError(null);
+        setIsMediaPending(true);
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("This browser does not support camera access.");
+        }
+
+        const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+        const hasVideoInput = devices.some((device) => device.kind === "videoinput");
+        const hasAudioInput = devices.some((device) => device.kind === "audioinput");
+
+        if (!hasVideoInput) {
+          throw new Error("No camera device was found.");
+        }
+
+        if (!hasAudioInput) {
+          throw new Error("No microphone device was found.");
+        }
+
+        const timeoutToken = Symbol('camera-timeout');
+        const streamOrTimeout = await Promise.race<MediaStream | typeof timeoutToken>([
+          navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
+          }),
+          new Promise<typeof timeoutToken>((resolve) =>
+            window.setTimeout(() => resolve(timeoutToken), 12000)
+          ),
+        ]);
+
+        if (streamOrTimeout === timeoutToken) {
+          if (isMounted) {
+            setLocalStream(null);
+            localStreamRef.current = null;
+            setIsMediaPending(false);
+            setMediaError(
+              'Camera request timed out. Please allow browser permissions and check that no other app is locking the camera.',
+            );
           }
+          return;
+        }
+
+        if (isMounted) {
+          setLocalStream(streamOrTimeout);
+          localStreamRef.current = streamOrTimeout;
+          setIsMediaPending(false);
         }
       } catch (err) {
-        console.error("Error accessing media devices:", err);
+        console.warn("Error accessing media devices:", err);
+        if (isMounted) {
+          setLocalStream(null);
+          localStreamRef.current = null;
+          setIsMediaPending(false);
+          if (err instanceof Error && err.message.trim()) {
+            setMediaError(err.message);
+          } else {
+            setMediaError("Camera or microphone access was blocked. Allow permissions for this site, then refresh.");
+          }
+        }
       }
     };
 
@@ -121,6 +240,102 @@ export default function LiveMeeting({ roomId, userName, onExit, wsUrl = "ws://lo
 
     // Signaling server mock logic
     console.log(`Connecting to signaling server at ${wsUrl} (Room: ${roomId})`);
+
+    const channel = new BroadcastChannel(`afaq-live:${roomId}`);
+    channelRef.current = channel;
+
+    channel.onmessage = (event: MessageEvent<PresenceMessage>) => {
+      const message = event.data;
+      if (!message || message.roomId !== roomId || message.peerId === peerId) {
+        return;
+      }
+
+      if (message.type === "join") {
+        upsertRemotePeer({
+          id: message.peerId,
+          name: message.name,
+          audioEnabled: message.audioEnabled,
+          videoEnabled: message.videoEnabled,
+        });
+        broadcastPresence({
+          type: "sync-response",
+          peerId,
+          roomId,
+          name: userName,
+          audioEnabled: micStateRef.current,
+          videoEnabled: camStateRef.current,
+          targetPeerId: message.peerId,
+        });
+        return;
+      }
+
+      if (message.type === "sync-request") {
+        broadcastPresence({
+          type: "sync-response",
+          peerId,
+          roomId,
+          name: userName,
+          audioEnabled: micStateRef.current,
+          videoEnabled: camStateRef.current,
+          targetPeerId: message.peerId,
+        });
+        return;
+      }
+
+      if (message.type === "sync-response") {
+        if (message.targetPeerId !== peerId) return;
+        upsertRemotePeer({
+          id: message.peerId,
+          name: message.name,
+          audioEnabled: message.audioEnabled,
+          videoEnabled: message.videoEnabled,
+        });
+        return;
+      }
+
+      if (message.type === "status") {
+        upsertRemotePeer({
+          id: message.peerId,
+          name: remotePeersRef.current.find((peer) => peer.id === message.peerId)?.name ?? "Participant",
+          audioEnabled: message.audioEnabled,
+          videoEnabled: message.videoEnabled,
+        });
+        return;
+      }
+
+      if (message.type === "chat") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `${message.peerId}-${Date.now()}`,
+            sender: message.sender,
+            text: message.text,
+            time: message.time,
+            isMe: false,
+          },
+        ]);
+        return;
+      }
+
+      if (message.type === "leave") {
+        setRemotePeers((prev) => prev.filter((peer) => peer.id !== message.peerId));
+      }
+    };
+
+    broadcastPresence({
+      type: "join",
+      peerId,
+      roomId,
+      name: userName,
+      audioEnabled: true,
+      videoEnabled: true,
+    });
+
+    broadcastPresence({
+      type: "sync-request",
+      peerId,
+      roomId,
+    });
 
     const mockTimeout = setTimeout(() => {
       if (isMounted) {
@@ -131,26 +346,50 @@ export default function LiveMeeting({ roomId, userName, onExit, wsUrl = "ws://lo
       }
     }, 1000);
 
+    const currentPcMap = pcMap.current;
+    const currentWs = ws.current;
+    const currentPeerId = peerId;
+
     return () => {
       isMounted = false;
       clearTimeout(mockTimeout);
+      void submitAttendance();
+      broadcastPresence({ type: "leave", peerId: currentPeerId, roomId });
+      channel.close();
+      channelRef.current = null;
       localStreamRef.current?.getTracks().forEach(t => t.stop());
-      pcMap.current.forEach(pc => pc.close());
-      ws.current?.close();
+      currentPcMap.forEach(pc => pc.close());
+      currentWs?.close();
     };
-  }, [roomId, wsUrl]);
+  }, [broadcastPresence, peerId, roomId, submitAttendance, upsertRemotePeer, userName, wsUrl]);
 
   const toggleMic = () => {
     if (localStream) {
       localStream.getAudioTracks().forEach(track => track.enabled = !isMicOn);
-      setIsMicOn(!isMicOn);
+      const nextMicState = !isMicOn;
+      setIsMicOn(nextMicState);
+      broadcastPresence({
+        type: "status",
+        peerId,
+        roomId,
+        audioEnabled: nextMicState,
+        videoEnabled: isCamOn,
+      });
     }
   };
 
   const toggleCam = () => {
     if (localStream) {
       localStream.getVideoTracks().forEach(track => track.enabled = !isCamOn);
-      setIsCamOn(!isCamOn);
+      const nextCamState = !isCamOn;
+      setIsCamOn(nextCamState);
+      broadcastPresence({
+        type: "status",
+        peerId,
+        roomId,
+        audioEnabled: isMicOn,
+        videoEnabled: nextCamState,
+      });
     }
   };
 
@@ -199,10 +438,23 @@ export default function LiveMeeting({ roomId, userName, onExit, wsUrl = "ws://lo
       isMe: true
     };
     
-    setMessages([...messages, newMsg]);
+    setMessages((prev) => [...prev, newMsg]);
+    broadcastPresence({
+      type: "chat",
+      peerId,
+      roomId,
+      sender: userName,
+      text: chatInput.trim(),
+      time: newMsg.time,
+    });
     setChatInput("");
     
     // In real app: ws.current?.send(JSON.stringify({ type: "chat", text: chatInput }));
+  };
+
+  const handleExit = async () => {
+    await submitAttendance();
+    onExit();
   };
 
   return (
@@ -250,10 +502,22 @@ export default function LiveMeeting({ roomId, userName, onExit, wsUrl = "ws://lo
                 playsInline 
                 className={`w-full h-full object-cover transition-all duration-700 ${isCamOn ? "opacity-100 scale-100" : "opacity-0 scale-110"}`}
               />
-              {!isCamOn && (
+              {(!isCamOn || !localStream || mediaError) && (
                 <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_center,_#1e293b_0%,_#0f172a_100%)]">
-                  <div className="w-24 h-24 rounded-full bg-indigo-600 flex items-center justify-center border-4 border-indigo-400/20 shadow-2xl shadow-indigo-500/20">
-                    <span className="text-4xl font-black text-white">{userName.charAt(0).toUpperCase()}</span>
+                  <div className="flex max-w-md flex-col items-center gap-4 px-6 text-center">
+                    <div className="flex h-24 w-24 items-center justify-center rounded-full bg-indigo-600 border-4 border-indigo-400/20 shadow-2xl shadow-indigo-500/20">
+                      <span className="text-4xl font-black text-white">{userName.charAt(0).toUpperCase()}</span>
+                    </div>
+                    {mediaError ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-slate-200">{mediaError}</p>
+                        <p className="text-xs text-slate-400">
+                          Check the camera icon in the browser address bar, then make sure Windows camera and microphone permissions are enabled for your browser.
+                        </p>
+                      </div>
+                    ) : isMediaPending || !localStream ? (
+                      <p className="text-sm font-medium text-slate-300">Starting your camera and microphone...</p>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -267,12 +531,13 @@ export default function LiveMeeting({ roomId, userName, onExit, wsUrl = "ws://lo
             {remotePeers.map(peer => (
               <div key={peer.id} className="relative group rounded-[32px] overflow-hidden bg-slate-900 border border-white/10 aspect-video shadow-2xl ring-1 ring-white/5">
                 <RemoteVideo stream={peer.stream} />
-                <div className="absolute bottom-6 left-6 flex items-center gap-2 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/10 shadow-xl">
-                  <span className="text-sm font-bold text-white">{peer.name}</span>
-                  {!peer.audioEnabled && <MicOff className="w-4 h-4 text-rose-500" />}
-                </div>
+              <div className="absolute bottom-6 left-6 flex items-center gap-2 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/10 shadow-xl">
+                <span className="text-sm font-bold text-white">{peer.name}</span>
+                {!peer.audioEnabled && <MicOff className="w-4 h-4 text-rose-500" />}
+                {!peer.videoEnabled && <CameraOff className="w-4 h-4 text-amber-400" />}
               </div>
-            ))}
+            </div>
+          ))}
           </div>
         </div>
 
@@ -314,7 +579,7 @@ export default function LiveMeeting({ roomId, userName, onExit, wsUrl = "ws://lo
             </button>
 
             <button 
-              onClick={onExit}
+              onClick={() => void handleExit()}
               title="Leave Call"
               className="p-4 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white transition-all hover:rotate-12 active:scale-95 shadow-lg shadow-rose-900/40"
             >
@@ -384,7 +649,7 @@ function RemoteVideo({ stream }: { stream: MediaStream | null }) {
 
   if (!stream) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+      <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_center,_#1e293b_0%,_#0f172a_100%)]">
         <Info className="w-12 h-12 text-slate-600 animate-pulse" />
       </div>
     );

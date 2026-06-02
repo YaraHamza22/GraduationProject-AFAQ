@@ -20,6 +20,7 @@ import {
   Moon,
   Sun,
   UserCircle,
+  Video,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useLanguage } from "@/components/providers/LanguageProvider";
@@ -71,6 +72,7 @@ const navItems = [
   { id: "dashboard", icon: LayoutDashboard, href: "/student", label: "std.dashboard" },
   { id: "courses", icon: BookOpen, href: "/student/courses", label: "std.courses" },
   { id: "quizzes", icon: FileText, href: "/student/quizzes", label: "std.quizzes" },
+  { id: "live", icon: Video, href: "/student/live", label: "nav.live" },
   { id: "certificates", icon: Award, href: "/student/certificates", label: "std.certificates" },
   { id: "profile", icon: UserCircle, href: "/student/profile", label: "nav.profile" },
 ];
@@ -108,7 +110,6 @@ export default function StudentNavbar() {
   const [lessonsByUnit, setLessonsByUnit] = React.useState<Record<number, Lesson[]>>({});
   const [expandedCourses, setExpandedCourses] = React.useState<Set<number>>(new Set());
   const [expandedUnits, setExpandedUnits] = React.useState<Set<number>>(new Set());
-  const [isLoadingLearning, setIsLoadingLearning] = React.useState(false);
   const [isCommunicationOpen, setIsCommunicationOpen] = React.useState(
     pathname.startsWith("/student/chat") || pathname.startsWith("/student/forum")
   );

@@ -2,8 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { Ban, ExternalLink, Loader2, RefreshCw, Trash2, Users, Video, Zap } from "lucide-react";
-import LiveMeeting from "../components/LiveMeeting";
+import { useRouter } from "next/navigation";
+import { Ban, Copy, ExternalLink, Loader2, RefreshCw, ShieldCheck, Trash2, Users, Video, X, Zap } from "lucide-react";
 
 type UrlFn = (path: string) => string;
 type TokenFn = () => string | null;
@@ -30,12 +30,19 @@ type SessionItem = {
   metadata: unknown;
 };
 
+type ExternalLinkPrompt = {
+  href: string;
+  label: string;
+  provider: string;
+};
+
 type CourseItem = { id: number | string; title?: string; title_translations?: Record<string, string> };
 
 type Props = {
   roleLabel: string;
   getRequestUrl: UrlFn;
   getToken: TokenFn;
+  liveRouteBase?: string;
 };
 
 // Types for internal state
@@ -105,7 +112,18 @@ function courseTitle(course: CourseItem) {
   return course.title_translations?.en || course.title_translations?.ar || course.title || `Course #${course.id}`;
 }
 
-export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToken }: Props) {
+function getProviderLabel(provider: string) {
+  if (provider === "zoom") return "Zoom";
+  if (provider === "google_meet") return "Google Meet";
+  return provider;
+}
+
+function getAfaqLiveLink(sessionId: number) {
+  return `https://afaaq.com/live?room=${encodeURIComponent(`meet-${sessionId}`)}`;
+}
+
+export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToken, liveRouteBase = "/live" }: Props) {
+  const router = useRouter();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [courses, setCourses] = useState<CourseItem[]>([]);
@@ -126,10 +144,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-
-  // Live Meeting State
-  const [inLiveMeeting, setInLiveMeeting] = useState(false);
-  const [activeRoomId, setActiveRoomId] = useState("");
+  const [externalLinkPrompt, setExternalLinkPrompt] = useState<ExternalLinkPrompt | null>(null);
 
   const orderedSessions = useMemo(() => [...sessions].sort((a, b) => new Date(b.starts_at ?? 0).getTime() - new Date(a.starts_at ?? 0).getTime()), [sessions]);
   const providerIntegrations = useMemo(() => integrations.filter((i) => i.provider === sessionForm.provider), [integrations, sessionForm.provider]);
@@ -289,15 +304,27 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     setAttendanceForm(attendanceInitial); setMsg("Attendance stored.");
   });
 
-  if (inLiveMeeting) {
-    return (
-      <LiveMeeting 
-        roomId={activeRoomId} 
-        userName={roleLabel} 
-        onExit={() => setInLiveMeeting(false)} 
-      />
-    );
-  }
+  const requestExternalNavigation = (href: string, label: string, provider: string) => {
+    if (!href.trim()) return;
+    setExternalLinkPrompt({ href: href.trim(), label, provider });
+  };
+
+  const confirmExternalNavigation = () => {
+    if (!externalLinkPrompt) return;
+    window.open(externalLinkPrompt.href, "_blank", "noopener,noreferrer");
+    setMsg(`${externalLinkPrompt.label} opened in a new tab.`);
+    setExternalLinkPrompt(null);
+  };
+
+  const copyToClipboard = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setMsg(`${label} copied.`);
+      setErr(null);
+    } catch {
+      setErr(`Could not copy ${label.toLowerCase()}.`);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_20%_0%,#dbeafe_0%,#f8fafc_45%,#eef2ff_100%)] p-6 dark:bg-[radial-gradient(circle_at_20%_0%,#0f172a_0%,#020617_45%,#111827_100%)] md:p-10">
@@ -350,7 +377,24 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
               <button onClick={() => void generateOauthUrl()} disabled={busy} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black uppercase text-white disabled:opacity-60">Get OAuth URL</button>
               <button onClick={() => void exchangeOauthCode()} disabled={busy} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black uppercase text-white disabled:opacity-60">Exchange Code</button>
             </div>
-            {oauthUrl ? <a href={oauthUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-indigo-700 underline dark:text-indigo-200">Open authorize URL <ExternalLink className="h-3.5 w-3.5" /></a> : null}
+            {oauthUrl ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => requestExternalNavigation(oauthUrl, "Authorize URL", getProviderLabel(oauthProvider))}
+                  className="inline-flex items-center gap-1 text-sm font-bold text-indigo-700 underline dark:text-indigo-200"
+                >
+                  Open authorize URL <ExternalLink className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void copyToClipboard(oauthUrl, "Authorize URL")}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20"
+                >
+                  <Copy className="h-3 w-3" /> Copy
+                </button>
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -385,6 +429,10 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
           <div className="mt-3 max-h-72 space-y-2 overflow-auto pr-1">
             {orderedSessions.map((s) => (
               <div key={s.id} className="rounded-xl border border-slate-200 bg-white/70 p-3 dark:border-white/20 dark:bg-slate-950/35">
+                {(() => {
+                  const afaqLiveLink = getAfaqLiveLink(s.id);
+                  return (
+                    <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-black">{s.title} #{s.id}</p>
@@ -393,7 +441,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                   <div className="flex flex-wrap gap-1">
                     <button onClick={() => { setEditingSessionId(s.id); setSessionMode(s.integration_id ? "provider" : "manual"); setSessionForm({ course_id: s.course_id ? String(s.course_id) : "", provider: s.provider === "zoom" ? "zoom" : "google_meet", integration_id: s.integration_id ? String(s.integration_id) : "", title: s.title, description: s.description ?? "", starts_at: toLocalInput(s.starts_at), ends_at: toLocalInput(s.ends_at), join_url: s.join_url ?? "", status: s.status ?? "draft", metadata_json: JSON.stringify(s.metadata ?? {}, null, 2) }); }} className="rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20">Edit</button>
                     <button 
-                      onClick={() => { setActiveRoomId(`meet-${s.id}`); setInLiveMeeting(true); }} 
+                      onClick={() => router.push(`${liveRouteBase}?room=${encodeURIComponent(`meet-${s.id}`)}`)} 
                       className="rounded-lg bg-cyan-600 px-2 py-1 text-[10px] font-black uppercase text-white flex items-center gap-1 shadow-lg shadow-cyan-900/20"
                     >
                       <Zap className="h-3 w-3" /> Join Live (Afaq)
@@ -401,9 +449,61 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                     <button onClick={() => void publishSession(s.id)} className="rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-black uppercase text-white">Publish</button>
                     <button onClick={() => void cancelSession(s.id)} className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-black uppercase text-white"><Ban className="h-3 w-3" />Cancel</button>
                     <button onClick={() => void deleteSession(s.id)} className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2 py-1 text-[10px] font-black uppercase text-white"><Trash2 className="h-3 w-3" />Delete</button>
-                    {s.join_url ? <a href={s.join_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-black uppercase text-white">Join <ExternalLink className="h-3 w-3" /></a> : null}
+                    {s.join_url ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => requestExternalNavigation(s.join_url ?? "", s.title || `Session #${s.id}`, getProviderLabel(s.provider))}
+                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-black uppercase text-white"
+                        >
+                          Join <ExternalLink className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void copyToClipboard(s.join_url, `${getProviderLabel(s.provider)} link`)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20"
+                        >
+                          <Copy className="h-3 w-3" /> Copy Link
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
+                <div className="mt-3 rounded-xl bg-cyan-500/10 px-3 py-2 text-xs text-cyan-900 dark:text-cyan-100">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-bold uppercase tracking-[0.16em] text-[10px] text-cyan-700 dark:text-cyan-200">
+                      Afaq Live Link
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() => requestExternalNavigation(afaqLiveLink, `${s.title || `Session #${s.id}`} Afaq room`, "Afaq Live")}
+                        className="inline-flex items-center gap-1 rounded-lg bg-cyan-600 px-2 py-1 text-[10px] font-black uppercase text-white"
+                      >
+                        <ExternalLink className="h-3 w-3" /> Open Link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyToClipboard(afaqLiveLink, "Afaq live link")}
+                        className="inline-flex items-center gap-1 rounded-lg border border-cyan-300/70 px-2 py-1 text-[10px] font-black uppercase text-cyan-800 dark:border-cyan-300/30 dark:text-cyan-100"
+                      >
+                        <Copy className="h-3 w-3" /> Copy Link
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mt-1 break-all">{afaqLiveLink}</p>
+                </div>
+                {s.join_url ? (
+                  <div className="mt-3 rounded-xl bg-slate-100/80 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
+                    <p className="font-bold uppercase tracking-[0.16em] text-[10px] text-slate-500 dark:text-slate-400">
+                      {getProviderLabel(s.provider)} Link
+                    </p>
+                    <p className="mt-1 break-all">{s.join_url}</p>
+                  </div>
+                ) : null}
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -420,6 +520,61 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
           <button onClick={() => void saveAttendance()} disabled={busy} className="mt-3 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black uppercase text-white disabled:opacity-60">Store Attendance</button>
         </section>
       </div>
+
+      {externalLinkPrompt ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[28px] border border-white/70 bg-white p-6 shadow-2xl dark:border-cyan-300/20 dark:bg-slate-900">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="inline-flex items-center gap-2 rounded-full bg-cyan-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-200">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  External Link Confirmation
+                </p>
+                <h3 className="mt-3 text-2xl font-black tracking-tight">Open {externalLinkPrompt.provider}?</h3>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  You are about to leave Afaq and continue to {externalLinkPrompt.provider} for &quot;{externalLinkPrompt.label}&quot;.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExternalLinkPrompt(null)}
+                className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 dark:hover:bg-white/10"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-slate-100/80 p-4 text-xs text-slate-600 dark:bg-slate-950/60 dark:text-slate-300">
+              <p className="font-bold uppercase tracking-[0.16em] text-[10px] text-slate-500 dark:text-slate-400">Destination URL</p>
+              <p className="mt-2 break-all">{externalLinkPrompt.href}</p>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={confirmExternalNavigation}
+                className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black uppercase text-white"
+              >
+                Continue To {externalLinkPrompt.provider}
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyToClipboard(externalLinkPrompt.href, `${externalLinkPrompt.provider} link`)}
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-300 px-4 py-2 text-xs font-black uppercase dark:border-white/20"
+              >
+                <Copy className="h-3 w-3" /> Copy Link
+              </button>
+              <button
+                type="button"
+                onClick={() => setExternalLinkPrompt(null)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-black uppercase text-slate-700 dark:border-white/20 dark:text-slate-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
