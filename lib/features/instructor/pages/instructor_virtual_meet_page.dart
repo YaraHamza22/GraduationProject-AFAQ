@@ -8,6 +8,7 @@ import '../../../app/app.dart';
 import '../../../core/websocket/realtime_client.dart';
 import '../../../core/toast/afaq_toast.dart';
 import '../data/instructor_virtual_meet_service.dart';
+import 'instructor_oauth_connect_page.dart';
 import 'instructor_page_shared.dart';
 
 class InstructorVirtualMeetPage extends StatefulWidget {
@@ -311,6 +312,47 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
       if (url.isNotEmpty) {
         await Clipboard.setData(ClipboardData(text: url));
       }
+    });
+  }
+
+  Future<void> _startOauthFlow() async {
+    await _runBusy(() async {
+      final response = await _service.getOAuthUrl(_oauthProvider);
+      final data = unwrapInstructorMap(response.data);
+      final url = instructorString(data['authorize_url']);
+      if (url.isEmpty) {
+        throw Exception('OAuth URL is missing.');
+      }
+      if (!mounted) return;
+      setState(() {
+        _oauthUrl = url;
+        _ok = 'OAuth URL loaded.';
+      });
+
+      final result = await Navigator.of(context).push<OAuthConnectResult>(
+        MaterialPageRoute(
+          builder: (_) => InstructorOAuthConnectPage(
+            providerLabel: _prettyProvider(_oauthProvider),
+            authorizeUrl: url,
+          ),
+        ),
+      );
+
+      if (!mounted || result == null) return;
+      if ((result.error ?? '').trim().isNotEmpty) {
+        throw Exception(result.error);
+      }
+
+      final code = (result.code ?? '').trim();
+      if (code.isEmpty) return;
+
+      _oauthCodeController.text = code;
+      await _service.exchangeOAuthCode(provider: _oauthProvider, code: code);
+      _oauthCodeController.clear();
+      await _load();
+      if (!mounted) return;
+      setState(() => _ok = '${_prettyProvider(_oauthProvider)} connected.');
+      _showToast('${_prettyProvider(_oauthProvider)} connected.', AfaqToastType.success);
     });
   }
 
@@ -1199,6 +1241,15 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
             ),
           ),
           const SizedBox(height: 12),
+          const Text(
+            'Use the guided connection flow first. The manual code field stays available as a fallback if the provider redirect does not complete inside the app.',
+            style: TextStyle(
+              color: Color(0xFF475569),
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
           _buildField(
             hint: 'authorization code',
             controller: _oauthCodeController,
@@ -1208,6 +1259,12 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
             spacing: 10,
             runSpacing: 10,
             children: [
+              FilledButton.icon(
+                onPressed: _busy ? null : _startOauthFlow,
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                icon: const Icon(Icons.verified_user_rounded, size: 18),
+                label: const Text('Connect Now'),
+              ),
               FilledButton(
                 onPressed: _busy ? null : _generateOauthUrl,
                 style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4F46E5)),

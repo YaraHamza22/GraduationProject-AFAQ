@@ -1,8 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/toast/afaq_toast.dart';
+import 'afaq_live_meeting_page.dart';
 import '../data/virtual_meet_join_service.dart';
 
 enum VirtualMeetJoinRole { student, auditor }
@@ -190,6 +193,24 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
     }
   }
 
+  Future<void> _openAfaqMeeting({
+    required String roomId,
+    required String meetingUrl,
+    required String title,
+  }) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AfaqLiveMeetingPage(
+          roomId: roomId,
+          meetingUrl: meetingUrl,
+          title: title,
+          isArabic: _isArabic,
+        ),
+      ),
+    );
+  }
+
   Future<bool?> _showExternalNavigationDialog({
     required String provider,
     required String href,
@@ -253,12 +274,18 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
 
     if (_isAfaqLink(uri)) {
       final roomId = _extractRoomId(uri);
+      final meetingUrl = _afaqShareLink(roomId);
       setState(() {
         _roomIdController.text = roomId;
-        _joinUrlController.text = _afaqShareLink(roomId);
-        _message = _isArabic ? 'تم تجهيز رابط غرفة Afaq: $roomId' : 'Afaq room is ready: $roomId';
+        _joinUrlController.text = meetingUrl;
+        _message = _isArabic ? 'تم تجهيز غرفة Afaq: $roomId' : 'Afaq room is ready: $roomId';
         _error = null;
       });
+      _openAfaqMeeting(
+        roomId: roomId,
+        meetingUrl: meetingUrl,
+        title: _isArabic ? 'غرفة Afaq المباشرة' : 'Afaq Live Room',
+      );
       return;
     }
 
@@ -289,40 +316,60 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isWide = MediaQuery.sizeOf(context).width >= 1000;
+    final width = MediaQuery.sizeOf(context).width;
+    final isWide = width >= 1080;
+    final isTablet = width >= 700 && width < 1080;
+    final horizontalPadding = width >= 1800
+        ? 32.0
+        : width >= 1200
+        ? 28.0
+        : width >= 700
+        ? 24.0
+        : 16.0;
+    final maxContentWidth = width >= 2400 ? 1760.0 : width >= 1600 ? 1480.0 : 1240.0;
+    final joinWidth = isWide ? 560.0 : isTablet ? 500.0 : double.infinity;
+    final afaqWidth = isWide ? 460.0 : isTablet ? 500.0 : double.infinity;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHero(theme),
-          const SizedBox(height: 24),
-          Wrap(
-            spacing: 20,
-            runSpacing: 20,
+      padding: EdgeInsets.fromLTRB(horizontalPadding, 20, horizontalPadding, 120),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: math.min(width, maxContentWidth)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: isWide ? 520 : double.infinity,
-                child: _buildJoinCard(),
+              _buildHero(theme),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 20,
+                runSpacing: 20,
+                children: [
+                  SizedBox(width: joinWidth, child: _buildJoinCard()),
+                  SizedBox(width: afaqWidth, child: _buildAfaqCard()),
+                ],
               ),
-              SizedBox(
-                width: isWide ? 420 : double.infinity,
-                child: _buildAfaqCard(),
-              ),
+              const SizedBox(height: 24),
+              _buildSessionCard(),
             ],
           ),
-          const SizedBox(height: 24),
-          _buildSessionCard(),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildHero(ThemeData theme) {
+    final width = MediaQuery.sizeOf(context).width;
+    final titleSize = width < 380
+        ? 30.0
+        : width < 700
+        ? 36.0
+        : width < 1400
+        ? 44.0
+        : 50.0;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(width < 700 ? 18 : 24),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
         gradient: const LinearGradient(
@@ -354,6 +401,7 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
           Text(
             _isArabic ? 'الانضمام إلى الجلسات المباشرة' : 'Join Live Sessions',
             style: theme.textTheme.headlineMedium?.copyWith(
+              fontSize: titleSize,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF0F172A),
             ),
@@ -361,8 +409,8 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
           const SizedBox(height: 10),
           Text(
             _isArabic
-                ? 'ألصق رابط Zoom أو Google Meet أو Afaq Live. الروابط الخارجية تطلب تأكيدًا قبل مغادرة التطبيق.'
-                : 'Paste a Zoom, Google Meet, or Afaq Live URL. External meetings ask for confirmation before leaving the app.',
+                ? 'ألصق رابط Zoom أو Google Meet أو Afaq Live. روابط Afaq تفتح الآن داخل تجربة اجتماع كاملة داخل التطبيق.'
+                : 'Paste a Zoom, Google Meet, or Afaq Live URL. Afaq links now open in a full in-app meeting experience.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: const Color(0xFF475569),
               fontWeight: FontWeight.w600,
@@ -425,8 +473,37 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
   }
 
   Widget _buildAfaqCard() {
+    final width = MediaQuery.sizeOf(context).width;
     final roomId = _roomIdController.text.trim().isEmpty ? 'afaaq-live' : _roomIdController.text.trim();
     final shareLink = _afaqShareLink(roomId);
+    final prepareButton = FilledButton.icon(
+      onPressed: () {
+        setState(() {
+          _joinUrlController.text = shareLink;
+          _message = _isArabic ? 'تم تجهيز رابط غرفة Afaq.' : 'Afaq room link is ready.';
+          _error = null;
+        });
+      },
+      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0891B2)),
+      icon: const Icon(Icons.video_camera_front_rounded),
+      label: Text(_isArabic ? 'تجهيز الرابط' : 'Prepare Link'),
+    );
+    final openButton = FilledButton.icon(
+      onPressed: () => _openAfaqMeeting(
+        roomId: roomId,
+        meetingUrl: shareLink,
+        title: _isArabic ? 'غرفة Afaq المباشرة' : 'Afaq Live Room',
+      ),
+      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4F46E5)),
+      icon: const Icon(Icons.slideshow_rounded),
+      label: Text(_isArabic ? 'فتح الغرفة' : 'Open Room'),
+    );
+    final copyButton = OutlinedButton.icon(
+      onPressed: () => _copyToClipboard(shareLink, _isArabic ? 'رابط Afaq' : 'Afaq live link'),
+      icon: const Icon(Icons.copy_rounded),
+      label: Text(_isArabic ? 'نسخ الرابط' : 'Copy Link'),
+    );
+
     return _buildCard(
       title: _isArabic ? 'غرفة Afaq المباشرة' : 'Afaq Live Room',
       subtitle: _isArabic
@@ -471,31 +548,23 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
             ),
           ),
           const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              FilledButton.icon(
-                onPressed: () {
-                  setState(() {
-                    _joinUrlController.text = shareLink;
-                    _message = _isArabic
-                        ? 'تم تجهيز رابط غرفة Afaq.'
-                        : 'Afaq room link is ready.';
-                    _error = null;
-                  });
-                },
-                style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0891B2)),
-                icon: const Icon(Icons.video_camera_front_rounded),
-                label: Text(_isArabic ? 'تجهيز الرابط' : 'Prepare Link'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _copyToClipboard(shareLink, _isArabic ? 'رابط Afaq' : 'Afaq live link'),
-                icon: const Icon(Icons.copy_rounded),
-                label: Text(_isArabic ? 'نسخ الرابط' : 'Copy Link'),
-              ),
-            ],
-          ),
+          if (width < 430)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                prepareButton,
+                const SizedBox(height: 10),
+                openButton,
+                const SizedBox(height: 10),
+                copyButton,
+              ],
+            )
+          else
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [prepareButton, openButton, copyButton],
+            ),
         ],
       ),
     );
@@ -505,8 +574,8 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
     return _buildCard(
       title: _isArabic ? 'الجلسات المنشورة' : 'Published Sessions',
       subtitle: _isArabic
-          ? 'انضم مباشرة من الجلسات المتاحة. روابط Zoom و Google Meet تطلب تأكيدًا أولًا.'
-          : 'Join directly from available sessions. Zoom and Google Meet links ask for confirmation first.',
+          ? 'انضم مباشرة من الجلسات المتاحة. جلسات Afaq تفتح داخل التطبيق، أما Zoom و Google Meet فيطلبان التأكيد أولًا.'
+          : 'Join directly from available sessions. Afaq sessions open inside the app, while Zoom and Google Meet ask for confirmation first.',
       trailing: IconButton(
         onPressed: _loading ? null : _loadSessions,
         icon: _loading
@@ -533,6 +602,8 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
   Widget _buildSessionTile(_JoinSession session) {
     final sessionUri = _tryParseUrl(session.joinUrl);
     final provider = sessionUri == null ? _providerLabel(session.provider) : _providerFromUri(sessionUri);
+    final isAfaqSession = sessionUri != null && _isAfaqLink(sessionUri);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -577,14 +648,27 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
                     FilledButton.icon(
                       onPressed: _launching
                           ? null
-                          : () => _launchExternalMeeting(
+                          : () {
+                              if (isAfaqSession) {
+                                _openAfaqMeeting(
+                                  roomId: _extractRoomId(sessionUri),
+                                  meetingUrl: sessionUri.toString(),
+                                  title: session.title,
+                                );
+                                return;
+                              }
+                              _launchExternalMeeting(
                                 uri: sessionUri,
                                 provider: provider,
                                 label: session.title,
-                              ),
+                              );
+                            },
                       style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4F46E5)),
-                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                      label: Text(_isArabic ? 'انضم' : 'Join'),
+                      icon: Icon(
+                        isAfaqSession ? Icons.video_camera_front_rounded : Icons.open_in_new_rounded,
+                        size: 16,
+                      ),
+                      label: Text(_isArabic ? 'انضم' : isAfaqSession ? 'Open Room' : 'Join'),
                     ),
                   OutlinedButton.icon(
                     onPressed: session.joinUrl.trim().isEmpty

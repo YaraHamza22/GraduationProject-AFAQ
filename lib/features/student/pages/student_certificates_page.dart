@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -274,40 +275,70 @@ class _StudentCertificatesPageState extends State<StudentCertificatesPage> {
                       message: studentText('empty', lang),
                       icon: Icons.workspace_premium_outlined,
                     )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _CertificatesHero(
-                          courseCount: _courses.length,
-                          availableCount: availableCount,
-                          pendingCount: pendingCount,
-                          averageLabel: averageLabel,
-                          refreshing: _refreshing,
-                        ),
-                        const SizedBox(height: 20),
-                        GridView.builder(
-                          itemCount: _courses.length,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 420,
-                            mainAxisSpacing: 16,
-                            crossAxisSpacing: 16,
-                            childAspectRatio: .93,
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final width = constraints.maxWidth;
+                        final useStackedCards = width < 640;
+                        final maxContentWidth = width >= 2200 ? 1760.0 : width >= 1600 ? 1560.0 : 1320.0;
+                        final gridMaxExtent = width < 900 ? 420.0 : 440.0;
+                        final cardHeight = width < 900 ? 360.0 : 320.0;
+
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: math.min(width, maxContentWidth)),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _CertificatesHero(
+                                  courseCount: _courses.length,
+                                  availableCount: availableCount,
+                                  pendingCount: pendingCount,
+                                  averageLabel: averageLabel,
+                                  refreshing: _refreshing,
+                                ),
+                                const SizedBox(height: 20),
+                                if (useStackedCards)
+                                  Column(
+                                    children: [
+                                      for (final course in _courses) ...[
+                                        _CertificateCard(
+                                          course: course,
+                                          state: _states[course.id] ?? const _CertificateState.idle(),
+                                          onCheck: () => _probeCertificate(course),
+                                          onDownload: () => _downloadCertificate(course),
+                                        ),
+                                        if (course != _courses.last) const SizedBox(height: 16),
+                                      ],
+                                    ],
+                                  )
+                                else
+                                  GridView.builder(
+                                    itemCount: _courses.length,
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                                      maxCrossAxisExtent: gridMaxExtent,
+                                      mainAxisSpacing: 16,
+                                      crossAxisSpacing: 16,
+                                      mainAxisExtent: cardHeight,
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final course = _courses[index];
+                                      final state =
+                                          _states[course.id] ?? const _CertificateState.idle();
+                                      return _CertificateCard(
+                                        course: course,
+                                        state: state,
+                                        onCheck: () => _probeCertificate(course),
+                                        onDownload: () => _downloadCertificate(course),
+                                      );
+                                    },
+                                  ),
+                              ],
+                            ),
                           ),
-                          itemBuilder: (context, index) {
-                            final course = _courses[index];
-                            final state =
-                                _states[course.id] ?? const _CertificateState.idle();
-                            return _CertificateCard(
-                              course: course,
-                              state: state,
-                              onCheck: () => _probeCertificate(course),
-                              onDownload: () => _downloadCertificate(course),
-                            );
-                          },
-                        ),
-                      ],
+                        );
+                      },
                     ),
     );
   }
@@ -617,6 +648,9 @@ class _CertificateCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final compact = screenWidth < 420;
+
     final (badgeBg, badgeBorder, badgeText, badgeIcon, badgeLabel) = switch (state.kind) {
       _CertificateKind.available => (
           AfaqStatusColors.goodBg,
@@ -655,148 +689,160 @@ class _CertificateCard extends StatelessWidget {
         ),
     };
 
-    return AfaqPanel(
-      padding: const EdgeInsets.all(22),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = constraints.maxWidth;
+        return AfaqPanel(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  course.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                decoration: BoxDecoration(
-                  color: badgeBg,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: badgeBorder),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(badgeIcon, size: 14, color: badgeText),
-                    const SizedBox(width: 6),
-                    Text(
-                      badgeLabel,
-                      style: TextStyle(
-                        color: badgeText,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                      ),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: compact ? cardWidth : cardWidth * .58,
                     ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: badgeBg,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: badgeBorder),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (state.kind == _CertificateKind.loading)
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: badgeText,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          state.message,
-                          style: TextStyle(
-                            color: badgeText,
-                            fontWeight: FontWeight.w800,
+                    child: Text(
+                      course.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
                           ),
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  Text(
-                    state.message,
-                    style: TextStyle(
-                      color: badgeText,
-                      fontWeight: FontWeight.w800,
-                      height: 1.35,
                     ),
                   ),
-                if (state.averagePercentage != null) ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(Icons.bar_chart_rounded, size: 16, color: badgeText),
-                      const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: badgeBg,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: badgeBorder),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(badgeIcon, size: 14, color: badgeText),
+                        const SizedBox(width: 6),
+                        Text(
+                          badgeLabel,
+                          style: TextStyle(
+                            color: badgeText,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: badgeBg,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: badgeBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (state.kind == _CertificateKind.loading)
+                      Row(
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: badgeText,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              state.message,
+                              style: TextStyle(
+                                color: badgeText,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
                       Text(
-                        'Average score: ${state.averagePercentage!.toStringAsFixed(2)}%',
+                        state.message,
                         style: TextStyle(
                           color: badgeText,
+                          fontWeight: FontWeight.w800,
+                          height: 1.35,
+                        ),
+                      ),
+                    if (state.averagePercentage != null) ...[
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Icon(Icons.bar_chart_rounded, size: 16, color: badgeText),
+                          Text(
+                            'Average score: ${state.averagePercentage!.toStringAsFixed(2)}%',
+                            style: TextStyle(
+                              color: badgeText,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (state.fileSizeBytes != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Saved PDF size: ${(state.fileSizeBytes! / 1024).toStringAsFixed(1)} KB',
+                        style: const TextStyle(
+                          color: AfaqColors.slate500,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
-                  ),
-                ],
-                if (state.fileSizeBytes != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Saved PDF size: ${(state.fileSizeBytes! / 1024).toStringAsFixed(1)} KB',
-                    style: const TextStyle(
-                      color: AfaqColors.slate500,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const Spacer(),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: state.kind == _CertificateKind.loading ? null : onCheck,
-                icon: const Icon(Icons.refresh_rounded),
-                label: const Text('Check'),
-              ),
-              FilledButton.icon(
-                onPressed: state.kind == _CertificateKind.loading || !state.canDownload
-                    ? null
-                    : onDownload,
-                icon: Icon(
-                  state.hasLocalFile
-                      ? Icons.ios_share_rounded
-                      : Icons.download_rounded,
+                  ],
                 ),
-                label: Text(state.hasLocalFile ? 'Share PDF' : 'Download PDF'),
+              ),
+              const SizedBox(height: 18),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: state.kind == _CertificateKind.loading ? null : onCheck,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Check'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: state.kind == _CertificateKind.loading || !state.canDownload
+                        ? null
+                        : onDownload,
+                    icon: Icon(
+                      state.hasLocalFile
+                          ? Icons.ios_share_rounded
+                          : Icons.download_rounded,
+                    ),
+                    label: Text(state.hasLocalFile ? 'Share PDF' : 'Download PDF'),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
