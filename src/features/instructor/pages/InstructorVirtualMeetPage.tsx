@@ -11,6 +11,7 @@ export default function InstructorVirtualMeetPage() {
       getRequestUrl={getStudentApiRequestUrl}
       getToken={getStudentToken}
       liveRouteBase="/instructor/live"
+      oauthRequestSource="student"
     />
   );
 }

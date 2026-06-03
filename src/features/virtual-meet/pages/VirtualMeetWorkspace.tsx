@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { Ban, Copy, ExternalLink, Loader2, RefreshCw, ShieldCheck, Trash2, Users, Video, X, Zap } from "lucide-react";
+import { persistVirtualMeetOauthContext, type OAuthRequestSource } from "@/features/virtual-meet/oauthStorage";
 
 type UrlFn = (path: string) => string;
 type TokenFn = () => string | null;
@@ -43,6 +44,7 @@ type Props = {
   getRequestUrl: UrlFn;
   getToken: TokenFn;
   liveRouteBase?: string;
+oauthRequestSource?: OAuthRequestSource;
 };
 
 // Types for internal state
@@ -122,7 +124,7 @@ function getAfaqLiveLink(sessionId: number) {
   return `https://afaaq.com/live?room=${encodeURIComponent(`meet-${sessionId}`)}`;
 }
 
-export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToken, liveRouteBase = "/live" }: Props) {
+export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToken, liveRouteBase = "/live", oauthRequestSource = "student" }: Props) {
   const router = useRouter();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -230,7 +232,31 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const generateOauthUrl = () => run(async () => {
     const res = await axios.get(getRequestUrl(`/external-integrations/${oauthProvider}/oauth-url`), { headers: headers() });
     const data = itemFromPayload<{ authorize_url?: string }>(res.data);
-    setOauthUrl(data?.authorize_url ?? "");
+    const authorizeUrl = data?.authorize_url ?? "";
+    setOauthUrl(authorizeUrl);
+    if (typeof window !== "undefined" && authorizeUrl) {
+      persistVirtualMeetOauthContext({
+        provider: oauthProvider,
+        returnTo: `${window.location.pathname}${window.location.search}`,
+        requestSource: oauthRequestSource,
+      });
+    }
+  });
+
+  const beginOauthRedirect = () => run(async () => {
+    const res = await axios.get(getRequestUrl(`/external-integrations/${oauthProvider}/oauth-url`), { headers: headers() });
+    const data = itemFromPayload<{ authorize_url?: string }>(res.data);
+    const authorizeUrl = data?.authorize_url ?? "";
+    if (!authorizeUrl) throw new Error("OAuth URL is missing.");
+    setOauthUrl(authorizeUrl);
+    if (typeof window !== "undefined") {
+      persistVirtualMeetOauthContext({
+        provider: oauthProvider,
+        returnTo: `${window.location.pathname}${window.location.search}`,
+        requestSource: oauthRequestSource,
+      });
+      window.location.assign(authorizeUrl);
+    }
   });
 
   const exchangeOauthCode = () => run(async () => {
@@ -373,7 +399,9 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
             <h2 className="mb-3 text-lg font-black">2) OAuth</h2>
             <select value={oauthProvider} onChange={(e) => setOauthProvider(e.target.value as Provider)} className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">{providers.map((p) => <option key={p} value={p}>{p}</option>)}</select>
             <input value={oauthCode} onChange={(e) => setOauthCode(e.target.value)} placeholder="authorization code" className="mt-2 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
-            <div className="mt-3 flex gap-2">
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Start with the guided redirect flow. The manual code box stays here as a fallback.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button onClick={() => void beginOauthRedirect()} disabled={busy} className="rounded-xl bg-sky-600 px-3 py-2 text-xs font-black uppercase text-white disabled:opacity-60">Connect Now</button>
               <button onClick={() => void generateOauthUrl()} disabled={busy} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-black uppercase text-white disabled:opacity-60">Get OAuth URL</button>
               <button onClick={() => void exchangeOauthCode()} disabled={busy} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black uppercase text-white disabled:opacity-60">Exchange Code</button>
             </div>
@@ -381,7 +409,16 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => requestExternalNavigation(oauthUrl, "Authorize URL", getProviderLabel(oauthProvider))}
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      persistVirtualMeetOauthContext({
+                        provider: oauthProvider,
+                        returnTo: `${window.location.pathname}${window.location.search}`,
+                        requestSource: oauthRequestSource,
+                      });
+                    }
+                    requestExternalNavigation(oauthUrl, "Authorize URL", getProviderLabel(oauthProvider));
+                  }}
                   className="inline-flex items-center gap-1 text-sm font-bold text-indigo-700 underline dark:text-indigo-200"
                 >
                   Open authorize URL <ExternalLink className="h-3.5 w-3.5" />
@@ -578,3 +615,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     </div>
   );
 }
+
+
+
+

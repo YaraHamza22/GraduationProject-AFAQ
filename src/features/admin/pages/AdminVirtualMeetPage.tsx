@@ -11,6 +11,7 @@ export default function AdminVirtualMeetPage() {
       getRequestUrl={getAdminApiRequestUrl}
       getToken={getAdminToken}
       liveRouteBase="/admin/live"
+      oauthRequestSource="admin"
     />
   );
 }
