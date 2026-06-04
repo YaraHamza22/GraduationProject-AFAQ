@@ -70,8 +70,8 @@ export default function InstructorLoginScreen() {
     try {
       const payload = { email: email.trim(), password };
       const loginCandidates = [
-        getStudentApiRequestUrl("/auth/login"),
         getStudentApiRequestUrl("/login"),
+        getStudentApiRequestUrl("/auth/login"),
       ].filter(Boolean);
 
       if (loginCandidates.length === 0) {

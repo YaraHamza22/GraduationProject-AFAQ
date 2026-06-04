@@ -77,14 +77,14 @@ const loginModes: Array<{
     {
       id: "student",
       label: "Student",
-      eyebrow: "POST /auth/login",
+      eyebrow: "POST /login",
       title: "Student Login",
       description: "Login to continue your learning journey.",
       visualTitle: "Student",
       visualSuffix: "Back!",
       visualMessage: "Access your courses, quizzes, and progress from one dashboard.",
       submitLabel: "Sign In as Student",
-      endpointPaths: ["/auth/login"],
+      endpointPaths: ["/login"],
       redirectPath: "/student",
       sessionRole: "student",
       icon: BookOpen,
@@ -92,14 +92,14 @@ const loginModes: Array<{
     {
       id: "instructor",
       label: "Instructor",
-    eyebrow: "POST /auth/login",
+    eyebrow: "POST /login",
       title: "Instructor Login",
       description: "Open your courses, quizzes, and learner activity.",
       visualTitle: "Instructor",
       visualSuffix: "Hub",
       visualMessage: "Manage courses, assessments, and class progress with a focused teaching console.",
       submitLabel: "Sign In as Instructor",
-    endpointPaths: ["/auth/login"],
+    endpointPaths: ["/login"],
       redirectPath: "/instructor",
       sessionRole: "instructor",
       icon: Star,
@@ -107,14 +107,14 @@ const loginModes: Array<{
     {
       id: "auditor",
       label: "Auditor",
-      eyebrow: "POST /auth/login",
+      eyebrow: "POST /login",
       title: "Auditor Login",
       description: "Review courses, lessons, quizzes, and content quality.",
       visualTitle: "Auditor",
       visualSuffix: "Desk",
       visualMessage: "Inspect learning content, request changes, and keep quality reviews moving.",
       submitLabel: "Sign In as Auditor",
-      endpointPaths: ["/auth/login"],
+      endpointPaths: ["/login"],
       redirectPath: "/auditor",
       sessionRole: "auditor",
       icon: User,
@@ -372,7 +372,7 @@ export default function AuthPage() {
       return;
     }
 
-    const forgotPasswordUrl = getStudentApiRequestUrl("/auth/forgot-password");
+    const forgotPasswordUrl = getStudentApiRequestUrl("/forgot-password");
     if (!forgotPasswordUrl) {
       setForgotError("NEXT_PUBLIC_API_URL is missing. Set it to your backend API URL and try again.");
       return;
@@ -532,7 +532,7 @@ export default function AuthPage() {
     } else {
       setIsLoading(true);
       try {
-        const registerUrl = getStudentApiRequestUrl("/auth/register");
+        const registerUrl = getStudentApiRequestUrl("/register");
         if (!registerUrl) {
           setGeneralError("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.");
           return;
