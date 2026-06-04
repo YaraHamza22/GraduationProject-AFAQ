@@ -158,6 +158,17 @@ function formatPercent(value: number) {
   return `${value.toFixed(1)}%`;
 }
 
+function uniqueByCourseId<T extends { course_id: number }>(items: T[]) {
+  const seen = new Set<number>();
+  return items.filter((item) => {
+    if (!item.course_id || seen.has(item.course_id)) {
+      return false;
+    }
+    seen.add(item.course_id);
+    return true;
+  });
+}
+
 function parseDashboardData(payload: unknown): DashboardData {
   const root = isRecord(payload) && isRecord(payload.data) ? payload.data : payload;
   const data = isRecord(root) ? root : {};
@@ -407,6 +418,43 @@ export default function AdminDashboard() {
     ];
   }, [dashboard]);
 
+  const resolvedLowCompletionCourses = useMemo(() => {
+    if (!dashboard) return [];
+    if (dashboard.learning_gaps.low_completion_courses.length > 0) {
+      return uniqueByCourseId(dashboard.learning_gaps.low_completion_courses);
+    }
+
+    return uniqueByCourseId(
+      [...dashboard.student_analytics.performance_report.performance_by_course]
+        .sort((a, b) => a.completion_rate - b.completion_rate)
+        .slice(0, 5)
+        .map((course) => ({
+          course_id: course.course_id,
+          title: course.course_title,
+          completion_rate: course.completion_rate,
+          total_enrollments: course.total_enrollments,
+        }))
+    );
+  }, [dashboard]);
+
+  const resolvedLowProgressCourses = useMemo(() => {
+    if (!dashboard) return [];
+    if (dashboard.learning_gaps.low_progress_courses.length > 0) {
+      return uniqueByCourseId(dashboard.learning_gaps.low_progress_courses);
+    }
+
+    return uniqueByCourseId(
+      [...dashboard.student_analytics.performance_report.performance_by_course]
+        .sort((a, b) => a.average_progress - b.average_progress)
+        .slice(0, 5)
+        .map((course) => ({
+          course_id: course.course_id,
+          title: course.course_title,
+          average_progress: course.average_progress,
+        }))
+    );
+  }, [dashboard]);
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_20%_10%,#e0f2fe_0%,#f8fafc_40%,#ecfeff_100%)] p-4 sm:p-6 lg:p-8 dark:bg-[radial-gradient(circle_at_20%_10%,#0b1220_0%,#060a13_45%,#030711_100%)]">
       <div className="pointer-events-none absolute inset-0">
@@ -485,26 +533,34 @@ export default function AdminDashboard() {
                 <div>
                   <p className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-rose-500">Low Completion Courses</p>
                   <div className="space-y-2">
-                    {dashboard.learning_gaps.low_completion_courses.map((course) => (
+                    {resolvedLowCompletionCourses.length ? resolvedLowCompletionCourses.map((course) => (
                       <div key={course.course_id} className="rounded-xl border border-slate-200 px-3 py-2 transition-colors hover:bg-rose-50/50 dark:border-slate-700 dark:hover:bg-rose-400/10">
                         <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{course.title}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
                           Completion: {formatPercent(course.completion_rate)} | Enrollments: {course.total_enrollments}
                         </p>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="rounded-xl border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        No low completion courses were returned yet.
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div>
                   <p className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-amber-500">Low Progress Courses</p>
                   <div className="space-y-2">
-                    {dashboard.learning_gaps.low_progress_courses.map((course) => (
+                    {resolvedLowProgressCourses.length ? resolvedLowProgressCourses.map((course) => (
                       <div key={course.course_id} className="rounded-xl border border-slate-200 px-3 py-2 transition-colors hover:bg-amber-50/60 dark:border-slate-700 dark:hover:bg-amber-400/10">
                         <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{course.title}</p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Average progress: {formatPercent(course.average_progress)}</p>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="rounded-xl border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                        No low progress courses were returned yet.
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
