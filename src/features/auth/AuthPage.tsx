@@ -59,6 +59,10 @@ const educationLevelOptions = [
   { value: "other", label: "Other" },
 ] as const;
 
+const AUTH_LOGIN_PATHS = ["/auth/login", "/login"] as const;
+const AUTH_REGISTER_PATHS = ["/auth/register", "/register"] as const;
+const AUTH_FORGOT_PASSWORD_PATHS = ["/auth/forgot-password", "/forgot-password"] as const;
+
 const loginModes: Array<{
   id: LoginModeId;
   label: string;
@@ -77,14 +81,14 @@ const loginModes: Array<{
     {
       id: "student",
       label: "Student",
-      eyebrow: "POST /login",
+      eyebrow: "POST /auth/login",
       title: "Student Login",
       description: "Login to continue your learning journey.",
       visualTitle: "Student",
       visualSuffix: "Back!",
       visualMessage: "Access your courses, quizzes, and progress from one dashboard.",
       submitLabel: "Sign In as Student",
-      endpointPaths: ["/login"],
+      endpointPaths: [...AUTH_LOGIN_PATHS],
       redirectPath: "/student",
       sessionRole: "student",
       icon: BookOpen,
@@ -92,14 +96,14 @@ const loginModes: Array<{
     {
       id: "instructor",
       label: "Instructor",
-    eyebrow: "POST /login",
+    eyebrow: "POST /auth/login",
       title: "Instructor Login",
       description: "Open your courses, quizzes, and learner activity.",
       visualTitle: "Instructor",
       visualSuffix: "Hub",
       visualMessage: "Manage courses, assessments, and class progress with a focused teaching console.",
       submitLabel: "Sign In as Instructor",
-    endpointPaths: ["/login"],
+    endpointPaths: [...AUTH_LOGIN_PATHS],
       redirectPath: "/instructor",
       sessionRole: "instructor",
       icon: Star,
@@ -107,14 +111,14 @@ const loginModes: Array<{
     {
       id: "auditor",
       label: "Auditor",
-      eyebrow: "POST /login",
+      eyebrow: "POST /auth/login",
       title: "Auditor Login",
       description: "Review courses, lessons, quizzes, and content quality.",
       visualTitle: "Auditor",
       visualSuffix: "Desk",
       visualMessage: "Inspect learning content, request changes, and keep quality reviews moving.",
       submitLabel: "Sign In as Auditor",
-      endpointPaths: ["/login"],
+      endpointPaths: [...AUTH_LOGIN_PATHS],
       redirectPath: "/auditor",
       sessionRole: "auditor",
       icon: User,
@@ -372,24 +376,44 @@ export default function AuthPage() {
       return;
     }
 
-    const forgotPasswordUrl = getStudentApiRequestUrl("/forgot-password");
-    if (!forgotPasswordUrl) {
+    const forgotPasswordCandidates = AUTH_FORGOT_PASSWORD_PATHS.map((path) => getStudentApiRequestUrl(path)).filter(Boolean);
+    if (forgotPasswordCandidates.length === 0) {
       setForgotError("NEXT_PUBLIC_API_URL is missing. Set it to your backend API URL and try again.");
       return;
     }
 
     setIsForgotLoading(true);
     try {
-      const response = await axios.post(
-        forgotPasswordUrl,
-        { email },
-        {
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
+      let response = null;
+      for (const forgotPasswordUrl of forgotPasswordCandidates) {
+        try {
+          response = await axios.post(
+            forgotPasswordUrl,
+            { email },
+            {
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+              },
+            }
+          );
+          break;
+        } catch (candidateError) {
+          if (!axios.isAxiosError(candidateError)) {
+            throw candidateError;
+          }
+
+          if (candidateError.response?.status === 404 || candidateError.response?.status === 405) {
+            continue;
+          }
+
+          throw candidateError;
         }
-      );
+      }
+
+      if (!response) {
+        throw new Error("forgot_password_endpoint_not_found");
+      }
 
       const message =
         typeof response.data?.message === "string"
@@ -403,6 +427,12 @@ export default function AuthPage() {
       setTimeout(() => setSuccessMessage(null), 5000);
     } catch (error) {
       console.error("Forgot password error:", error);
+      if (error instanceof Error && error.message === "forgot_password_endpoint_not_found") {
+        const message = `Forgot password endpoint is not available. Verify backend routes for ${AUTH_FORGOT_PASSWORD_PATHS.join(" or ")}.`;
+        setForgotError(message);
+        pushToast(message, "error");
+        return;
+      }
       if (axios.isAxiosError(error) && error.response) {
         const responseErrors = error.response.data?.errors;
         const emailError = Array.isArray(responseErrors?.email) ? responseErrors.email[0] : null;
@@ -532,8 +562,8 @@ export default function AuthPage() {
     } else {
       setIsLoading(true);
       try {
-        const registerUrl = getStudentApiRequestUrl("/register");
-        if (!registerUrl) {
+        const registerCandidates = AUTH_REGISTER_PATHS.map((path) => getStudentApiRequestUrl(path)).filter(Boolean);
+        if (registerCandidates.length === 0) {
           setGeneralError("NEXT_PUBLIC_API_URL is missing in the production build. Set it to your public backend API URL and redeploy.");
           return;
         }
@@ -551,11 +581,32 @@ export default function AuthPage() {
           phone: formattedPhone
         };
 
-        await axios.post(registerUrl, payload, {
-          headers: {
-            'Accept': 'application/json'
+        let registerSucceeded = false;
+        for (const registerUrl of registerCandidates) {
+          try {
+            await axios.post(registerUrl, payload, {
+              headers: {
+                'Accept': 'application/json'
+              }
+            });
+            registerSucceeded = true;
+            break;
+          } catch (candidateError) {
+            if (!axios.isAxiosError(candidateError)) {
+              throw candidateError;
+            }
+
+            if (candidateError.response?.status === 404 || candidateError.response?.status === 405) {
+              continue;
+            }
+
+            throw candidateError;
           }
-        });
+        }
+
+        if (!registerSucceeded) {
+          throw new Error("register_endpoint_not_found");
+        }
 
         setIsLogin(true);
         setSuccessMessage('Registration successful! You can now log in.');
@@ -564,6 +615,11 @@ export default function AuthPage() {
 
       } catch (error) {
         console.error("Registration error:", error);
+        if (error instanceof Error && error.message === "register_endpoint_not_found") {
+          setGeneralError(`Registration endpoint is not available. Verify backend routes for ${AUTH_REGISTER_PATHS.join(" or ")}.`);
+          pushToast(`Registration endpoint is not available. Verify backend routes for ${AUTH_REGISTER_PATHS.join(" or ")}.`, "error");
+          return;
+        }
         if (axios.isAxiosError(error) && error.response) {
           const isHtmlResponse = String(error.response.headers?.["content-type"] ?? "").includes("text/html");
 
