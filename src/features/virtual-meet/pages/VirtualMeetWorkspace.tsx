@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { Ban, Copy, ExternalLink, Loader2, RefreshCw, ShieldCheck, Trash2, Users, Video, X, Zap } from "lucide-react";
+import { getStoredStudentId } from "@/features/student/studentSession";
 import { persistVirtualMeetOauthContext, type OAuthRequestSource } from "@/features/virtual-meet/oauthStorage";
 
 type UrlFn = (path: string) => string;
@@ -390,8 +391,11 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const saveAttendance = () => run(async () => {
     const sessionId = toNumberOrNull(attendanceForm.session_id);
     if (sessionId === null) throw new Error("Choose a session for attendance.");
+    const currentUserId = getStoredStudentId();
+    if (currentUserId == null) throw new Error("Current user ID is missing.");
     const payload: Record<string, unknown> = {};
     const joined = toIsoOrNull(attendanceForm.joined_at); const left = toIsoOrNull(attendanceForm.left_at); const duration = toNumberOrNull(attendanceForm.duration_minutes);
+    payload.user_id = currentUserId;
     if (joined) payload.joined_at = joined;
     if (left) payload.left_at = left;
     if (duration !== null) payload.duration_minutes = duration;
