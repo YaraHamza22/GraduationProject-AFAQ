@@ -2,6 +2,7 @@ class ApiEndpoints {
   const ApiEndpoints._();
 
   static const login = '/auth/login';
+  static const register = '/auth/register';
   static const loginFallback = '/login';
   static const logout = '/auth/logout';
   static const profile = '/auth/profile';

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/widgets/afaq_panel.dart';
+import '../../offline/data/offline_quiz_sync_service.dart';
 import '../data/quiz_attempt_service.dart';
 import 'student_page_shared.dart';
 
@@ -13,6 +14,7 @@ class StudentQuizGradePage extends StatefulWidget {
     required this.attemptId,
     required this.quizTitle,
     this.pendingReview = false,
+    this.hasPendingOfflineSync = false,
   });
 
   final int quizId;
@@ -20,6 +22,7 @@ class StudentQuizGradePage extends StatefulWidget {
   final int attemptId;
   final String quizTitle;
   final bool pendingReview;
+  final bool hasPendingOfflineSync;
 
   @override
   State<StudentQuizGradePage> createState() => _StudentQuizGradePageState();
@@ -27,6 +30,7 @@ class StudentQuizGradePage extends StatefulWidget {
 
 class _StudentQuizGradePageState extends State<StudentQuizGradePage> {
   final _attemptService = const QuizAttemptService();
+  final _offlineSyncService = const OfflineQuizSyncService();
 
   bool _loading = true;
   String? _error;
@@ -51,11 +55,20 @@ class _StudentQuizGradePageState extends State<StudentQuizGradePage> {
 
     try {
       _GradeSnapshot? snapshot;
+      final hasPendingOfflineSync = widget.hasPendingOfflineSync ||
+          await _offlineSyncService.hasPendingSubmit(widget.attemptId);
+
+      if (hasPendingOfflineSync) {
+        snapshot = _GradeSnapshot.pending(
+          'Your attempt is stored offline and will be submitted after sync.',
+        );
+      }
+
       try {
         final response = await _attemptService.getGrade(widget.attemptId);
         snapshot = _GradeSnapshot.fromGrade(unwrapDataMap(response.data));
       } catch (_) {
-        snapshot = await _loadAttemptFallback();
+        snapshot ??= await _loadAttemptFallback();
       }
 
       snapshot ??= _GradeSnapshot.pending();
@@ -396,16 +409,18 @@ class _GradeSnapshot {
     );
   }
 
-  factory _GradeSnapshot.pending() {
-    return const _GradeSnapshot(
+  factory _GradeSnapshot.pending([
+    String message =
+        'Your quiz will be graded and you will be notified when grading is complete.',
+  ]) {
+    return _GradeSnapshot(
       score: null,
       maxScore: null,
       passingScore: null,
       percentage: null,
       status: 'submitted',
       gradeAvailable: false,
-      message:
-          'Your quiz will be graded and you will be notified when grading is complete.',
+      message: message,
       submittedAt: null,
       gradedAt: null,
       updatedAt: null,

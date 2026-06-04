@@ -10,6 +10,7 @@ import '../../instructor/pages/instructor_area.dart';
 import '../../onboarding/presentation/widgets/learning_logo_animation.dart';
 import '../../student/pages/student_area.dart';
 import '../data/auth_service.dart';
+import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -49,6 +50,11 @@ class _LoginPageState extends State<LoginPage> {
       onRoleChanged: (role) => setState(() => _role = role),
       onTogglePassword: () => setState(() => _hidePassword = !_hidePassword),
       onSubmit: _submit,
+      onRegisterTap: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const RegisterPage()),
+        );
+      },
     );
     final content = wide
         ? <Widget>[
@@ -178,6 +184,7 @@ class _LoginCard extends StatelessWidget {
     required this.onRoleChanged,
     required this.onTogglePassword,
     required this.onSubmit,
+    required this.onRegisterTap,
   });
 
   final GlobalKey<FormState> formKey;
@@ -189,6 +196,7 @@ class _LoginCard extends StatelessWidget {
   final ValueChanged<AfaqRole> onRoleChanged;
   final VoidCallback onTogglePassword;
   final VoidCallback onSubmit;
+  final VoidCallback onRegisterTap;
 
   @override
   Widget build(BuildContext context) {
@@ -337,6 +345,23 @@ class _LoginCard extends StatelessWidget {
                   elevation: 0,
                 ),
               ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'Have no account?',
+                  style: TextStyle(
+                    color: AfaqColors.slate500,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                TextButton(
+                  onPressed: loading ? null : onRegisterTap,
+                  child: const Text('Register'),
+                ),
+              ],
             ),
           ],
         ),

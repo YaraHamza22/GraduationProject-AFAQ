@@ -6,6 +6,7 @@ import '../../../app/app.dart';
 import '../../../core/session/session_store.dart';
 import '../../../core/theme/afaq_colors.dart';
 import '../../../core/widgets/afaq_panel.dart';
+import '../../offline/data/offline_quiz_sync_service.dart';
 import '../data/quiz_attempt_service.dart';
 import '../data/quiz_service.dart';
 import 'student_page_shared.dart';
@@ -32,13 +33,17 @@ class StudentQuizAttemptPage extends StatefulWidget {
 class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
   final _attemptService = const QuizAttemptService();
   final _quizService = const QuizService();
+  final _offlineSyncService = const OfflineQuizSyncService();
 
   bool _loading = true;
   bool _submitting = false;
+  bool _syncingPending = false;
   String? _error;
+  String? _offlineNotice;
   _AttemptDetails? _attempt;
   int? _remainingSeconds;
   Timer? _timer;
+  int _pendingSyncCount = 0;
 
   final Map<int, _AnswerDraft> _drafts = {};
   final Map<int, bool> _savingByQuestion = {};
@@ -105,6 +110,12 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
     return 0;
   }
 
+  bool _shouldQueueOffline(Object error) {
+    final message = error.toString();
+    return message == 'No connection. Check your internet and try again.' ||
+        message == 'The server took too long to respond.';
+  }
+
   Future<int> _resolveAttemptId() async {
     if (widget.attemptId > 0) return widget.attemptId;
 
@@ -161,6 +172,11 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
       return readInt(attempts.first['id']);
     }
 
+    final cachedAttemptId = await _offlineSyncService.getCachedAttemptId(widget.quizId);
+    if (cachedAttemptId != null && cachedAttemptId > 0) {
+      return cachedAttemptId;
+    }
+
     throw StateError('Could not open quiz attempt. Please refresh and try again.');
   }
 
@@ -186,27 +202,104 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
       );
   }
 
-  Future<void> _loadAttempt() async {
+  Future<void> _mergeOfflineDrafts(int attemptId) async {
+    final attempt = _attempt;
+    if (attempt == null) return;
+
+    final draftPayloads = await _offlineSyncService.getDraftAnswers(attemptId);
+    if (draftPayloads.isEmpty || !mounted) return;
+
     setState(() {
-      _loading = true;
-      _error = null;
+      for (final question in attempt.quiz.questions) {
+        final payload = draftPayloads[question.id];
+        if (payload == null) continue;
+        _drafts[question.id] = _AnswerDraft.fromAnswerPayload(payload);
+        _savedByQuestion[question.id] = true;
+      }
     });
+  }
+
+  Future<void> _refreshPendingSyncState([int? attemptId]) async {
+    final resolvedAttemptId = attemptId ?? _attempt?.id;
+    if (resolvedAttemptId == null || resolvedAttemptId <= 0) return;
+    final count = await _offlineSyncService.pendingActionCountForAttempt(resolvedAttemptId);
+    if (!mounted) return;
+    setState(() => _pendingSyncCount = count);
+  }
+
+  Future<void> _syncPendingActions() async {
+    if (_syncingPending) return;
+
+    setState(() => _syncingPending = true);
+    try {
+      final result = await _offlineSyncService.syncPendingActions();
+      await _refreshPendingSyncState();
+      if (!mounted || result.syncedActions == 0) return;
+      setState(() {
+        _offlineNotice = result.remainingActions == 0
+            ? 'Offline quiz changes synced successfully.'
+            : 'Some offline quiz changes synced, but a few are still pending.';
+      });
+      await _loadAttempt(silent: true);
+    } catch (_) {
+      // Keep the queued changes and let the user continue.
+    } finally {
+      if (mounted) {
+        setState(() => _syncingPending = false);
+      }
+    }
+  }
+
+  Future<void> _loadAttempt({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
+      await _syncPendingActions();
       final resolvedAttemptId = await _resolveAttemptId();
       _AttemptDetails? details;
 
       try {
         final attemptResponse = await _attemptService.getAttempt(resolvedAttemptId);
-        details = _AttemptDetails.fromPayload(
-          unwrapDataMap(attemptResponse.data),
+        final payload = unwrapDataMap(attemptResponse.data);
+        await _offlineSyncService.cacheAttemptPayload(
+          quizId: widget.quizId,
+          attemptId: resolvedAttemptId,
+          payload: payload,
         );
+        details = _AttemptDetails.fromPayload(payload);
       } catch (_) {
-        final quizResponse = await _quizService.getQuiz(widget.quizId);
-        details = _AttemptDetails.fromQuizPayload(
-          unwrapDataMap(quizResponse.data),
-          resolvedAttemptId,
-        );
+        try {
+          final quizResponse = await _quizService.getQuiz(widget.quizId);
+          final payload = unwrapDataMap(quizResponse.data);
+          await _offlineSyncService.cacheQuizPayload(
+            quizId: widget.quizId,
+            attemptId: resolvedAttemptId,
+            payload: payload,
+          );
+          details = _AttemptDetails.fromQuizPayload(
+            payload,
+            resolvedAttemptId,
+          );
+        } catch (_) {
+          final cachedAttempt = await _offlineSyncService.getCachedAttemptPayload(
+            resolvedAttemptId,
+          );
+          if (cachedAttempt != null) {
+            details = _AttemptDetails.fromPayload(cachedAttempt);
+          } else {
+            final cachedQuiz = await _offlineSyncService.getCachedQuizPayload(widget.quizId);
+            if (cachedQuiz != null) {
+              details = _AttemptDetails.fromQuizPayload(cachedQuiz, resolvedAttemptId);
+              _offlineNotice ??=
+                  'You are viewing a cached quiz copy. Your pending changes will sync later.';
+            }
+          }
+        }
       }
 
       if (details == null) {
@@ -222,6 +315,8 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
         _loading = false;
       });
       _startTimer();
+      await _refreshPendingSyncState(resolvedAttemptId);
+      await _mergeOfflineDrafts(resolvedAttemptId);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -290,6 +385,12 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
       _questionErrors[question.id] = null;
     });
 
+    await _offlineSyncService.saveDraftAnswer(
+      attemptId: attempt.id,
+      questionId: question.id,
+      answerPayload: answerPayload,
+    );
+
     try {
       await _attemptService.saveAttempt(
         attemptId: attempt.id,
@@ -314,6 +415,22 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
         if (!mounted) return;
         setState(() => _savedByQuestion[question.id] = true);
       } catch (fallbackError) {
+        if (_shouldQueueOffline(fallbackError)) {
+          await _offlineSyncService.queueSaveAnswer(
+            quizId: widget.quizId,
+            courseId: widget.courseId,
+            attemptId: attempt.id,
+            questionId: question.id,
+            answerPayload: answerPayload,
+          );
+          await _refreshPendingSyncState(attempt.id);
+          if (!mounted) return;
+          setState(() {
+            _savedByQuestion[question.id] = true;
+            _offlineNotice = 'Answer saved offline. It will sync when you reconnect.';
+          });
+          return;
+        }
         if (!mounted) return;
         setState(() {
           _questionErrors[question.id] = fallbackError.toString().replaceFirst(
@@ -339,6 +456,7 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
     });
 
     try {
+      var queuedOffline = false;
       final answers = <Map<String, dynamic>>[];
       for (final question in attempt.quiz.questions) {
         final draft = _drafts[question.id];
@@ -370,10 +488,28 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
         });
       }
 
-      await _attemptService.submitAttempt(
-        attemptId: attempt.id,
-        answers: answers,
-      );
+      try {
+        await _attemptService.submitAttempt(
+          attemptId: attempt.id,
+          answers: answers,
+        );
+        await _offlineSyncService.clearDrafts(attempt.id);
+      } catch (error) {
+        if (!_shouldQueueOffline(error)) rethrow;
+
+        await _offlineSyncService.queueSubmitAttempt(
+          quizId: widget.quizId,
+          courseId: widget.courseId,
+          attemptId: attempt.id,
+          answers: answers,
+        );
+        queuedOffline = true;
+        await _refreshPendingSyncState(attempt.id);
+        if (!mounted) return;
+        setState(() {
+          _offlineNotice = 'Attempt queued offline. It will submit automatically after sync.';
+        });
+      }
 
       if (!mounted) return;
       await Navigator.of(context).pushReplacement(
@@ -384,6 +520,7 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
             attemptId: attempt.id,
             quizTitle: widget.quizTitle,
             pendingReview: true,
+            hasPendingOfflineSync: queuedOffline,
           ),
         ),
       );
@@ -477,6 +614,44 @@ class _StudentQuizAttemptPageState extends State<StudentQuizAttemptPage> {
                                     style: TextStyle(
                                       color: AfaqColors.rose500,
                                       fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                                if (_offlineNotice != null || _pendingSyncCount > 0) ...[
+                                  const SizedBox(height: 14),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: AfaqColors.amber500.withValues(alpha: .10),
+                                      borderRadius: BorderRadius.circular(18),
+                                      border: Border.all(
+                                        color: AfaqColors.amber500.withValues(alpha: .18),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          _offlineNotice ??
+                                              '$_pendingSyncCount offline change${_pendingSyncCount == 1 ? '' : 's'} waiting to sync.',
+                                          style: const TextStyle(fontWeight: FontWeight.w800),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        OutlinedButton.icon(
+                                          onPressed: _syncingPending ? null : _syncPendingActions,
+                                          icon: _syncingPending
+                                              ? const SizedBox(
+                                                  width: 16,
+                                                  height: 16,
+                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                )
+                                              : const Icon(Icons.sync_rounded),
+                                          label: Text(
+                                            _syncingPending ? 'Syncing...' : 'Sync Pending Changes',
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
@@ -1005,6 +1180,23 @@ class _AnswerDraft {
   final int? selectedOptionId;
   final bool? booleanAnswer;
   final String answerText;
+
+  factory _AnswerDraft.fromAnswerPayload(Map<String, dynamic> payload) {
+    final localized = payload['answer_text'];
+    final answerText = localized is Map
+        ? localizedValue(localized, localeNotifier.value.languageCode)
+        : readString(localized);
+
+    return _AnswerDraft(
+      selectedOptionId: readInt(payload['selected_option_id']) == 0
+          ? null
+          : readInt(payload['selected_option_id']),
+      booleanAnswer: payload['boolean_answer'] is bool
+          ? payload['boolean_answer'] as bool
+          : null,
+      answerText: answerText,
+    );
+  }
 
   _AnswerDraft copyWith({
     int? selectedOptionId,

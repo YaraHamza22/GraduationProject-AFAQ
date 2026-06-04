@@ -18,6 +18,52 @@ class AuthService {
   ApiClient get _client => _apiClient ?? ApiClient.instance;
   SessionStore get _store => _sessionStore ?? SessionStore.instance;
 
+  Future<void> register({
+    required String name,
+    required String email,
+    required String password,
+    required String passwordConfirmation,
+    required String phone,
+    required String dateOfBirth,
+    required String gender,
+    required String educationLevel,
+    required String country,
+    String? address,
+    String? bio,
+    String? specialization,
+    String? joinedAt,
+  }) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      ApiEndpoints.register,
+      data: {
+        'name': name,
+        'email': email,
+        'password': password,
+        'password_confirmation': passwordConfirmation,
+        'phone': phone,
+        'date_of_birth': dateOfBirth,
+        'gender': gender,
+        'address': address,
+        'education_level': educationLevel,
+        'country': country,
+        'bio': bio,
+        'specialization': specialization,
+        'joined_at': joinedAt,
+      },
+    );
+
+    final token = _readToken(response.data);
+    if (token == null || token.isEmpty) {
+      throw const AppException('Registration succeeded but no access token was returned.');
+    }
+
+    await _store.save(
+      accessToken: token,
+      userRole: AfaqRole.student,
+      currentUserId: _readUserId(response.data, token: token),
+    );
+  }
+
   Future<void> login({
     required String email,
     required String password,

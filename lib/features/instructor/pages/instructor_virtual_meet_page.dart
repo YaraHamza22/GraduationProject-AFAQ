@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../app/app.dart';
+import '../../../core/session/session_store.dart';
 import '../../../core/websocket/realtime_client.dart';
 import '../../../core/toast/afaq_toast.dart';
 import '../data/instructor_virtual_meet_service.dart';
@@ -145,6 +146,7 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
         _attendanceSessionId ??= sessions.isEmpty ? null : sessions.first.id;
         _loading = false;
       });
+      _applyAttendanceSession(_attendanceSessionId);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -194,6 +196,37 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
     final hour = local.hour.toString().padLeft(2, '0');
     final minute = local.minute.toString().padLeft(2, '0');
     return '${local.year}-$month-$day $hour:$minute';
+  }
+
+  _MeetSession? _sessionById(int? sessionId) {
+    if (sessionId == null) return null;
+    for (final session in _sessions) {
+      if (session.id == sessionId) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  String _durationMinutesFromSession(_MeetSession session) {
+    final startsAt = DateTime.tryParse(session.startsAt);
+    final endsAt = DateTime.tryParse(session.endsAt);
+    if (startsAt == null || endsAt == null) return '';
+    final minutes = endsAt.difference(startsAt).inMinutes;
+    return minutes > 0 ? '$minutes' : '';
+  }
+
+  void _applyAttendanceSession(int? sessionId) {
+    final session = _sessionById(sessionId);
+    setState(() {
+      _attendanceSessionId = sessionId;
+      _attendanceJoinedAtController.text =
+          session == null ? '' : _toLocalInput(session.startsAt);
+      _attendanceLeftAtController.text =
+          session == null ? '' : _toLocalInput(session.endsAt);
+      _attendanceDurationController.text =
+          session == null ? '' : _durationMinutesFromSession(session);
+    });
   }
 
   Future<void> _pickDateTime(TextEditingController controller) async {
@@ -488,8 +521,13 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
       setState(() => _error = 'Choose a session for attendance.');
       return;
     }
+    final userId = SessionStore.instance.userId;
+    if (userId == null || userId <= 0) {
+      setState(() => _error = 'Your session is missing the instructor user id. Please log in again.');
+      return;
+    }
     await _runBusy(() async {
-      final body = <String, dynamic>{};
+      final body = <String, dynamic>{'user_id': userId};
       final joinedAt = _toIsoOrNull(_attendanceJoinedAtController.text);
       final leftAt = _toIsoOrNull(_attendanceLeftAtController.text);
       final duration = int.tryParse(_attendanceDurationController.text.trim());
@@ -497,9 +535,7 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
       if (leftAt != null) body['left_at'] = leftAt;
       if (duration != null) body['duration_minutes'] = duration;
       await _service.saveAttendance(sessionId: sessionId, body: body);
-      _attendanceJoinedAtController.clear();
-      _attendanceLeftAtController.clear();
-      _attendanceDurationController.clear();
+      _applyAttendanceSession(sessionId);
       if (!mounted) return;
       setState(() => _ok = 'Attendance stored.');
       _showToast('Attendance stored.', AfaqToastType.success);
@@ -1610,7 +1646,7 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
                       ),
                     ),
                   ],
-                  onChanged: (value) => setState(() => _attendanceSessionId = value),
+                  onChanged: _applyAttendanceSession,
                 ),
               ),
               SizedBox(
