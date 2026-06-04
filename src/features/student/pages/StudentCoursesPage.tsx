@@ -9,15 +9,14 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock,
-  Compass,
   Info,
   Loader2,
   PlayCircle,
   User
 } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
-import { getStudentApiCached, getStudentApiRequestUrl, invalidateStudentApiCache } from "@/features/student/studentApi";
-import { getStoredStudentId, getStudentToken } from "@/features/student/studentSession";
+import { getStudentApiCached } from "@/features/student/studentApi";
+import { getStudentToken } from "@/features/student/studentSession";
 import { motion, AnimatePresence } from "framer-motion";
 import { getStudentApiBaseUrl } from "@/features/student/studentApi";
 
@@ -140,22 +139,17 @@ function normalizeMediaUrl(value: unknown) {
 
 export default function StudentCoursesPage() {
   const { t, isRTL, language } = useLanguage();
-  const [activeTab, setActiveTab] = useState<"my-learning" | "discover">("my-learning");
   const ITEMS_PER_PAGE = 6;
 
   const [enrolledCourses, setEnrolledCourses] = useState<Enrollment[]>([]);
-  const [discoverCourses, setDiscoverCourses] = useState<EnrollableCourse[]>([]);
   const [courseMediaById, setCourseMediaById] = useState<Record<number, CourseMediaDetails>>({});
   const [progressData, setProgressData] = useState<Record<number, ProgressDetails>>({});
   const [progressLoading, setProgressLoading] = useState<Record<number, boolean>>({});
   const [progressErrors, setProgressErrors] = useState<Record<number, string>>({});
 
   const [isLoading, setIsLoading] = useState(true);
-  const [isActionLoading, setIsActionLoading] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [enrolledPage, setEnrolledPage] = useState(1);
-  const [discoverPage, setDiscoverPage] = useState(1);
 
   const fetchData = useCallback(async (force = false) => {
     setIsLoading(true);
@@ -165,16 +159,10 @@ export default function StudentCoursesPage() {
       if (!token) throw new Error("missing_token");
 
       const headers = { Accept: "application/json", Authorization: `Bearer ${token}` };
-      const [enrolledRes, discoverRes] = await Promise.all([
-        getStudentApiCached<{ data?: Enrollment[] | { data?: Enrollment[] } }>("/enrollments", {
-          headers,
-          params: { per_page: 15 },
-        }, { ttlMs: 20_000, force }),
-        getStudentApiCached<{ data?: EnrollableCourse[] | { data?: EnrollableCourse[] } }>("/courses", {
-          headers,
-          params: { per_page: 15 },
-        }, { ttlMs: 20_000, force }),
-      ]);
+      const enrolledRes = await getStudentApiCached<{ data?: Enrollment[] | { data?: Enrollment[] } }>("/enrollments", {
+        headers,
+        params: { per_page: 100 },
+      }, { ttlMs: 20_000, force });
 
       const enrolledPayload = enrolledRes.data?.data;
       const enrollments: Enrollment[] = Array.isArray(enrolledPayload)
@@ -184,23 +172,11 @@ export default function StudentCoursesPage() {
           : [];
 
       setEnrolledCourses(enrollments);
-
-      const discoverPayload = discoverRes.data?.data;
-      const allDiscoverable: EnrollableCourse[] = Array.isArray(discoverPayload)
-        ? discoverPayload
-        : Array.isArray(discoverPayload?.data)
-          ? discoverPayload.data
-          : [];
-
-      // Filter out courses that are already enrolled.
       const enrolledCourseIdSet = new Set(
         enrollments
           .map((enrollment) => enrollment.course?.id ?? enrollment.course_id)
           .filter((id): id is number => typeof id === "number")
       );
-      const trulyDiscoverable = allDiscoverable.filter((course) => !enrolledCourseIdSet.has(course.id));
-
-      setDiscoverCourses(trulyDiscoverable);
 
       const enrolledCourseIds = Array.from(enrolledCourseIdSet);
 
@@ -250,42 +226,6 @@ export default function StudentCoursesPage() {
     setEnrolledPage(1);
   }, [enrolledCourses.length]);
 
-  useEffect(() => {
-    setDiscoverPage(1);
-  }, [discoverCourses.length]);
-
-  const handleEnroll = async (courseId: number) => {
-    setIsActionLoading(courseId);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const token = getStudentToken();
-      const learnerId = getStoredStudentId();
-
-      if (!token || learnerId === null) {
-        throw new Error("missing_student_session");
-      }
-
-      await axios.post(getStudentApiRequestUrl("/enrollments"),
-        { course_id: courseId, learner_id: learnerId },
-        { headers: { Accept: "application/json", Authorization: `Bearer ${token}` } }
-      );
-      setSuccessMessage("Successfully enrolled in the course!");
-      invalidateStudentApiCache(/\/(enrollments|courses)(\?|\/|\|)/);
-      void fetchData(true); // Refresh both lists
-      setActiveTab("my-learning");
-    } catch (error) {
-      const apiMessage =
-        axios.isAxiosError(error) && typeof error.response?.data?.message === "string"
-          ? error.response.data.message
-          : null;
-
-      setErrorMessage(apiMessage || "Failed to enroll in the course.");
-    } finally {
-      setIsActionLoading(null);
-    }
-  };
-
   const fetchProgress = async (enrollmentId: number) => {
     if (progressData[enrollmentId] || progressLoading[enrollmentId]) return; // Already fetched/in flight
 
@@ -315,27 +255,18 @@ export default function StudentCoursesPage() {
   };
 
   const enrolledTotalPages = Math.max(1, Math.ceil(enrolledCourses.length / ITEMS_PER_PAGE));
-  const discoverTotalPages = Math.max(1, Math.ceil(discoverCourses.length / ITEMS_PER_PAGE));
 
   const pagedEnrolledCourses = enrolledCourses.slice(
     (enrolledPage - 1) * ITEMS_PER_PAGE,
     enrolledPage * ITEMS_PER_PAGE
   );
-  const pagedDiscoverCourses = discoverCourses.slice(
-    (discoverPage - 1) * ITEMS_PER_PAGE,
-    discoverPage * ITEMS_PER_PAGE
-  );
 
-  const currentPage = activeTab === "my-learning" ? enrolledPage : discoverPage;
-  const totalPages = activeTab === "my-learning" ? enrolledTotalPages : discoverTotalPages;
+  const currentPage = enrolledPage;
+  const totalPages = enrolledTotalPages;
 
   const changePage = (nextPage: number) => {
     const boundedPage = Math.max(1, Math.min(nextPage, totalPages));
-    if (activeTab === "my-learning") {
-      setEnrolledPage(boundedPage);
-      return;
-    }
-    setDiscoverPage(boundedPage);
+    setEnrolledPage(boundedPage);
   };
 
   return (
@@ -344,32 +275,11 @@ export default function StudentCoursesPage() {
       <div className={`mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6 ${isRTL ? "md:flex-row-reverse" : ""}`}>
         <div className={isRTL ? "text-right" : ""}>
           <h1 className="text-5xl font-black tracking-tighter leading-none mb-4">
-            {t("std.courses")}
+            {t("std.my_learning")}
           </h1>
           <p className="text-lg opacity-40 font-medium">
-            {activeTab === "my-learning" ? t("std.subtitle") : t("std.discover")}
+            {t("std.subtitle")}
           </p>
-        </div>
-
-        <div className="flex bg-slate-200/50 dark:bg-white/5 p-1.5 rounded-2xl backdrop-blur-xl">
-          <button
-            onClick={() => setActiveTab("my-learning")}
-            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === "my-learning"
-              ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-xl scale-105"
-              : "opacity-50 hover:opacity-100"
-              }`}
-          >
-            {t("std.my_learning")}
-          </button>
-          <button
-            onClick={() => setActiveTab("discover")}
-            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${activeTab === "discover"
-              ? "bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-xl scale-105"
-              : "opacity-50 hover:opacity-100"
-              }`}
-          >
-            {t("std.discover")}
-          </button>
         </div>
       </div>
 
@@ -386,17 +296,6 @@ export default function StudentCoursesPage() {
             <p className="font-bold text-sm">{errorMessage}</p>
           </motion.div>
         )}
-        {successMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={`mb-8 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center gap-3 ${isRTL ? "flex-row-reverse" : ""}`}
-          >
-            <CheckCircle2 className="w-5 h-5 shrink-0" />
-            <p className="font-bold text-sm">{successMessage}</p>
-          </motion.div>
-        )}
       </AnimatePresence>
 
       {/* Content */}
@@ -410,48 +309,29 @@ export default function StudentCoursesPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-            <AnimatePresence mode="popLayout">
-              {activeTab === "my-learning" ? (
-                enrolledCourses.length > 0 ? (
-                  pagedEnrolledCourses.map((enrollment) => (
-                  <CourseCard
-                    key={enrollment.id}
-                    type="enrolled"
-                    data={enrollment}
-                    courseMedia={courseMediaById[enrollment.course?.id ?? enrollment.course_id ?? 0]}
-                    progress={progressData[enrollment.id]}
-                    progressError={progressErrors[enrollment.id]}
-                    isProgressLoading={progressLoading[enrollment.id] === true}
-                      onFetchProgress={() => void fetchProgress(enrollment.id)}
-                      isRTL={isRTL}
-                      language={language}
-                      t={t}
-                    />
-                  ))
-                ) : (
-                  <EmptyState icon={BookOpen} message="No courses enrolled yet." />
-                )
-              ) : (
-                discoverCourses.length > 0 ? (
-                  pagedDiscoverCourses.map((course) => (
-                    <CourseCard
-                      key={course.id}
-                      type="enrollable"
-                      data={course}
-                      isRTL={isRTL}
-                      language={language}
-                      t={t}
-                      onEnroll={() => void handleEnroll(course.id)}
-                      isActionLoading={isActionLoading === course.id}
-                    />
-                  ))
-                ) : (
-                  <EmptyState icon={Compass} message="No new courses available at the moment." />
-                )
-              )}
-            </AnimatePresence>
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+          <AnimatePresence mode="popLayout">
+            {enrolledCourses.length > 0 ? (
+              pagedEnrolledCourses.map((enrollment) => (
+                <CourseCard
+                  key={enrollment.id}
+                  type="enrolled"
+                  data={enrollment}
+                  courseMedia={courseMediaById[enrollment.course?.id ?? enrollment.course_id ?? 0]}
+                  progress={progressData[enrollment.id]}
+                  progressError={progressErrors[enrollment.id]}
+                  isProgressLoading={progressLoading[enrollment.id] === true}
+                  onFetchProgress={() => void fetchProgress(enrollment.id)}
+                  isRTL={isRTL}
+                  language={language}
+                  t={t}
+                />
+              ))
+            ) : (
+              <EmptyState icon={BookOpen} message="No courses enrolled yet." />
+            )}
+          </AnimatePresence>
+        </div>
 
           {totalPages > 1 ? (
             <div className={`mt-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between ${isRTL ? "md:flex-row-reverse" : ""}`}>

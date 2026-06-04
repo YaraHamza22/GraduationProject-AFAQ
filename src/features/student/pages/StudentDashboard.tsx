@@ -31,6 +31,42 @@ function toString(value: unknown, fallback = "Untitled") {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+function getCourseIdLabel(course: Record<string, unknown>) {
+  const directCandidates = [
+    course.id,
+    course.course_id,
+    course.courseId,
+    course.enrollment_id,
+    course.enrollmentId,
+  ];
+
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return String(candidate);
+    }
+
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  const nestedCourse = isRecord(course.course) ? course.course : null;
+  if (nestedCourse) {
+    const nestedCandidates = [nestedCourse.id, nestedCourse.course_id, nestedCourse.courseId];
+    for (const candidate of nestedCandidates) {
+      if (typeof candidate === "number" && Number.isFinite(candidate)) {
+        return String(candidate);
+      }
+
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate;
+      }
+    }
+  }
+
+  return "--";
+}
+
 function parseDashboard(payload: unknown): DashboardData {
   const root = isRecord(payload) && isRecord(payload.data) ? payload.data : payload;
   const data = isRecord(root) ? root : {};
@@ -174,7 +210,7 @@ export default function StudentDashboard() {
               dashboard.recent_courses.map((course, i) => (
                 <div key={i} className="rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.02] px-4 py-3">
                   <p className="font-bold">{toString(course.title, toString(course.name, `Course #${i + 1}`))}</p>
-                  <p className="text-xs opacity-50">ID: {toString(course.id, toString(course.course_id, "--"))}</p>
+                  <p className="text-xs opacity-50">ID: {getCourseIdLabel(course)}</p>
                 </div>
               ))
             ) : (
