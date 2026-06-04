@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { Ban, Copy, ExternalLink, Loader2, RefreshCw, ShieldCheck, Trash2, Users, Video, X, Zap } from "lucide-react";
-import { getStoredStudentId } from "@/features/student/studentSession";
 import { persistVirtualMeetOauthContext, type OAuthRequestSource } from "@/features/virtual-meet/oauthStorage";
 
 type UrlFn = (path: string) => string;
@@ -60,6 +59,27 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const parts = token.split(".");
+  if (parts.length < 2) {
+    return null;
+  }
+
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const json = atob(padded);
+    const parsed = JSON.parse(json) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function listFromPayload<T>(payload: unknown): T[] {
   if (!isRecord(payload)) return [];
   if (Array.isArray(payload.data)) return payload.data as T[];
@@ -99,6 +119,52 @@ function toNumberOrNull(value: string) {
   if (!value.trim()) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function getUserIdFromUnknown(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function getCurrentSessionUserId(token: string | null) {
+  if (!token) {
+    return null;
+  }
+
+  const payload = decodeJwtPayload(token);
+  if (!payload) {
+    return null;
+  }
+
+  const candidateKeys = ["id", "sub", "user_id", "student_id", "admin_id"];
+  for (const key of candidateKeys) {
+    const resolved = getUserIdFromUnknown(payload[key]);
+    if (resolved !== null) {
+      return resolved;
+    }
+  }
+
+  const nestedUser = isRecord(payload.user) ? payload.user : null;
+  if (nestedUser) {
+    for (const key of candidateKeys) {
+      const resolved = getUserIdFromUnknown(nestedUser[key]);
+      if (resolved !== null) {
+        return resolved;
+      }
+    }
+  }
+
+  return null;
 }
 
 function isFuture(iso: string) {
@@ -391,7 +457,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const saveAttendance = () => run(async () => {
     const sessionId = toNumberOrNull(attendanceForm.session_id);
     if (sessionId === null) throw new Error("Choose a session for attendance.");
-    const currentUserId = getStoredStudentId();
+    const currentUserId = getCurrentSessionUserId(getToken());
     if (currentUserId == null) throw new Error("Current user ID is missing.");
     const payload: Record<string, unknown> = {};
     const joined = toIsoOrNull(attendanceForm.joined_at); const left = toIsoOrNull(attendanceForm.left_at); const duration = toNumberOrNull(attendanceForm.duration_minutes);
