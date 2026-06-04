@@ -4,10 +4,12 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { AlertCircle, Flag, Heart, Loader2, Lock, MessageCircle, MoreVertical, Pencil, Pin, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { extractStudentIdFromToken } from "@/features/student/studentSession";
+import { getStoredStudentUser } from "@/features/student/studentSession";
 
 type Pagination = { total: number; count: number; per_page: number; current_page: number; total_pages: number };
 type Thread = { id: number; course_id: number; author_id: number; title: string; body: string; category: string; is_pinned: number; is_locked: number; updated_at?: string };
-type Post = { id: number; forum_thread_id: number; body: string; created_at?: string; updated_at?: string };
+type PostAuthor = { id: number; name: string };
+type Post = { id: number; forum_thread_id: number; author_id: number; body: string; created_at?: string; updated_at?: string; author: PostAuthor | null };
 type Course = { id: number; title: string };
 type Form = { courseId: string; title: string; body: string; category: string };
 
@@ -67,7 +69,16 @@ function parsePosts(payload: unknown): { rows: Post[]; pag: Pagination } {
     if (!isObj(x)) continue;
     const id = num(x.id);
     if (!id) continue;
-    rows.push({ id, forum_thread_id: num(x.forum_thread_id), body: str(x.body), created_at: str(x.created_at) || undefined, updated_at: str(x.updated_at) || undefined });
+    const authorRaw = isObj(x.author) ? x.author : null;
+    rows.push({
+      id,
+      forum_thread_id: num(x.forum_thread_id),
+      author_id: num(x.author_id),
+      body: str(x.body),
+      created_at: str(x.created_at) || undefined,
+      updated_at: str(x.updated_at) || undefined,
+      author: authorRaw ? { id: num(authorRaw.id), name: str(authorRaw.name, "Unknown author") } : null,
+    });
   }
   return { rows, pag: parsePagination(root.pagination ?? (isObj(data) ? data.pagination : undefined)) };
 }
@@ -138,6 +149,7 @@ export default function ForumWorkspace({
     const token = getToken();
     return token ? extractStudentIdFromToken(token) : null;
   }, [getToken]);
+  const currentUserName = useMemo(() => getStoredStudentUser()?.name?.trim() || "You", []);
   const courseName = useMemo(() => new Map(courses.map((course) => [course.id, course.title])), [courses]);
 
   const request = useCallback(async (path: string, config: Parameters<typeof axios.request>[0]) => {
@@ -416,7 +428,7 @@ export default function ForumWorkspace({
                               </> : <>
                                 <p className="whitespace-pre-wrap text-sm">{post.body}</p>
                                 <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-                                  <p className="text-xs opacity-55">Post #{post.id} | {fmt(post.updated_at || post.created_at)}</p>
+                                  <p className="text-xs opacity-55">{post.author?.name || (post.author_id && currentUserId === post.author_id ? currentUserName : "Unknown author")} | Post #{post.id} | {fmt(post.updated_at || post.created_at)}</p>
                                   <div className="flex gap-1">
                                     <button onClick={() => void reactPost(thread.id, post.id)} disabled={busyId === post.id} className={`rounded px-2 py-1 text-xs font-bold ${liked.has(post.id) ? "bg-rose-500/15 text-rose-600" : "bg-slate-200 dark:bg-white/10"}`}><span className="inline-flex items-center gap-1"><Heart className="h-3 w-3" />Like</span></button>
                                     <button onClick={() => { setEditingPostId(post.id); setEditingPostBody(post.body); }} className="rounded bg-slate-200 px-2 py-1 text-xs font-bold dark:bg-white/10"><span className="inline-flex items-center gap-1"><Pencil className="h-3 w-3" />Edit</span></button>
