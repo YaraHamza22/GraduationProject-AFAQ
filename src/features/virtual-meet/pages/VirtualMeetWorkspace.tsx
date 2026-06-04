@@ -124,6 +124,19 @@ function getAfaqLiveLink(sessionId: number) {
   return `https://afaaq.com/live?room=${encodeURIComponent(`meet-${sessionId}`)}`;
 }
 
+function getStatusTone(status: string | null) {
+  switch ((status ?? "draft").toLowerCase()) {
+    case "published":
+      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-200";
+    case "cancelled":
+      return "bg-rose-500/10 text-rose-700 dark:text-rose-200";
+    case "completed":
+      return "bg-slate-500/10 text-slate-700 dark:text-slate-200";
+    default:
+      return "bg-amber-500/10 text-amber-700 dark:text-amber-200";
+  }
+}
+
 export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToken, liveRouteBase = "/live", oauthRequestSource = "student" }: Props) {
   const router = useRouter();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
@@ -150,6 +163,13 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
 
   const orderedSessions = useMemo(() => [...sessions].sort((a, b) => new Date(b.starts_at ?? 0).getTime() - new Date(a.starts_at ?? 0).getTime()), [sessions]);
   const providerIntegrations = useMemo(() => integrations.filter((i) => i.provider === sessionForm.provider), [integrations, sessionForm.provider]);
+  const sessionSummary = useMemo(() => ({
+    total: orderedSessions.length,
+    published: orderedSessions.filter((item) => (item.status ?? "").toLowerCase() === "published").length,
+    drafts: orderedSessions.filter((item) => (item.status ?? "draft").toLowerCase() === "draft").length,
+    cancelled: orderedSessions.filter((item) => (item.status ?? "").toLowerCase() === "cancelled").length,
+  }), [orderedSessions]);
+  const upcomingSessions = useMemo(() => orderedSessions.filter((item) => item.starts_at && isFuture(item.starts_at)).slice(0, 3), [orderedSessions]);
 
   const headers = () => {
     const token = getToken();
@@ -160,6 +180,16 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const run = async (work: () => Promise<void>) => {
     setBusy(true); setErr(null); setMsg(null);
     try { await work(); } catch (error) { setErr(getErrorText(error)); } finally { setBusy(false); }
+  };
+
+  const upsertSession = (session: SessionItem) => {
+    setSessions((prev) => {
+      const existing = prev.some((item) => item.id === session.id);
+      if (!existing) {
+        return [session, ...prev];
+      }
+      return prev.map((item) => (item.id === session.id ? session : item));
+    });
   };
 
   const loadCourses = async () => {
@@ -283,8 +313,10 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (sessionMode === "manual") payload.join_url = sessionForm.join_url.trim();
     if (sessionForm.status.trim()) payload.status = sessionForm.status.trim();
 
-    await axios.post(getRequestUrl("/virtual-sessions"), payload, { headers: headers() });
-    setEditingSessionId(null); setSessionForm(sessionInitial); await loadAll(); setMsg("Session created.");
+    const res = await axios.post(getRequestUrl("/virtual-sessions"), payload, { headers: headers() });
+    const created = itemFromPayload<SessionItem>(res.data);
+    if (created) upsertSession(created);
+    setEditingSessionId(null); setSessionForm(sessionInitial); setMsg("Session created.");
   });
 
   const updateSession = () => run(async () => {
@@ -298,24 +330,31 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (sessionForm.description.trim()) payload.description = sessionForm.description.trim();
     if (sessionMode === "manual" && sessionForm.join_url.trim()) payload.join_url = sessionForm.join_url.trim();
     if (sessionForm.status.trim()) payload.status = sessionForm.status.trim();
-    await axios.put(getRequestUrl(`/virtual-sessions/${editingSessionId}`), payload, { headers: headers() });
-    await loadAll(); setMsg("Session updated.");
+    const res = await axios.put(getRequestUrl(`/virtual-sessions/${editingSessionId}`), payload, { headers: headers() });
+    const updated = itemFromPayload<SessionItem>(res.data);
+    if (updated) upsertSession(updated);
+    setMsg("Session updated.");
   });
 
   const deleteSession = (id: number) => run(async () => {
     await axios.delete(getRequestUrl(`/virtual-sessions/${id}`), { headers: headers() });
     if (editingSessionId === id) { setEditingSessionId(null); setSessionForm(sessionInitial); }
-    await loadAll(); setMsg("Session deleted.");
+    setSessions((prev) => prev.filter((item) => item.id !== id));
+    setMsg("Session deleted.");
   });
 
   const publishSession = (id: number) => run(async () => {
-    await axios.post(getRequestUrl(`/virtual-sessions/${id}/publish`), {}, { headers: headers() });
-    await loadAll(); setMsg("Session published.");
+    const res = await axios.post(getRequestUrl(`/virtual-sessions/${id}/publish`), {}, { headers: headers() });
+    const published = itemFromPayload<SessionItem>(res.data);
+    if (published) upsertSession(published);
+    setMsg("Session published.");
   });
 
   const cancelSession = (id: number) => run(async () => {
-    await axios.post(getRequestUrl(`/virtual-sessions/${id}/cancel`), {}, { headers: headers() });
-    await loadAll(); setMsg("Session cancelled.");
+    const res = await axios.post(getRequestUrl(`/virtual-sessions/${id}/cancel`), {}, { headers: headers() });
+    const cancelled = itemFromPayload<SessionItem>(res.data);
+    if (cancelled) upsertSession(cancelled);
+    setMsg("Session cancelled.");
   });
 
   const saveAttendance = () => run(async () => {
@@ -366,6 +405,35 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
           </div>
           {msg ? <p className="mt-4 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-200">{msg}</p> : null}
           {err ? <p className="mt-4 rounded-xl bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-200">{err}</p> : null}
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <div className="rounded-2xl bg-slate-950 px-4 py-3 text-white">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200">All Sessions</p>
+              <p className="mt-2 text-2xl font-black">{sessionSummary.total}</p>
+            </div>
+            <div className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-emerald-800 dark:text-emerald-200">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em]">Published</p>
+              <p className="mt-2 text-2xl font-black">{sessionSummary.published}</p>
+            </div>
+            <div className="rounded-2xl bg-amber-500/10 px-4 py-3 text-amber-800 dark:text-amber-200">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em]">Drafts</p>
+              <p className="mt-2 text-2xl font-black">{sessionSummary.drafts}</p>
+            </div>
+            <div className="rounded-2xl bg-rose-500/10 px-4 py-3 text-rose-800 dark:text-rose-200">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em]">Cancelled</p>
+              <p className="mt-2 text-2xl font-black">{sessionSummary.cancelled}</p>
+            </div>
+          </div>
+          {upcomingSessions.length ? (
+            <div className="mt-5 grid gap-3 xl:grid-cols-3">
+              {upcomingSessions.map((session) => (
+                <div key={session.id} className="rounded-2xl border border-cyan-200/70 bg-cyan-500/10 p-4 dark:border-cyan-300/20">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-200">Upcoming Session</p>
+                  <p className="mt-2 text-lg font-black">{session.title}</p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{session.starts_at ?? "No date"} • {getProviderLabel(session.provider)}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
@@ -473,7 +541,11 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-black">{s.title} #{s.id}</p>
-                    <p className="text-[11px] text-slate-600 dark:text-slate-300">{s.provider} | {s.status ?? "draft"} | {s.starts_at ?? "no date"}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                      <span>{getProviderLabel(s.provider)}</span>
+                      <span className={`rounded-full px-2 py-0.5 font-black uppercase tracking-[0.12em] ${getStatusTone(s.status)}`}>{s.status ?? "draft"}</span>
+                      <span>{s.starts_at ?? "no date"}</span>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     <button onClick={() => { setEditingSessionId(s.id); setSessionMode(s.integration_id ? "provider" : "manual"); setSessionForm({ course_id: s.course_id ? String(s.course_id) : "", provider: s.provider === "zoom" ? "zoom" : "google_meet", integration_id: s.integration_id ? String(s.integration_id) : "", title: s.title, description: s.description ?? "", starts_at: toLocalInput(s.starts_at), ends_at: toLocalInput(s.ends_at), join_url: s.join_url ?? "", status: s.status ?? "draft", metadata_json: JSON.stringify(s.metadata ?? {}, null, 2) }); }} className="rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20">Edit</button>

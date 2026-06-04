@@ -1,16 +1,38 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import axios from "axios";
 import { useSearchParams } from "next/navigation";
-import { Copy, ExternalLink, Link2, ShieldCheck, Video, X, Zap } from "lucide-react";
+import { CalendarClock, Copy, ExternalLink, Link2, Loader2, ShieldCheck, Video, X, Zap } from "lucide-react";
 import LiveMeeting from "@/features/virtual-meet/components/LiveMeeting";
-import { getStudentApiRequestUrl } from "@/features/student/studentApi";
+import { getStudentApiCached, getStudentApiRequestUrl } from "@/features/student/studentApi";
 import { getStoredStudentId, getStoredStudentUser, getStudentToken } from "@/features/student/studentSession";
 
 type ExternalPrompt = {
   href: string;
   provider: "Zoom" | "Google Meet";
 };
+
+type SessionItem = {
+  id: number;
+  provider: string;
+  title: string;
+  description: string | null;
+  starts_at: string | null;
+  status: string | null;
+  join_url: string | null;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function listFromPayload<T>(payload: unknown): T[] {
+  if (!isRecord(payload)) return [];
+  if (Array.isArray(payload.data)) return payload.data as T[];
+  if (isRecord(payload.data) && Array.isArray(payload.data.data)) return payload.data.data as T[];
+  return [];
+}
 
 function normalizeUrl(input: string) {
   const value = input.trim();
@@ -84,6 +106,8 @@ export default function StudentLivePage() {
   const [liveRoomId, setLiveRoomId] = useState(queryRoom.trim());
   const [message, setMessage] = useState<string | null>(queryRoom.trim() ? `Joined Afaq live room: ${queryRoom.trim()}` : null);
   const [error, setError] = useState<string | null>(null);
+  const [publishedSessions, setPublishedSessions] = useState<SessionItem[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
 
   const studentName = useMemo(() => {
     const storedUser = getStoredStudentUser();
@@ -93,6 +117,43 @@ export default function StudentLivePage() {
   const studentToken = useMemo(() => getStudentToken(), []);
 
   const afaqShareLink = useMemo(() => getAfaqShareLink(roomIdInput), [roomIdInput]);
+  const visibleSessions = useMemo(
+    () =>
+      publishedSessions
+        .filter((session) => (session.status ?? "").toLowerCase() === "published")
+        .sort((a, b) => new Date(a.starts_at ?? 0).getTime() - new Date(b.starts_at ?? 0).getTime()),
+    [publishedSessions]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPublishedSessions = async () => {
+      setLoadingSessions(true);
+      try {
+        const res = await getStudentApiCached("/virtual-sessions", {
+          headers: studentToken ? { Accept: "application/json", Authorization: `Bearer ${studentToken}` } : { Accept: "application/json" },
+        });
+        if (!cancelled) {
+          setPublishedSessions(listFromPayload<SessionItem>(res.data));
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(axios.isAxiosError(loadError) ? "Could not load published sessions." : "Could not load published sessions.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingSessions(false);
+        }
+      }
+    };
+
+    void loadPublishedSessions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [studentToken]);
 
   const copyToClipboard = async (value: string, label: string) => {
     try {
@@ -294,6 +355,90 @@ export default function StudentLivePage() {
                 Zoom and Google Meet links stay external and require confirmation before leaving Afaq. Any `afaaq.com/live` room opens directly in the built-in HD live meeting screen.
               </p>
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-emerald-500/10 p-3 text-emerald-700 dark:text-emerald-200">
+                <CalendarClock className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black">Published Sessions</h2>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  These are the sessions students should see after the instructor publishes them.
+                </p>
+              </div>
+            </div>
+            {loadingSessions ? <Loader2 className="h-5 w-5 animate-spin text-slate-400" /> : null}
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {visibleSessions.length ? (
+              visibleSessions.map((session) => (
+                <div key={session.id} className="rounded-3xl border border-slate-200 bg-white/80 p-4 dark:border-white/10 dark:bg-slate-950/40">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-lg font-black">{session.title}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span className="rounded-full bg-emerald-500/10 px-2 py-1 font-black uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-200">
+                          {(session.status ?? "published").toUpperCase()}
+                        </span>
+                        <span>{session.provider === "google_meet" ? "Google Meet" : session.provider === "zoom" ? "Zoom" : session.provider}</span>
+                        <span>{session.starts_at ?? "No date"}</span>
+                      </div>
+                      {session.description ? <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{session.description}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!session.join_url?.trim()) {
+                            setError("This published session does not have a join link yet.");
+                            setMessage(null);
+                            return;
+                          }
+                          setJoinUrl(session.join_url);
+                          const parsed = tryParseUrl(session.join_url);
+                          if (parsed && getProviderFromUrl(parsed)) {
+                            setExternalPrompt({ href: parsed.toString(), provider: getProviderFromUrl(parsed)! });
+                            setError(null);
+                            setMessage(null);
+                            return;
+                          }
+                          if (parsed && isAfaqUrl(parsed)) {
+                            const roomId = extractAfaqRoomId(parsed);
+                            setRoomIdInput(roomId);
+                            setLiveRoomId(roomId);
+                            setError(null);
+                            setMessage(`Joined Afaq live room: ${roomId}`);
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Join Session
+                      </button>
+                      {session.join_url ? (
+                        <button
+                          type="button"
+                          onClick={() => void copyToClipboard(session.join_url!, "Session link")}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-slate-700 dark:border-white/20 dark:text-slate-100"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy Link
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-3xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm font-semibold text-slate-500 dark:border-white/15 dark:text-slate-400">
+                No published sessions are visible yet.
+              </div>
+            )}
           </div>
         </section>
       </div>
