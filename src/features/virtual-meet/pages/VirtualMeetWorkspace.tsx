@@ -85,6 +85,15 @@ function toLocalInput(iso: string | null) {
   return shifted.toISOString().slice(0, 16);
 }
 
+function minutesBetween(startIso: string | null, endIso: string | null) {
+  if (!startIso || !endIso) return "";
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
+  const minutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+  return String(minutes);
+}
+
 function toNumberOrNull(value: string) {
   if (!value.trim()) return null;
   const n = Number(value);
@@ -126,6 +135,8 @@ function getAfaqLiveLink(sessionId: number) {
 
 function getStatusTone(status: string | null) {
   switch ((status ?? "draft").toLowerCase()) {
+    case "scheduled":
+      return "bg-sky-500/10 text-sky-700 dark:text-sky-200";
     case "published":
       return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-200";
     case "cancelled":
@@ -167,6 +178,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     total: orderedSessions.length,
     published: orderedSessions.filter((item) => (item.status ?? "").toLowerCase() === "published").length,
     drafts: orderedSessions.filter((item) => (item.status ?? "draft").toLowerCase() === "draft").length,
+    scheduled: orderedSessions.filter((item) => (item.status ?? "").toLowerCase() === "scheduled").length,
     cancelled: orderedSessions.filter((item) => (item.status ?? "").toLowerCase() === "cancelled").length,
   }), [orderedSessions]);
   const upcomingSessions = useMemo(() => orderedSessions.filter((item) => item.starts_at && isFuture(item.starts_at)).slice(0, 3), [orderedSessions]);
@@ -231,6 +243,24 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (sessionMode === "provider") setSessionForm((p) => ({ ...p, join_url: "" }));
     else setSessionForm((p) => ({ ...p, integration_id: "" }));
   }, [sessionMode]);
+
+  useEffect(() => {
+    if (!attendanceForm.session_id) {
+      return;
+    }
+
+    const selectedSession = orderedSessions.find((session) => String(session.id) === attendanceForm.session_id);
+    if (!selectedSession) {
+      return;
+    }
+
+    setAttendanceForm((current) => ({
+      ...current,
+      joined_at: toLocalInput(selectedSession.starts_at),
+      left_at: toLocalInput(selectedSession.ends_at),
+      duration_minutes: minutesBetween(selectedSession.starts_at, selectedSession.ends_at),
+    }));
+  }, [attendanceForm.session_id, orderedSessions]);
 
   const createIntegration = () => run(async () => {
     const payload: Record<string, unknown> = { provider: integrationForm.provider, is_active: true };
@@ -405,7 +435,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
           </div>
           {msg ? <p className="mt-4 rounded-xl bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-200">{msg}</p> : null}
           {err ? <p className="mt-4 rounded-xl bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-700 dark:text-rose-200">{err}</p> : null}
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <div className="mt-5 grid gap-3 md:grid-cols-5">
             <div className="rounded-2xl bg-slate-950 px-4 py-3 text-white">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200">All Sessions</p>
               <p className="mt-2 text-2xl font-black">{sessionSummary.total}</p>
@@ -417,6 +447,10 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
             <div className="rounded-2xl bg-amber-500/10 px-4 py-3 text-amber-800 dark:text-amber-200">
               <p className="text-[10px] font-black uppercase tracking-[0.18em]">Drafts</p>
               <p className="mt-2 text-2xl font-black">{sessionSummary.drafts}</p>
+            </div>
+            <div className="rounded-2xl bg-sky-500/10 px-4 py-3 text-sky-800 dark:text-sky-200">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em]">Scheduled</p>
+              <p className="mt-2 text-2xl font-black">{sessionSummary.scheduled}</p>
             </div>
             <div className="rounded-2xl bg-rose-500/10 px-4 py-3 text-rose-800 dark:text-rose-200">
               <p className="text-[10px] font-black uppercase tracking-[0.18em]">Cancelled</p>
@@ -523,7 +557,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
           </div>
           <div className="mt-2 grid gap-2 md:grid-cols-2">
             <input value={sessionForm.description} onChange={(e) => setSessionForm((p) => ({ ...p, description: e.target.value }))} placeholder="description" className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
-            <select value={sessionForm.status} onChange={(e) => setSessionForm((p) => ({ ...p, status: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40"><option value="draft">draft</option><option value="published">published</option><option value="cancelled">cancelled</option></select>
+            <select value={sessionForm.status} onChange={(e) => setSessionForm((p) => ({ ...p, status: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40"><option value="draft">draft</option><option value="scheduled">scheduled</option><option value="published">published</option><option value="cancelled">cancelled</option><option value="completed">completed</option></select>
           </div>
           <textarea value={sessionForm.metadata_json} onChange={(e) => setSessionForm((p) => ({ ...p, metadata_json: e.target.value }))} className="mt-2 min-h-21 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-white/20 dark:bg-slate-950/40" />
           <div className="mt-3 flex flex-wrap gap-2">

@@ -104,6 +104,10 @@ export default function StudentLivePage() {
   const [roomIdInput, setRoomIdInput] = useState(queryRoom.trim() || "afaaq-live");
   const [externalPrompt, setExternalPrompt] = useState<ExternalPrompt | null>(null);
   const [liveRoomId, setLiveRoomId] = useState(queryRoom.trim());
+  const [liveSessionId, setLiveSessionId] = useState<number | null>(() => {
+    const directSessionId = queryRoom.trim() ? getSessionIdFromRoomId(queryRoom.trim()) : null;
+    return directSessionId;
+  });
   const [message, setMessage] = useState<string | null>(queryRoom.trim() ? `Joined Afaq live room: ${queryRoom.trim()}` : null);
   const [error, setError] = useState<string | null>(null);
   const [publishedSessions, setPublishedSessions] = useState<SessionItem[]>([]);
@@ -119,9 +123,7 @@ export default function StudentLivePage() {
   const afaqShareLink = useMemo(() => getAfaqShareLink(roomIdInput), [roomIdInput]);
   const visibleSessions = useMemo(
     () =>
-      publishedSessions
-        .filter((session) => (session.status ?? "").toLowerCase() === "published")
-        .sort((a, b) => new Date(a.starts_at ?? 0).getTime() - new Date(b.starts_at ?? 0).getTime()),
+      [...publishedSessions].sort((a, b) => new Date(a.starts_at ?? 0).getTime() - new Date(b.starts_at ?? 0).getTime()),
     [publishedSessions]
   );
 
@@ -185,6 +187,7 @@ export default function StudentLivePage() {
       const roomId = extractAfaqRoomId(parsed);
       setRoomIdInput(roomId);
       setLiveRoomId(roomId);
+      setLiveSessionId(getSessionIdFromRoomId(roomId));
       setError(null);
       setMessage(`Joined Afaq live room: ${roomId}`);
       return;
@@ -199,6 +202,7 @@ export default function StudentLivePage() {
     setRoomIdInput(roomId);
     setJoinUrl(getAfaqShareLink(roomId));
     setLiveRoomId(roomId);
+    setLiveSessionId(getSessionIdFromRoomId(roomId));
     setError(null);
     setMessage(`Joined Afaq live room: ${roomId}`);
   };
@@ -212,7 +216,7 @@ export default function StudentLivePage() {
   };
 
   if (liveRoomId) {
-    const sessionId = getSessionIdFromRoomId(liveRoomId);
+    const sessionId = liveSessionId ?? getSessionIdFromRoomId(liveRoomId);
     const attendanceConfig =
       studentToken && studentId != null && sessionId !== null
         ? {
@@ -229,6 +233,7 @@ export default function StudentLivePage() {
         attendance={attendanceConfig}
         onExit={() => {
           setLiveRoomId("");
+          setLiveSessionId(null);
           setMessage("You left the Afaq live room.");
         }}
       />
@@ -411,6 +416,7 @@ export default function StudentLivePage() {
                             const roomId = extractAfaqRoomId(parsed);
                             setRoomIdInput(roomId);
                             setLiveRoomId(roomId);
+                            setLiveSessionId(session.id);
                             setError(null);
                             setMessage(`Joined Afaq live room: ${roomId}`);
                           }
