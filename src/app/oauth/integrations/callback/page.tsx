@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import VirtualMeetOAuthCallbackPage from "@/features/virtual-meet/pages/VirtualMeetOAuthCallbackPage";
 
 export default function Page() {
-  return <VirtualMeetOAuthCallbackPage />;
+  return (
+    <Suspense fallback={null}>
+      <VirtualMeetOAuthCallbackPage />
+    </Suspense>
+  );
 }

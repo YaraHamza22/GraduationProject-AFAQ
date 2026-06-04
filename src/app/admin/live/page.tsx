@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import AfaqLiveRoomPage from "@/features/virtual-meet/pages/AfaqLiveRoomPage";
 import { getAdminApiRequestUrl } from "@/features/admin/adminApi";
 import { getAdminToken, getStoredAdminUser } from "@/features/admin/adminSession";
@@ -10,15 +11,17 @@ export default function AdminLiveRoute() {
   const userId = typeof user?.id === "number" || typeof user?.id === "string" ? user.id : null;
 
   return (
-    <AfaqLiveRoomPage
-      backHref="/admin/virtual-meet"
-      backLabel="Back To Virtual Meet"
-      userName={userName}
-      attendance={{
-        getRequestUrl: getAdminApiRequestUrl,
-        token: getAdminToken(),
-        userId,
-      }}
-    />
+    <Suspense fallback={null}>
+      <AfaqLiveRoomPage
+        backHref="/admin/virtual-meet"
+        backLabel="Back To Virtual Meet"
+        userName={userName}
+        attendance={{
+          getRequestUrl: getAdminApiRequestUrl,
+          token: getAdminToken(),
+          userId,
+        }}
+      />
+    </Suspense>
   );
 }

@@ -569,7 +569,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                         </button>
                         <button
                           type="button"
-                          onClick={() => void copyToClipboard(s.join_url, `${getProviderLabel(s.provider)} link`)}
+                          onClick={() => void copyToClipboard(s.join_url ?? "", `${getProviderLabel(s.provider)} link`)}
                           className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20"
                         >
                           <Copy className="h-3 w-3" /> Copy Link
