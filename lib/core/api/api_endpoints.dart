@@ -73,6 +73,7 @@ class ApiEndpoints {
   }
 
   static String attempt(int attemptId) => '/attempts/$attemptId';
+  static String attemptWorkspace(int quizId) => '/attempts/workspace/$quizId';
   static String startAttempt(int attemptId) => '/attempts/$attemptId/start';
   static String submitAttempt(int attemptId) => '/attempts/$attemptId/submit';
   static String attemptGrade(int attemptId) => '/attempts/$attemptId/grade';

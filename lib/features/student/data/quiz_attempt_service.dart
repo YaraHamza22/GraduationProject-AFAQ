@@ -45,6 +45,10 @@ class QuizAttemptService {
     );
   }
 
+  Future<Response<Map<String, dynamic>>> getAttemptWorkspace(int quizId) {
+    return _client.get<Map<String, dynamic>>(ApiEndpoints.attemptWorkspace(quizId));
+  }
+
   Future<Response<Map<String, dynamic>>> getAttempt(int attemptId) {
     return _client.get<Map<String, dynamic>>(ApiEndpoints.attempt(attemptId));
   }

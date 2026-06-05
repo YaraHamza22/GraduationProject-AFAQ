@@ -14,6 +14,7 @@ class InstructorQuizService {
   Future<Response<Map<String, dynamic>>> listQuizzes({
     int perPage = 200,
     int? instructorId,
+    bool includeQuestions = false,
   }) {
     return _client.get<Map<String, dynamic>>(
       ApiEndpoints.quizzes,
@@ -21,6 +22,7 @@ class InstructorQuizService {
         'quizable_type': 'course',
         'type': 'quiz',
         'per_page': perPage,
+        'include_questions': includeQuestions,
         if (instructorId != null && instructorId > 0) 'instructor_id': instructorId,
       },
       options: instructorLocaleOptions(),
@@ -64,12 +66,14 @@ class InstructorQuizService {
     required int quizId,
     String status = 'submitted',
     int page = 1,
+    int perPage = 20,
   }) {
     return _client.get<Map<String, dynamic>>(
-      '/quizzes/$quizId/results',
+      '/instructor/quizzes/$quizId/results',
       queryParameters: {
         'status': status,
         'page': page,
+        'per_page': perPage,
       },
       options: instructorLocaleOptions(),
     );

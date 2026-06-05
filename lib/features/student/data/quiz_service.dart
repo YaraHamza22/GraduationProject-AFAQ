@@ -13,12 +13,14 @@ class QuizService {
   Future<Response<Map<String, dynamic>>> getQuizzes({
     int? courseId,
     int? perPage,
+    bool includeQuestions = false,
   }) {
     return _client.get<Map<String, dynamic>>(
       ApiEndpoints.quizzes,
       queryParameters: {
         if (courseId != null) 'course_id': courseId,
         if (perPage != null) 'per_page': perPage,
+        'include_questions': includeQuestions,
       },
     );
   }

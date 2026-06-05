@@ -17,4 +17,21 @@ class InstructorDashboardService {
   Future<Response<Map<String, dynamic>>> getMyCourses() {
     return _client.get<Map<String, dynamic>>(ApiEndpoints.myCourses);
   }
+
+  Future<Response<Map<String, dynamic>>> getStudents({int perPage = 200}) {
+    return _client.get<Map<String, dynamic>>(
+      '/instructor/students',
+      queryParameters: {'per_page': perPage},
+    );
+  }
+
+  Future<Response<Map<String, dynamic>>> getAssessmentProgress({
+    required int courseId,
+    required int studentId,
+  }) {
+    return _client.get<Map<String, dynamic>>(
+      '/my-courses/$courseId/assessment-progress',
+      queryParameters: {'student_id': studentId},
+    );
+  }
 }
