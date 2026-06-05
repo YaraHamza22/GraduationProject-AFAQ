@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import { useSearchParams } from "next/navigation";
 import { CalendarClock, Copy, ExternalLink, Link2, Loader2, ShieldCheck, Video, X, Zap } from "lucide-react";
 import LiveMeeting from "@/features/virtual-meet/components/LiveMeeting";
@@ -141,7 +140,8 @@ export default function StudentLivePage() {
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError(axios.isAxiosError(loadError) ? "Could not load published sessions." : "Could not load published sessions.");
+          console.error("Could not load published sessions.", loadError);
+          setPublishedSessions([]);
         }
       } finally {
         if (!cancelled) {
