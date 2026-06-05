@@ -33,17 +33,35 @@ type LocalizedText = { en?: string; ar?: string };
 
 type CourseItem = {
   id: number | string;
+  slug?: string;
   title?: string | LocalizedText;
   title_translations?: Record<string, string>;
   creator?: { id?: number | string };
   instructors?: Array<{ id?: number | string }>;
 };
 
+type UnitItem = {
+  id: number | string;
+  course_id?: number | string;
+  title?: string | LocalizedText;
+  title_translations?: Record<string, string>;
+};
+
+type LessonItem = {
+  id: number | string;
+  course_id?: number | string;
+  unit_id?: number | string;
+  title?: string | LocalizedText;
+  title_translations?: Record<string, string>;
+};
+
 type Quiz = {
   id: number | string;
   quiz_id?: number | string;
   course_id?: number | string;
+  quizable_type?: string;
   quizable_id?: number | string;
+  quizable?: Record<string, unknown>;
   title?: string | LocalizedText;
   description?: string | LocalizedText;
   status?: string;
@@ -122,6 +140,7 @@ type QuizResultsState = {
   summary: ResultsSummary;
   loading: boolean;
   error: string | null;
+  hydrated: boolean;
 };
 
 type GradeDraftRow = {
@@ -135,6 +154,9 @@ type GradeDraftRow = {
 
 type QuizFormState = {
   courseId: string;
+  quizableType: "course" | "unit" | "lesson";
+  unitId: string;
+  lessonId: string;
   titleEn: string;
   titleAr: string;
   descriptionEn: string;
@@ -175,6 +197,9 @@ const COURSES_API_PATH = "/my-courses";
 
 const initialQuizForm: QuizFormState = {
   courseId: "",
+  quizableType: "course",
+  unitId: "",
+  lessonId: "",
   titleEn: "",
   titleAr: "",
   descriptionEn: "",
@@ -262,6 +287,24 @@ function getLocalizedCourseTitle(course: CourseItem, locale: "en" | "ar") {
   );
 }
 
+function getLocalizedUnitTitle(unit: UnitItem, locale: "en" | "ar") {
+  return (
+    getStringValue(unit.title_translations?.[locale]) ||
+    getStringValue(unit.title_translations?.en) ||
+    getLocalizedValue(unit.title, locale) ||
+    `Unit #${unit.id}`
+  );
+}
+
+function getLocalizedLessonTitle(lesson: LessonItem, locale: "en" | "ar") {
+  return (
+    getStringValue(lesson.title_translations?.[locale]) ||
+    getStringValue(lesson.title_translations?.en) ||
+    getLocalizedValue(lesson.title, locale) ||
+    `Lesson #${lesson.id}`
+  );
+}
+
 function extractList(payload: unknown): Record<string, unknown>[] {
   if (Array.isArray(payload)) return payload.filter(isRecord);
   if (!isRecord(payload)) return [];
@@ -305,7 +348,39 @@ function getQuestionId(question: Question | Record<string, unknown>) {
 }
 
 function getCourseIdFromQuiz(quiz: Quiz | Record<string, unknown>) {
-  return toNumber((quiz as Quiz).course_id) ?? toNumber((quiz as Quiz).quizable_id);
+  const typedQuiz = quiz as Quiz;
+  const directCourseId = toNumber(typedQuiz.course_id);
+  if (directCourseId) return directCourseId;
+
+  const quizable = isRecord(typedQuiz.quizable) ? typedQuiz.quizable : null;
+  const quizableType = getStringValue(typedQuiz.quizable_type || quizable?.quizable_type).toLowerCase();
+  if (quizableType === "course") {
+    return toNumber(typedQuiz.quizable_id) ?? toNumber(quizable?.id);
+  }
+
+  return toNumber(quizable?.course_id) ?? toNumber((quiz as Quiz).quizable_id);
+}
+
+function getQuizOwnerType(quiz: Quiz | Record<string, unknown>) {
+  const typedQuiz = quiz as Quiz;
+  const quizableType = getStringValue(typedQuiz.quizable_type).toLowerCase();
+  if (quizableType === "unit" || quizableType === "lesson" || quizableType === "course") return quizableType;
+  return "course";
+}
+
+function getQuizOwnerId(quiz: Quiz | Record<string, unknown>) {
+  const typedQuiz = quiz as Quiz;
+  const quizable = isRecord(typedQuiz.quizable) ? typedQuiz.quizable : null;
+  return toNumber(typedQuiz.quizable_id) ?? toNumber(quizable?.id) ?? getCourseIdFromQuiz(quiz);
+}
+
+function getQuizUnitId(quiz: Quiz | Record<string, unknown>) {
+  const typedQuiz = quiz as Quiz;
+  const quizable = isRecord(typedQuiz.quizable) ? typedQuiz.quizable : null;
+  const quizableType = getQuizOwnerType(quiz);
+  if (quizableType === "unit") return getQuizOwnerId(quiz);
+  if (quizableType === "lesson") return toNumber(quizable?.unit_id);
+  return null;
 }
 
 function getOptionText(option: QuestionOption, locale: "en" | "ar") {
@@ -451,6 +526,7 @@ function createEmptyResultsState(): QuizResultsState {
     summary: { ...initialResultsSummary },
     loading: false,
     error: null,
+    hydrated: false,
   };
 }
 
@@ -460,7 +536,9 @@ function normalizeQuiz(item: Record<string, unknown>): Quiz {
     id: toNumber(item.id) ?? getStringValue(item.id),
     quiz_id: toNumber(item.quiz_id) ?? undefined,
     course_id: toNumber(item.course_id) ?? undefined,
+    quizable_type: getStringValue(item.quizable_type) || undefined,
     quizable_id: toNumber(item.quizable_id) ?? undefined,
+    quizable: isRecord(item.quizable) ? item.quizable : undefined,
     title: item.title as Quiz["title"],
     description: item.description as Quiz["description"],
     status: getStringValue(item.status) || "draft",
@@ -500,6 +578,19 @@ function getQuizStatusClasses(status: string | undefined) {
 function getQuestionTypeLabel(type: string | undefined) {
   if (!type) return "Question";
   return type.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatDateTime(value: string | null, locale: "en" | "ar") {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar" : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function isTrueLabel(value: string) {
@@ -553,12 +644,16 @@ export default function InstructorQuizzesPage() {
   const currentInstructorId = toNumber(getStoredStudentUser()?.id);
 
   const [courses, setCourses] = useState<CourseItem[]>([]);
+  const [unitsByCourse, setUnitsByCourse] = useState<Record<number, UnitItem[]>>({});
+  const [lessonsByUnit, setLessonsByUnit] = useState<Record<number, LessonItem[]>>({});
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
   const [expandedQuizId, setExpandedQuizId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [courseFilter, setCourseFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
+  const [isUnitsLoading, setIsUnitsLoading] = useState(false);
+  const [isLessonsLoading, setIsLessonsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -597,10 +692,59 @@ export default function InstructorQuizzesPage() {
     return normalizeCourses(response.data).filter((course) => isOwnedByInstructor(course, currentInstructorId));
   }, [buildAuthHeaders, currentInstructorId]);
 
+  const loadUnits = useCallback(async (courseId: number, force = false) => {
+    if (!courseId) return [];
+    if (!force && unitsByCourse[courseId]) return unitsByCourse[courseId];
+
+    setIsUnitsLoading(true);
+    try {
+      const response = await axios.get(getStudentApiRequestUrl(`/my-courses/${courseId}/units`), {
+        headers: buildAuthHeaders(),
+      });
+
+      const rows = extractList(response.data).map((item) => ({
+        id: toNumber(item.id) ?? getStringValue(item.id),
+        course_id: toNumber(item.course_id) ?? courseId,
+        title: item.title as UnitItem["title"],
+        title_translations: isRecord(item.title_translations) ? (item.title_translations as Record<string, string>) : undefined,
+      }));
+
+      setUnitsByCourse((current) => ({ ...current, [courseId]: rows }));
+      return rows;
+    } finally {
+      setIsUnitsLoading(false);
+    }
+  }, [buildAuthHeaders, unitsByCourse]);
+
+  const loadLessons = useCallback(async (courseId: number, unitId: number, force = false) => {
+    if (!courseId || !unitId) return [];
+    if (!force && lessonsByUnit[unitId]) return lessonsByUnit[unitId];
+
+    setIsLessonsLoading(true);
+    try {
+      const response = await axios.get(getStudentApiRequestUrl(`/my-courses/${courseId}/units/${unitId}/lessons`), {
+        headers: buildAuthHeaders(),
+      });
+
+      const rows = extractList(response.data).map((item) => ({
+        id: toNumber(item.id) ?? getStringValue(item.id),
+        course_id: toNumber(item.course_id) ?? courseId,
+        unit_id: toNumber(item.unit_id) ?? unitId,
+        title: item.title as LessonItem["title"],
+        title_translations: isRecord(item.title_translations) ? (item.title_translations as Record<string, string>) : undefined,
+      }));
+
+      setLessonsByUnit((current) => ({ ...current, [unitId]: rows }));
+      return rows;
+    } finally {
+      setIsLessonsLoading(false);
+    }
+  }, [buildAuthHeaders, lessonsByUnit]);
+
   const listQuizzes = useCallback(async () => {
     const response = await axios.get(getStudentApiRequestUrl(QUIZZES_API_PATH), {
       headers: buildAuthHeaders(),
-      params: { quizable_type: "course", type: "quiz", per_page: 200 },
+      params: { type: "quiz", per_page: 200 },
     });
 
     return extractList(response.data).map(normalizeQuiz);
@@ -645,6 +789,71 @@ export default function InstructorQuizzesPage() {
     return next;
   }, [courses, currentLocale]);
 
+  const unitNameById = useMemo(() => {
+    const next = new Map<number, string>();
+    for (const group of Object.values(unitsByCourse)) {
+      for (const unit of group) {
+        const unitId = toNumber(unit.id);
+        if (!unitId) continue;
+        next.set(unitId, getLocalizedUnitTitle(unit, currentLocale));
+      }
+    }
+    return next;
+  }, [currentLocale, unitsByCourse]);
+
+  const lessonNameById = useMemo(() => {
+    const next = new Map<number, string>();
+    for (const group of Object.values(lessonsByUnit)) {
+      for (const lesson of group) {
+        const lessonId = toNumber(lesson.id);
+        if (!lessonId) continue;
+        next.set(lessonId, getLocalizedLessonTitle(lesson, currentLocale));
+      }
+    }
+    return next;
+  }, [currentLocale, lessonsByUnit]);
+
+  const selectedCourseNumericId = toNumber(quizForm.courseId) ?? 0;
+  const selectedUnitNumericId = toNumber(quizForm.unitId) ?? 0;
+  const availableUnits = selectedCourseNumericId ? unitsByCourse[selectedCourseNumericId] ?? [] : [];
+  const availableLessons = selectedUnitNumericId ? lessonsByUnit[selectedUnitNumericId] ?? [] : [];
+
+  const getOwnerChipLabel = useCallback((quiz: Quiz) => {
+    const ownerType = getQuizOwnerType(quiz);
+    if (ownerType === "lesson") return "Lesson";
+    if (ownerType === "unit") return "Unit";
+    return "Course";
+  }, []);
+
+  const getOwnerName = useCallback((quiz: Quiz) => {
+    const ownerType = getQuizOwnerType(quiz);
+    const ownerId = getQuizOwnerId(quiz);
+    const quizable = isRecord(quiz.quizable) ? quiz.quizable : null;
+    const localizedFromPayload =
+      getStringValue((quizable?.title_translations as Record<string, string> | undefined)?.[currentLocale]) ||
+      getStringValue((quizable?.title_translations as Record<string, string> | undefined)?.en) ||
+      getLocalizedValue(quizable?.title, currentLocale);
+
+    if (ownerType === "lesson") {
+      return (
+        localizedFromPayload ||
+        (ownerId ? lessonNameById.get(ownerId) : "") ||
+        (ownerId ? `Lesson #${ownerId}` : "Unlinked lesson")
+      );
+    }
+
+    if (ownerType === "unit") {
+      return (
+        localizedFromPayload ||
+        (ownerId ? unitNameById.get(ownerId) : "") ||
+        (ownerId ? `Unit #${ownerId}` : "Unlinked unit")
+      );
+    }
+
+    const courseId = getCourseIdFromQuiz(quiz);
+    return courseId ? courseNameById.get(courseId) || `Course #${courseId}` : "Unlinked course";
+  }, [courseNameById, currentLocale, lessonNameById, unitNameById]);
+
   const filteredQuizzes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
@@ -656,9 +865,10 @@ export default function InstructorQuizzesPage() {
       const title = getLocalizedValue(quiz.title, currentLocale).toLowerCase();
       const description = getLocalizedValue(quiz.description, currentLocale).toLowerCase();
       const courseName = (courseId ? courseNameById.get(courseId) : "")?.toLowerCase() ?? "";
-      return title.includes(query) || description.includes(query) || courseName.includes(query);
+      const ownerName = getOwnerName(quiz).toLowerCase();
+      return title.includes(query) || description.includes(query) || courseName.includes(query) || ownerName.includes(query);
     });
-  }, [courseFilter, courseNameById, currentLocale, quizzes, searchQuery]);
+  }, [courseFilter, courseNameById, currentLocale, getOwnerName, quizzes, searchQuery]);
 
   const totalQuestions = useMemo(
     () => quizzes.reduce((sum, quiz) => sum + (Array.isArray(quiz.questions) ? quiz.questions.length : 0), 0),
@@ -695,10 +905,25 @@ export default function InstructorQuizzesPage() {
     setIsQuizModalOpen(true);
   };
 
-  const openEditQuizModal = (quiz: Quiz) => {
+  const openEditQuizModal = async (quiz: Quiz) => {
+    const ownerType = getQuizOwnerType(quiz) as QuizFormState["quizableType"];
+    const courseId = getCourseIdFromQuiz(quiz);
+    const unitId = getQuizUnitId(quiz);
+    const ownerId = getQuizOwnerId(quiz);
+
+    if (courseId && (ownerType === "unit" || ownerType === "lesson")) {
+      await loadUnits(courseId);
+    }
+    if (courseId && unitId && ownerType === "lesson") {
+      await loadLessons(courseId, unitId);
+    }
+
     setEditingQuizId(getQuizId(quiz));
     setQuizForm({
-      courseId: String(getCourseIdFromQuiz(quiz) ?? ""),
+      courseId: String(courseId ?? ""),
+      quizableType: ownerType,
+      unitId: String(ownerType === "unit" || ownerType === "lesson" ? unitId ?? (ownerType === "unit" ? ownerId ?? "" : "") : ""),
+      lessonId: String(ownerType === "lesson" ? ownerId ?? "" : ""),
       titleEn: getLocalizedValue(quiz.title, "en"),
       titleAr: getLocalizedValue(quiz.title, "ar"),
       descriptionEn: getLocalizedValue(quiz.description, "en"),
@@ -715,6 +940,19 @@ export default function InstructorQuizzesPage() {
     setIsQuizModalOpen(false);
     resetQuizForm();
   };
+
+  useEffect(() => {
+    const courseId = toNumber(quizForm.courseId);
+    if (!courseId) return;
+    void loadUnits(courseId);
+  }, [loadUnits, quizForm.courseId]);
+
+  useEffect(() => {
+    const courseId = toNumber(quizForm.courseId);
+    const unitId = toNumber(quizForm.unitId);
+    if (!courseId || !unitId || quizForm.quizableType !== "lesson") return;
+    void loadLessons(courseId, unitId);
+  }, [loadLessons, quizForm.courseId, quizForm.quizableType, quizForm.unitId]);
 
   const openCreateQuestionModal = async (quiz: Quiz) => {
     setSelectedQuiz(quiz);
@@ -827,7 +1065,7 @@ export default function InstructorQuizzesPage() {
       });
 
       try {
-        const response = await axios.get(getStudentApiRequestUrl(`/quizzes/${quizId}/results`), {
+        const response = await axios.get(getStudentApiRequestUrl(`/instructor/quizzes/${quizId}/results`), {
           headers: buildAuthHeaders(),
           params: { status, page, per_page: 20 },
         });
@@ -848,6 +1086,7 @@ export default function InstructorQuizzesPage() {
               summary: parsed.summary,
               loading: false,
               error: null,
+              hydrated: true,
             },
           };
         });
@@ -861,12 +1100,50 @@ export default function InstructorQuizzesPage() {
               activeStatus: status,
               loading: false,
               error: getErrorMessage(error, "Failed to load quiz results."),
+              hydrated: state.hydrated,
             },
           };
         });
       }
     },
     [buildAuthHeaders]
+  );
+
+  const loadQuizResultsBundle = useCallback(
+    async (quizId: number, force = false) => {
+      const currentState = quizResults[quizId];
+      if (!force && currentState?.hydrated) {
+        setQuizResults((current) => {
+          const state = current[quizId] ?? createEmptyResultsState();
+          return {
+            ...current,
+            [quizId]: {
+              ...state,
+              activeStatus: state.graded.length > 0 ? "graded" : "submitted",
+            },
+          };
+        });
+        return;
+      }
+
+      await Promise.all([
+        loadQuizResults(quizId, "submitted", 1),
+        loadQuizResults(quizId, "graded", 1),
+      ]);
+
+      setQuizResults((current) => {
+        const state = current[quizId] ?? createEmptyResultsState();
+        return {
+          ...current,
+          [quizId]: {
+            ...state,
+            activeStatus: state.graded.length > 0 ? "graded" : "submitted",
+            hydrated: true,
+          },
+        };
+      });
+    },
+    [loadQuizResults, quizResults]
   );
 
   const closeGradeModal = useCallback(() => {
@@ -931,6 +1208,24 @@ export default function InstructorQuizzesPage() {
         throw new Error("Please select a valid course.");
       }
 
+      const resolvedUnitId = Number(quizForm.unitId);
+      const resolvedLessonId = Number(quizForm.lessonId);
+      const resolvedQuizableType = quizForm.quizableType;
+      const resolvedQuizableId =
+        resolvedQuizableType === "lesson"
+          ? resolvedLessonId
+          : resolvedQuizableType === "unit"
+            ? resolvedUnitId
+            : resolvedCourseId;
+
+      if (resolvedQuizableType === "unit" && (!Number.isFinite(resolvedUnitId) || resolvedUnitId <= 0)) {
+        throw new Error("Please select a valid unit.");
+      }
+
+      if (resolvedQuizableType === "lesson" && (!Number.isFinite(resolvedLessonId) || resolvedLessonId <= 0)) {
+        throw new Error("Please select a valid lesson.");
+      }
+
       const titleEn = quizForm.titleEn.trim();
       const titleAr = quizForm.titleAr.trim();
       const descriptionEn = quizForm.descriptionEn.trim();
@@ -961,8 +1256,8 @@ export default function InstructorQuizzesPage() {
         type: "quiz",
         status: quizForm.status,
         course_id: resolvedCourseId,
-        quizable_type: "course",
-        quizable_id: resolvedCourseId,
+        quizable_type: resolvedQuizableType,
+        quizable_id: resolvedQuizableId,
         auto_grade_enabled: false,
         duration_minutes: Number(quizForm.durationMinutes || 30),
       };
@@ -1002,6 +1297,8 @@ export default function InstructorQuizzesPage() {
         error instanceof Error &&
         (
           error.message === "Please select a valid course." ||
+          error.message === "Please select a valid unit." ||
+          error.message === "Please select a valid lesson." ||
           error.message === "Instructor session is missing. Please log in again." ||
           error.message === "Please enter a valid max score." ||
           error.message === "Please enter a valid passing score."
@@ -1232,6 +1529,8 @@ export default function InstructorQuizzesPage() {
 
       if (questionForm.type === "short_answer" && selectedQuiz.auto_grade_enabled !== false) {
         const resolvedCourseId = getCourseIdFromQuiz(selectedQuiz);
+        const resolvedOwnerType = getQuizOwnerType(selectedQuiz);
+        const resolvedOwnerId = getQuizOwnerId(selectedQuiz);
         if (!resolvedCourseId || !currentInstructorId) {
           throw new Error("Manual grading could not be enabled for this quiz. Please reopen the quiz and try again.");
         }
@@ -1253,8 +1552,8 @@ export default function InstructorQuizzesPage() {
             type: "quiz",
             status: selectedQuiz.status || "draft",
             course_id: resolvedCourseId,
-            quizable_type: "course",
-            quizable_id: resolvedCourseId,
+            quizable_type: resolvedOwnerType,
+            quizable_id: resolvedOwnerId ?? resolvedCourseId,
             auto_grade_enabled: false,
             duration_minutes: toNumber(selectedQuiz.duration_minutes) ?? 30,
           },
@@ -1334,6 +1633,17 @@ export default function InstructorQuizzesPage() {
         loadQuizResults(quizId, "submitted"),
         loadQuizResults(quizId, "graded"),
       ]);
+      setQuizResults((current) => {
+        const state = current[quizId] ?? createEmptyResultsState();
+        return {
+          ...current,
+          [quizId]: {
+            ...state,
+            activeStatus: "graded",
+            hydrated: true,
+          },
+        };
+      });
     } catch (error) {
       if (error instanceof Error && error.message.trim()) {
         setErrorMessage(error.message);
@@ -1476,6 +1786,8 @@ export default function InstructorQuizzesPage() {
             {filteredQuizzes.map((quiz) => {
               const quizId = getQuizId(quiz);
               const courseId = getCourseIdFromQuiz(quiz);
+              const ownerTypeLabel = getOwnerChipLabel(quiz);
+              const ownerName = getOwnerName(quiz);
               const isExpanded = expandedQuizId === quizId;
               const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
 
@@ -1493,6 +1805,12 @@ export default function InstructorQuizzesPage() {
                         <span className={`rounded-full border px-3 py-1 ${getQuizStatusClasses(quiz.status)}`}>{quiz.status || "draft"}</span>
                         <span className="rounded-full border border-slate-200/70 bg-slate-100 px-3 py-1 text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300/70">
                           {courseId ? courseNameById.get(courseId) || `Course #${courseId}` : "Unlinked course"}
+                        </span>
+                        <span className="rounded-full border border-indigo-200/80 bg-indigo-50 px-3 py-1 text-indigo-600 dark:border-indigo-400/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+                          {ownerTypeLabel}
+                        </span>
+                        <span className="rounded-full border border-fuchsia-200/80 bg-fuchsia-50 px-3 py-1 text-fuchsia-600 dark:border-fuchsia-400/20 dark:bg-fuchsia-500/10 dark:text-fuchsia-200">
+                          {ownerName}
                         </span>
                       </div>
                       <h2 className="max-w-4xl text-3xl font-black tracking-[-0.04em] text-slate-950 dark:text-white lg:text-[2.45rem]">
@@ -1527,7 +1845,7 @@ export default function InstructorQuizzesPage() {
                         onClick={() => {
                           setExpandedQuizId(quizId);
                           void loadQuizDetails(quizId, true);
-                          void loadQuizResults(quizId, "submitted");
+                          void loadQuizResultsBundle(quizId);
                         }}
                         className="inline-flex items-center gap-2 rounded-2xl border border-emerald-200/80 bg-emerald-50 px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-emerald-700 transition hover:border-emerald-500/50 hover:bg-white dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
                       >
@@ -1662,7 +1980,7 @@ export default function InstructorQuizzesPage() {
                           const resultState = getResultState(quizId);
                           const activeStatus = resultState.activeStatus;
                           const attempts = resultState[activeStatus];
-                          const activePagination = resultState.pagination[activeStatus];
+                          const hasResults = resultState.summary.graded > 0;
 
                           return (
                             <div className="space-y-4">
@@ -1670,10 +1988,10 @@ export default function InstructorQuizzesPage() {
                                 <div>
                                   <p className="text-[11px] font-black uppercase tracking-[0.24em] text-indigo-400">Quiz Results</p>
                                   <h3 className="mt-2 text-2xl font-black tracking-[-0.03em] text-slate-950 dark:text-white">
-                                    Students and grading flow
+                                    Submitted, graded, and ready for results
                                   </h3>
                                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300/70">
-                                    Review submitted attempts, see student names, and grade manually when needed.
+                                    Review submissions, move them through grading, and see final results immediately after evaluation.
                                   </p>
                                 </div>
 
@@ -1684,9 +2002,12 @@ export default function InstructorQuizzesPage() {
                                   <span className="rounded-2xl border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-xs font-black text-emerald-600 dark:text-emerald-300">
                                     Graded {resultState.summary.graded}
                                   </span>
+                                  <span className={`rounded-2xl px-3 py-2 text-xs font-black ${hasResults ? "border border-cyan-300/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-300" : "border border-slate-300/60 bg-slate-100 text-slate-500 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/55"}`}>
+                                    {hasResults ? "Results Ready" : "Awaiting Grades"}
+                                  </span>
                                   <button
                                     type="button"
-                                    onClick={() => void loadQuizResults(quizId, activeStatus, activePagination.current_page)}
+                                    onClick={() => void loadQuizResultsBundle(quizId, true)}
                                     className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80"
                                   >
                                     <RefreshCw className="h-4 w-4" />
@@ -1733,7 +2054,9 @@ export default function InstructorQuizzesPage() {
                                 </div>
                               ) : attempts.length === 0 ? (
                                 <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm opacity-50 dark:border-white/15">
-                                  No {activeStatus} attempts yet.
+                                  {activeStatus === "submitted"
+                                    ? "No submitted attempts yet."
+                                    : "No graded results yet. Once a submission is graded, it will appear here immediately."}
                                 </div>
                               ) : (
                                 <div className="space-y-3">
@@ -1762,7 +2085,7 @@ export default function InstructorQuizzesPage() {
                                             ) : null}
                                           </div>
                                           <div className={`mt-3 flex flex-wrap gap-3 text-xs font-bold text-slate-500 dark:text-slate-300/60 ${isRTL ? "flex-row-reverse" : ""}`}>
-                                            <span>Submitted: {attempt.submitted_at || "--"}</span>
+                                            <span>Submitted: {formatDateTime(attempt.submitted_at, currentLocale)}</span>
                                             <span>Score: {attempt.score ?? "--"}</span>
                                             {attempt.graded_by_name ? <span>Graded by: {attempt.graded_by_name}</span> : null}
                                           </div>
@@ -1829,8 +2152,16 @@ export default function InstructorQuizzesPage() {
                       <select
                         required
                         value={quizForm.courseId}
-                        onChange={(event) => setQuizForm((current) => ({ ...current, courseId: event.target.value }))}
-                        className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-indigo-500/50 dark:border-white/10 dark:bg-white/5"
+                        onChange={(event) =>
+                          setQuizForm((current) => ({
+                            ...current,
+                            courseId: event.target.value,
+                            unitId: "",
+                            lessonId: "",
+                            quizableType: "course",
+                          }))
+                        }
+                        className="h-20 w-full rounded-[1.75rem] border border-slate-200 bg-slate-50 px-6 text-lg font-black outline-none focus:border-indigo-500/50 dark:border-white/10 dark:bg-white/5"
                       >
                         <option value="">Select course</option>
                         {courses.map((course) => (
@@ -1840,6 +2171,80 @@ export default function InstructorQuizzesPage() {
                         ))}
                       </select>
                     </div>
+
+                    <div className="space-y-3">
+                      <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/50">Quiz will be for</label>
+                      <div className={`flex flex-wrap gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
+                        {(["course", "unit", "lesson"] as const).map((type) => {
+                          const isActive = quizForm.quizableType === type;
+                          return (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() =>
+                                setQuizForm((current) => ({
+                                  ...current,
+                                  quizableType: type,
+                                  unitId: type === "course" ? "" : current.unitId,
+                                  lessonId: type === "lesson" ? current.lessonId : "",
+                                }))
+                              }
+                              className={`rounded-2xl px-4 py-3 text-xs font-black uppercase tracking-[0.18em] transition ${
+                                isActive
+                                  ? "bg-[linear-gradient(135deg,#4f46e5_0%,#9333ea_100%)] text-white shadow-[0_14px_34px_rgba(99,102,241,0.28)]"
+                                  : "border border-slate-200 bg-slate-50 text-slate-700 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70"
+                              }`}
+                            >
+                              {type}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {quizForm.quizableType !== "course" ? (
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/50">Unit</label>
+                        <select
+                          required={quizForm.quizableType !== "course"}
+                          value={quizForm.unitId}
+                          onChange={(event) =>
+                            setQuizForm((current) => ({
+                              ...current,
+                              unitId: event.target.value,
+                              lessonId: "",
+                            }))
+                          }
+                          className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-indigo-500/50 dark:border-white/10 dark:bg-white/5"
+                        >
+                          <option value="">{isUnitsLoading ? "Loading units..." : "Select unit"}</option>
+                          {availableUnits.map((unit) => (
+                            <option key={String(unit.id)} value={String(toNumber(unit.id) ?? unit.id)}>
+                              {getLocalizedUnitTitle(unit, currentLocale)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+
+                    {quizForm.quizableType === "lesson" ? (
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/50">Lesson</label>
+                        <select
+                          required
+                          value={quizForm.lessonId}
+                          onChange={(event) => setQuizForm((current) => ({ ...current, lessonId: event.target.value }))}
+                          className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold outline-none focus:border-indigo-500/50 dark:border-white/10 dark:bg-white/5"
+                        >
+                          <option value="">{isLessonsLoading ? "Loading lessons..." : "Select lesson"}</option>
+                          {availableLessons.map((lesson) => (
+                            <option key={String(lesson.id)} value={String(toNumber(lesson.id) ?? lesson.id)}>
+                              {getLocalizedLessonTitle(lesson, currentLocale)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
@@ -1891,6 +2296,37 @@ export default function InstructorQuizzesPage() {
                     <div className="mb-5">
                       <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/50">Quiz Settings</p>
                       <h3 className="mt-2 text-xl font-black tracking-[-0.03em]">Scoring and delivery</h3>
+                    </div>
+
+                    <div className="mb-5 rounded-[1.5rem] border border-indigo-200/80 bg-white px-4 py-4 dark:border-indigo-400/20 dark:bg-white/[0.03]">
+                      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-indigo-500">About to create quiz in</p>
+                      <div className={`mt-3 flex flex-wrap items-center gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                        <span className="rounded-full border border-indigo-200/80 bg-indigo-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600 dark:border-indigo-400/20 dark:bg-indigo-500/10 dark:text-indigo-300">
+                          {quizForm.quizableType}
+                        </span>
+                        <span className="text-sm font-bold text-slate-700 dark:text-white/80">
+                          {quizForm.quizableType === "lesson"
+                            ? (availableLessons.find((lesson) => String(toNumber(lesson.id) ?? lesson.id) === quizForm.lessonId)
+                                ? getLocalizedLessonTitle(
+                                    availableLessons.find((lesson) => String(toNumber(lesson.id) ?? lesson.id) === quizForm.lessonId)!,
+                                    currentLocale
+                                  )
+                                : "No lesson selected")
+                            : quizForm.quizableType === "unit"
+                              ? (availableUnits.find((unit) => String(toNumber(unit.id) ?? unit.id) === quizForm.unitId)
+                                  ? getLocalizedUnitTitle(
+                                      availableUnits.find((unit) => String(toNumber(unit.id) ?? unit.id) === quizForm.unitId)!,
+                                      currentLocale
+                                    )
+                                  : "No unit selected")
+                              : (courses.find((course) => String(toNumber(course.id) ?? course.id) === quizForm.courseId)
+                                  ? getLocalizedCourseTitle(
+                                      courses.find((course) => String(toNumber(course.id) ?? course.id) === quizForm.courseId)!,
+                                      currentLocale
+                                    )
+                                  : "No course selected")}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="space-y-4">

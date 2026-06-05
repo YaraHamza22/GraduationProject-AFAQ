@@ -2,57 +2,79 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { BookOpen, Clock, FileText, Layers, Pencil, Plus, RefreshCcw, Save, Trash2, X } from "lucide-react";
+import {
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Clock3,
+  FileText,
+  Layers3,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RefreshCcw,
+  Save,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { getStudentApiCached, getStudentApiRequestUrl, invalidateStudentApiCache } from "@/features/student/studentApi";
 import { getStoredStudentUser, getStudentToken } from "@/features/student/studentSession";
 
 type CourseListItem = {
   id: number | string;
-  title?: string;
+  slug?: string;
+  title?: string | Record<string, string>;
   title_translations?: Record<string, string>;
-  description?: string;
-  description_translations?: Record<string, string>;
+  description?: string | Record<string, string> | null;
+  description_translations?: Record<string, string> | null;
   status?: string;
   actual_duration_hours?: number | string | null;
-  units?: Array<{ id?: number | string; title?: string; title_translations?: Record<string, string> }>;
   creator?: { id?: number | string };
   instructors?: Array<{ id?: number | string }>;
-};
-
-type CourseDetails = CourseListItem & {
-  objectives?: string;
-  prerequisites?: string;
 };
 
 type UnitItem = {
   id: number | string;
   title?: string | Record<string, string>;
   title_translations?: Record<string, string>;
-  description?: string;
-  description_translations?: Record<string, string>;
-  unit_order?: number;
-  actual_duration_minutes?: number;
+  description?: string | null;
+  description_translations?: Record<string, string> | null;
+  unit_order?: number | string;
+  actual_duration_minutes?: number | string | null;
+};
+
+type LessonItem = {
+  id: number | string;
+  title?: string | Record<string, string>;
+  title_translations?: Record<string, string>;
+  description?: string | null;
+  description_translations?: Record<string, string> | null;
+  lesson_order?: number | string;
+  lesson_type?: string;
+  is_required?: boolean | null;
+  actual_duration_minutes?: number | string | null;
+};
+
+type CourseFormState = {
+  titleEn: string;
+  titleAr: string;
+  descriptionEn: string;
+  descriptionAr: string;
+  durationHours: string;
+  status: string;
 };
 
 type UnitFormState = {
   titleEn: string;
   titleAr: string;
   descriptionEn: string;
+  descriptionAr: string;
   unitOrder: string;
   durationMinutes: string;
-};
-
-type LessonItem = {
-  id: number | string;
-  title?: string;
-  title_translations?: Record<string, string>;
-  description?: string | null;
-  description_translations?: Record<string, string> | null;
-  lesson_order?: number;
-  lesson_type?: string;
-  is_required?: boolean | null;
-  actual_duration_minutes?: number;
 };
 
 type LessonFormState = {
@@ -66,49 +88,83 @@ type LessonFormState = {
   durationMinutes: string;
 };
 
-function getLocalizedText(
-  primary: unknown,
-  translations: Record<string, string> | undefined,
-  language: "en" | "ar"
-) {
-  if (translations?.[language]?.trim()) return translations[language];
-  if (translations?.en?.trim()) return translations.en;
-  if (typeof primary === "string" && primary.trim()) return primary;
-  if (primary && typeof primary === "object" && !Array.isArray(primary)) {
-    const localized = (primary as Record<string, unknown>)[language];
-    if (typeof localized === "string" && localized.trim()) return localized;
-    const fallback = (primary as Record<string, unknown>).en;
-    if (typeof fallback === "string" && fallback.trim()) return fallback;
-  }
-  return "";
-}
+type EditorState =
+  | { type: "course"; mode: "edit"; courseId: number }
+  | { type: "unit"; mode: "create"; courseId: number }
+  | { type: "unit"; mode: "edit"; courseId: number; unitId: number }
+  | { type: "lesson"; mode: "create"; courseId: number; unitId: number }
+  | { type: "lesson"; mode: "edit"; courseId: number; unitId: number; lessonId: number };
 
-function getTranslationValue(value: unknown, locale: "en" | "ar") {
-  if (typeof value === "string") {
-    return locale === "en" ? value : "";
-  }
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const candidate = (value as Record<string, unknown>)[locale];
-    return typeof candidate === "string" ? candidate : "";
-  }
-  return "";
-}
+const initialCourseForm: CourseFormState = {
+  titleEn: "",
+  titleAr: "",
+  descriptionEn: "",
+  descriptionAr: "",
+  durationHours: "",
+  status: "draft",
+};
 
-function extractList(payload: unknown): CourseListItem[] {
-  if (!payload || typeof payload !== "object") return [];
-  const root = payload as { data?: unknown };
-  if (Array.isArray(root.data)) return root.data as CourseListItem[];
-  if (root.data && typeof root.data === "object") {
-    const nested = root.data as { data?: unknown };
-    if (Array.isArray(nested.data)) return nested.data as CourseListItem[];
-  }
-  return [];
+const initialUnitForm: UnitFormState = {
+  titleEn: "",
+  titleAr: "",
+  descriptionEn: "",
+  descriptionAr: "",
+  unitOrder: "",
+  durationMinutes: "",
+};
+
+const initialLessonForm: LessonFormState = {
+  titleEn: "",
+  titleAr: "",
+  descriptionEn: "",
+  descriptionAr: "",
+  lessonOrder: "",
+  lessonType: "lecture",
+  isRequired: true,
+  durationMinutes: "",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function toNumberId(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) return Number(value);
   return null;
+}
+
+function toStringValue(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return "";
+}
+
+function getLocalizedText(primary: unknown, translations: Record<string, string> | undefined | null, language: "en" | "ar") {
+  if (translations?.[language]?.trim()) return translations[language];
+  if (translations?.en?.trim()) return translations.en;
+  if (typeof primary === "string" && primary.trim()) return primary;
+  if (isRecord(primary)) {
+    const localized = primary[language];
+    if (typeof localized === "string" && localized.trim()) return localized;
+    const fallback = primary.en;
+    if (typeof fallback === "string" && fallback.trim()) return fallback;
+  }
+  return "";
+}
+
+function extractList<T>(payload: unknown): T[] {
+  if (!isRecord(payload)) return [];
+  if (Array.isArray(payload.data)) return payload.data as T[];
+  if (isRecord(payload.data) && Array.isArray(payload.data.data)) return payload.data.data as T[];
+  return [];
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (!axios.isAxiosError(error)) return fallback;
+  const message = error.response?.data?.message;
+  if (typeof message === "string" && message.trim()) return message;
+  return fallback;
 }
 
 function isOwnedByInstructor(course: CourseListItem, instructorId: number | null) {
@@ -121,87 +177,79 @@ function isOwnedByInstructor(course: CourseListItem, instructorId: number | null
   return false;
 }
 
+function TreeActionMenu({
+  open,
+  onToggle,
+  onEdit,
+  onDelete,
+  onAdd,
+  addLabel,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onAdd?: () => void;
+  addLabel?: string;
+}) {
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="rounded-xl border border-slate-200/80 bg-white/80 p-2 text-slate-600 transition hover:border-slate-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open ? (
+        <div className="absolute end-0 top-12 z-20 min-w-[160px] rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_18px_38px_rgba(15,23,42,0.12)] dark:border-white/10 dark:bg-[#11182c]">
+          {onAdd && addLabel ? (
+            <button type="button" onClick={onAdd} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition hover:bg-slate-100 dark:hover:bg-white/[0.06]">
+              <Plus className="h-4 w-4" />
+              {addLabel}
+            </button>
+          ) : null}
+          {onEdit ? (
+            <button type="button" onClick={onEdit} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition hover:bg-slate-100 dark:hover:bg-white/[0.06]">
+              <Pencil className="h-4 w-4" />
+              Update
+            </button>
+          ) : null}
+          {onDelete ? (
+            <button type="button" onClick={onDelete} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-500/10">
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function InstructorCoursesPage() {
-  const { t, language } = useLanguage();
+  const { language, isRTL } = useLanguage();
+  const currentLocale = language as "en" | "ar";
   const currentInstructorId = toNumberId(getStoredStudentUser()?.id);
+
   const [courses, setCourses] = useState<CourseListItem[]>([]);
-  const [selected, setSelected] = useState<CourseDetails | null>(null);
+  const [unitsByCourse, setUnitsByCourse] = useState<Record<number, UnitItem[]>>({});
+  const [lessonsByUnit, setLessonsByUnit] = useState<Record<number, LessonItem[]>>({});
+  const [expandedCourseIds, setExpandedCourseIds] = useState<number[]>([]);
+  const [expandedUnitKeys, setExpandedUnitKeys] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [menuKey, setMenuKey] = useState<string | null>(null);
+  const [editor, setEditor] = useState<EditorState | null>(null);
+  const [courseForm, setCourseForm] = useState<CourseFormState>(initialCourseForm);
+  const [unitForm, setUnitForm] = useState<UnitFormState>(initialUnitForm);
+  const [lessonForm, setLessonForm] = useState<LessonFormState>(initialLessonForm);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDetailsLoading, setIsDetailsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingUnitsForCourse, setLoadingUnitsForCourse] = useState<number | null>(null);
+  const [loadingLessonsForUnit, setLoadingLessonsForUnit] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [selectedCourseId, setSelectedCourseId] = useState<number | string | null>(null);
-  const [units, setUnits] = useState<UnitItem[]>([]);
-  const [isUnitsLoading, setIsUnitsLoading] = useState(false);
-  const [editingUnitId, setEditingUnitId] = useState<number | string | null>(null);
-  const [selectedUnitId, setSelectedUnitId] = useState<number | string | null>(null);
-  const [unitForm, setUnitForm] = useState<UnitFormState>({
-    titleEn: "",
-    titleAr: "",
-    descriptionEn: "",
-    unitOrder: "",
-    durationMinutes: "",
-  });
-  const [isUnitSubmitting, setIsUnitSubmitting] = useState(false);
-  const [lessons, setLessons] = useState<LessonItem[]>([]);
-  const [lessonsCount, setLessonsCount] = useState(0);
-  const [isLessonsLoading, setIsLessonsLoading] = useState(false);
-  const [editingLessonId, setEditingLessonId] = useState<number | string | null>(null);
-  const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
-  const [lessonForm, setLessonForm] = useState<LessonFormState>({
-    titleEn: "",
-    titleAr: "",
-    descriptionEn: "",
-    descriptionAr: "",
-    lessonOrder: "",
-    lessonType: "lecture",
-    isRequired: true,
-    durationMinutes: "",
-  });
-  const [isLessonSubmitting, setIsLessonSubmitting] = useState(false);
-
-  const loadCourses = useCallback(async (force = false) => {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    setIsLoading(true);
-    try {
-      const token = getStudentToken();
-      if (!token) throw new Error("missing_token");
-
-      const response = await getStudentApiCached<{ data?: unknown }>("/my-courses", {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      }, { ttlMs: 30_000, force });
-
-      const allCourses = extractList(response.data);
-      const ownCourses = allCourses.filter((course) => isOwnedByInstructor(course, currentInstructorId));
-      setCourses(ownCourses);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to load courses.");
-      } else if (error instanceof Error && error.message === "missing_token") {
-        setErrorMessage("Session token is missing. Please log in again.");
-      } else {
-        setErrorMessage("Failed to load courses.");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentInstructorId]);
-
-  const resetUnitForm = useCallback(() => {
-    setEditingUnitId(null);
-    setUnitForm({
-      titleEn: "",
-      titleAr: "",
-      descriptionEn: "",
-      unitOrder: "",
-      durationMinutes: "",
-    });
-  }, []);
 
   const buildAuthHeaders = useCallback(() => {
     const token = getStudentToken();
@@ -209,962 +257,816 @@ export default function InstructorCoursesPage() {
     return {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
-      "Accept-Language": language,
-      "X-Locale": language,
+      "Accept-Language": currentLocale,
+      "X-Locale": currentLocale,
     };
-  }, [language]);
+  }, [currentLocale]);
 
-  const extractUnitsList = (payload: unknown): UnitItem[] => {
-    if (!payload || typeof payload !== "object") return [];
-    const root = payload as { data?: unknown };
-    if (Array.isArray(root.data)) return root.data as UnitItem[];
-    if (root.data && typeof root.data === "object") {
-      const nested = root.data as { data?: unknown };
-      if (Array.isArray(nested.data)) return nested.data as UnitItem[];
-    }
-    return [];
-  };
-
-  const extractLessonsList = (payload: unknown): LessonItem[] => {
-    if (!payload || typeof payload !== "object") return [];
-    const root = payload as { data?: unknown };
-    if (Array.isArray(root.data)) return root.data as LessonItem[];
-    if (root.data && typeof root.data === "object") {
-      const nested = root.data as { data?: unknown };
-      if (Array.isArray(nested.data)) return nested.data as LessonItem[];
-    }
-    return [];
-  };
-
-  const extractLessonsCount = (payload: unknown): number => {
-    if (!payload || typeof payload !== "object") return 0;
-    const root = payload as { data?: unknown };
-    if (root.data && typeof root.data === "object") {
-      const data = root.data as { lessons_count?: unknown };
-      const count = Number(data.lessons_count ?? 0);
-      return Number.isFinite(count) ? count : 0;
-    }
-    return 0;
-  };
-
-  const resetLessonForm = useCallback(() => {
-    setEditingLessonId(null);
-    setLessonForm({
-      titleEn: "",
-      titleAr: "",
-      descriptionEn: "",
-      descriptionAr: "",
-      lessonOrder: "",
-      lessonType: "lecture",
-      isRequired: true,
-      durationMinutes: "",
-    });
-  }, []);
-
-  const openCreateLessonModal = useCallback(() => {
-    resetLessonForm();
-    setIsLessonModalOpen(true);
-  }, [resetLessonForm]);
-
-  const closeLessonModal = useCallback(() => {
-    setIsLessonModalOpen(false);
-    resetLessonForm();
-  }, [resetLessonForm]);
-
-  const loadUnits = useCallback(async (courseId: number | string, force = false) => {
-    setIsUnitsLoading(true);
+  const loadCourses = useCallback(async (force = false) => {
     setErrorMessage(null);
+    if (force) setIsRefreshing(true);
+    else setIsLoading(true);
+
+    try {
+      const response = await getStudentApiCached<{ data?: unknown }>("/my-courses", {
+        headers: buildAuthHeaders(),
+      }, { ttlMs: 30_000, force });
+
+      const ownCourses = extractList<CourseListItem>(response.data).filter((course) => isOwnedByInstructor(course, currentInstructorId));
+      setCourses(ownCourses);
+    } catch (error) {
+      if (error instanceof Error && error.message === "missing_token") {
+        setErrorMessage("Session token is missing. Please log in again.");
+      } else {
+        setErrorMessage(getErrorMessage(error, "Failed to load instructor courses."));
+      }
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [buildAuthHeaders, currentInstructorId]);
+
+  const loadUnits = useCallback(async (courseId: number, force = false) => {
+    if (!force && unitsByCourse[courseId]) return unitsByCourse[courseId];
+    setLoadingUnitsForCourse(courseId);
     try {
       const response = await getStudentApiCached<{ data?: unknown }>(`/my-courses/${courseId}/units`, {
         headers: buildAuthHeaders(),
       }, { ttlMs: 20_000, force });
-      setUnits(extractUnitsList(response.data));
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to load units.");
-      } else {
-        setErrorMessage("Failed to load units.");
-      }
+      const nextUnits = extractList<UnitItem>(response.data);
+      setUnitsByCourse((current) => ({ ...current, [courseId]: nextUnits }));
+      return nextUnits;
     } finally {
-      setIsUnitsLoading(false);
+      setLoadingUnitsForCourse((current) => (current === courseId ? null : current));
     }
-  }, [buildAuthHeaders]);
+  }, [buildAuthHeaders, unitsByCourse]);
 
-  const loadLessons = useCallback(async (courseId: number | string, unitId: number | string, force = false) => {
-    setIsLessonsLoading(true);
-    setErrorMessage(null);
+  const loadLessons = useCallback(async (courseId: number, unitId: number, force = false) => {
+    const unitKey = `${courseId}:${unitId}`;
+    if (!force && lessonsByUnit[unitId]) return lessonsByUnit[unitId];
+    setLoadingLessonsForUnit(unitKey);
     try {
-      const [listRes, countRes] = await Promise.all([
-        getStudentApiCached<{ data?: unknown }>(`/my-courses/${courseId}/units/${unitId}/lessons`, {
-          headers: buildAuthHeaders(),
-        }, { ttlMs: 15_000, force }),
-        getStudentApiCached<{ data?: unknown }>(`/my-courses/${courseId}/units/${unitId}/lessons/count`, {
-          headers: buildAuthHeaders(),
-        }, { ttlMs: 15_000, force }),
-      ]);
-
-      setLessons(extractLessonsList(listRes.data));
-      setLessonsCount(extractLessonsCount(countRes.data));
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to load lessons.");
-      } else {
-        setErrorMessage("Failed to load lessons.");
-      }
-    } finally {
-      setIsLessonsLoading(false);
-    }
-  }, [buildAuthHeaders]);
-
-  const selectUnitForLessons = async (unitId: number | string) => {
-    if (!selectedCourseId) return;
-    setSelectedUnitId(unitId);
-    setSuccessMessage(null);
-    setErrorMessage(null);
-    resetLessonForm();
-    await loadLessons(selectedCourseId, unitId);
-  };
-
-  const getLessonById = async (lessonId: number | string) => {
-    if (!selectedCourseId || !selectedUnitId) return;
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const response = await getStudentApiCached<{ data?: LessonItem }>(
-        `/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons/${lessonId}`,
-        { headers: buildAuthHeaders() },
-        { ttlMs: 15_000 }
-      );
-
-      const lesson = (response.data?.data ?? null) as LessonItem | null;
-      if (!lesson) return;
-
-      setEditingLessonId(lesson.id);
-      setLessonForm({
-        titleEn: lesson.title_translations?.en ?? lesson.title ?? "",
-        titleAr: lesson.title_translations?.ar ?? "",
-        descriptionEn: lesson.description_translations?.en ?? (typeof lesson.description === "string" ? lesson.description : ""),
-        descriptionAr: lesson.description_translations?.ar ?? "",
-        lessonOrder: typeof lesson.lesson_order === "number" ? String(lesson.lesson_order) : "",
-        lessonType: lesson.lesson_type ?? "lecture",
-        isRequired: lesson.is_required !== false,
-        durationMinutes:
-          typeof lesson.actual_duration_minutes === "number"
-            ? String(lesson.actual_duration_minutes)
-            : "",
-      });
-      setIsLessonModalOpen(true);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to load lesson.");
-      } else {
-        setErrorMessage("Failed to load lesson.");
-      }
-    }
-  };
-
-  const createLesson = async () => {
-    if (!selectedCourseId || !selectedUnitId) return;
-    setIsLessonSubmitting(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const titleEn = lessonForm.titleEn.trim();
-      const titleAr = lessonForm.titleAr.trim();
-      const descriptionEn = lessonForm.descriptionEn.trim();
-      const descriptionAr = lessonForm.descriptionAr.trim();
-      const payload = {
-        course_id: Number(selectedCourseId),
-        unit_id: Number(selectedUnitId),
-        title: titleEn || titleAr || "Lesson",
-        title_translations: {
-          en: titleEn || titleAr || "Lesson",
-          ar: titleAr || titleEn || "Lesson",
-        },
-        description: descriptionEn || descriptionAr || "",
-        description_translations: {
-          en: descriptionEn || descriptionAr || "",
-          ar: descriptionAr || descriptionEn || "",
-        },
-        lesson_order: Number(lessonForm.lessonOrder || lessons.length + 1),
-        lesson_type: lessonForm.lessonType || "lecture",
-        is_required: lessonForm.isRequired,
-        actual_duration_minutes: Number(lessonForm.durationMinutes || 0),
-      };
-
-      await axios.post(
-        getStudentApiRequestUrl(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons`),
-        payload,
-        { headers: buildAuthHeaders() }
-      );
-
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons`);
-      setSuccessMessage("Lesson created successfully.");
-      setIsLessonModalOpen(false);
-      resetLessonForm();
-      await loadLessons(selectedCourseId, selectedUnitId, true);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to create lesson.");
-      } else {
-        setErrorMessage("Failed to create lesson.");
-      }
-    } finally {
-      setIsLessonSubmitting(false);
-    }
-  };
-
-  const updateLesson = async () => {
-    if (!selectedCourseId || !selectedUnitId || !editingLessonId) return;
-    setIsLessonSubmitting(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const titleEn = lessonForm.titleEn.trim();
-      const titleAr = lessonForm.titleAr.trim();
-      const descriptionEn = lessonForm.descriptionEn.trim();
-      const descriptionAr = lessonForm.descriptionAr.trim();
-      const payload = {
-        course_id: Number(selectedCourseId),
-        unit_id: Number(selectedUnitId),
-        title: titleEn || titleAr || "Lesson",
-        title_translations: {
-          en: titleEn || titleAr || "Lesson",
-          ar: titleAr || titleEn || "Lesson",
-        },
-        description: descriptionEn || descriptionAr || "",
-        description_translations: {
-          en: descriptionEn || descriptionAr || "",
-          ar: descriptionAr || descriptionEn || "",
-        },
-        lesson_order: Number(lessonForm.lessonOrder || 1),
-        lesson_type: lessonForm.lessonType || "lecture",
-        is_required: lessonForm.isRequired,
-        actual_duration_minutes: Number(lessonForm.durationMinutes || 0),
-      };
-
-      await axios.put(
-        getStudentApiRequestUrl(
-          `/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons/${editingLessonId}`
-        ),
-        payload,
-        { headers: buildAuthHeaders() }
-      );
-
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons`);
-      setSuccessMessage("Lesson updated successfully.");
-      setIsLessonModalOpen(false);
-      resetLessonForm();
-      await loadLessons(selectedCourseId, selectedUnitId, true);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to update lesson.");
-      } else {
-        setErrorMessage("Failed to update lesson.");
-      }
-    } finally {
-      setIsLessonSubmitting(false);
-    }
-  };
-
-  const deleteLesson = async (lessonId: number | string) => {
-    if (!selectedCourseId || !selectedUnitId) return;
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      await axios.delete(
-        getStudentApiRequestUrl(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons/${lessonId}`),
-        { headers: buildAuthHeaders() }
-      );
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units/${selectedUnitId}/lessons`);
-      setSuccessMessage("Lesson deleted successfully.");
-      if (editingLessonId === lessonId) {
-        resetLessonForm();
-      }
-      await loadLessons(selectedCourseId, selectedUnitId, true);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to delete lesson.");
-      } else {
-        setErrorMessage("Failed to delete lesson.");
-      }
-    }
-  };
-
-  const getUnitById = async (courseId: number | string, unitId: number | string) => {
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const response = await getStudentApiCached<{ data?: UnitItem }>(`/my-courses/${courseId}/units/${unitId}`, {
+      const response = await getStudentApiCached<{ data?: unknown }>(`/my-courses/${courseId}/units/${unitId}/lessons`, {
         headers: buildAuthHeaders(),
-      }, { ttlMs: 20_000 });
-      const unit = (response.data?.data ?? null) as UnitItem | null;
-      if (!unit) return;
-
-      setEditingUnitId(unit.id);
-      const resolvedTitleEn =
-        unit.title_translations?.en ??
-        getTranslationValue(unit.title, "en") ??
-        "";
-      const resolvedTitleAr =
-        unit.title_translations?.ar ??
-        getTranslationValue(unit.title, "ar") ??
-        "";
-      setUnitForm({
-        titleEn: resolvedTitleEn,
-        titleAr: resolvedTitleAr,
-        descriptionEn: unit.description_translations?.en ?? unit.description ?? "",
-        unitOrder: typeof unit.unit_order === "number" ? String(unit.unit_order) : "",
-        durationMinutes: typeof unit.actual_duration_minutes === "number" ? String(unit.actual_duration_minutes) : "",
-      });
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to load unit.");
-      } else {
-        setErrorMessage("Failed to load unit.");
-      }
-    }
-  };
-
-  const createUnit = async () => {
-    if (!selectedCourseId) return;
-    setIsUnitSubmitting(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const titleEn = unitForm.titleEn.trim();
-      const titleAr = unitForm.titleAr.trim();
-      const payload = {
-        title: titleEn || titleAr || "Unit",
-        title_translations: {
-          en: titleEn || titleAr || "Unit",
-          ar: titleAr || titleEn || "Unit",
-        },
-        description: unitForm.descriptionEn || "",
-        description_translations: {
-          en: unitForm.descriptionEn || "",
-        },
-        unit_order: Number(unitForm.unitOrder || units.length + 1),
-        actual_duration_minutes: Number(unitForm.durationMinutes || 0),
-      };
-
-      await axios.post(getStudentApiRequestUrl(`/my-courses/${selectedCourseId}/units`), payload, {
-        headers: buildAuthHeaders(),
-      });
-
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units`);
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}`);
-      setSuccessMessage("Unit created successfully.");
-      resetUnitForm();
-      await loadUnits(selectedCourseId, true);
-      await loadCourseDetails(selectedCourseId, true);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to create unit.");
-      } else {
-        setErrorMessage("Failed to create unit.");
-      }
+      }, { ttlMs: 15_000, force });
+      const nextLessons = extractList<LessonItem>(response.data);
+      setLessonsByUnit((current) => ({ ...current, [unitId]: nextLessons }));
+      return nextLessons;
     } finally {
-      setIsUnitSubmitting(false);
+      setLoadingLessonsForUnit((current) => (current === unitKey ? null : current));
     }
-  };
-
-  const updateUnit = async () => {
-    if (!selectedCourseId || !editingUnitId) return;
-    setIsUnitSubmitting(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const titleEn = unitForm.titleEn.trim();
-      const titleAr = unitForm.titleAr.trim();
-      const payload = {
-        title: titleEn || titleAr || "Unit",
-        title_translations: {
-          en: titleEn || titleAr || "Unit",
-          ar: titleAr || titleEn || "Unit",
-        },
-        description: unitForm.descriptionEn || "",
-        description_translations: {
-          en: unitForm.descriptionEn || "",
-        },
-        unit_order: Number(unitForm.unitOrder || 1),
-        actual_duration_minutes: Number(unitForm.durationMinutes || 0),
-      };
-
-      await axios.put(
-        getStudentApiRequestUrl(`/my-courses/${selectedCourseId}/units/${editingUnitId}`),
-        payload,
-        { headers: buildAuthHeaders() }
-      );
-
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units`);
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}`);
-      setSuccessMessage("Unit updated successfully.");
-      resetUnitForm();
-      await loadUnits(selectedCourseId, true);
-      await loadCourseDetails(selectedCourseId, true);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to update unit.");
-      } else {
-        setErrorMessage("Failed to update unit.");
-      }
-    } finally {
-      setIsUnitSubmitting(false);
-    }
-  };
-
-  const deleteUnit = async (unitId: number | string) => {
-    if (!selectedCourseId) return;
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      await axios.delete(getStudentApiRequestUrl(`/my-courses/${selectedCourseId}/units/${unitId}`), {
-        headers: buildAuthHeaders(),
-      });
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}/units`);
-      invalidateStudentApiCache(`/my-courses/${selectedCourseId}`);
-      setSuccessMessage("Unit deleted successfully.");
-      if (editingUnitId === unitId) {
-        resetUnitForm();
-      }
-      if (selectedUnitId === unitId) {
-        setSelectedUnitId(null);
-        setLessons([]);
-        setLessonsCount(0);
-        resetLessonForm();
-      }
-      await loadUnits(selectedCourseId, true);
-      await loadCourseDetails(selectedCourseId, true);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to delete unit.");
-      } else {
-        setErrorMessage("Failed to delete unit.");
-      }
-    }
-  };
-
-  const loadCourseDetails = async (courseId: number | string, force = false) => {
-    setIsDetailsLoading(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-    try {
-      const response = await getStudentApiCached<{ data?: CourseDetails }>(`/my-courses/${courseId}`, {
-        params: { per_page:15 } ,
-        headers: buildAuthHeaders(),
-      }, { ttlMs: 20_000, force });
-
-      const details = (response.data?.data ?? null) as CourseDetails | null;
-      setSelected(details);
-      setSelectedCourseId(courseId);
-      setSelectedUnitId(null);
-      setLessons([]);
-      setLessonsCount(0);
-      resetLessonForm();
-      await loadUnits(courseId, force);
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        setErrorMessage(error.response?.data?.message || "Failed to load course details.");
-      } else if (error instanceof Error && error.message === "missing_token") {
-        setErrorMessage("Session token is missing. Please log in again.");
-      } else {
-        setErrorMessage("Failed to load course details.");
-      }
-    } finally {
-      setIsDetailsLoading(false);
-    }
-  };
+  }, [buildAuthHeaders, lessonsByUnit]);
 
   useEffect(() => {
     void loadCourses();
   }, [loadCourses]);
 
   useEffect(() => {
-    if (!isLessonModalOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isLessonSubmitting) {
-        closeLessonModal();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeLessonModal, isLessonModalOpen, isLessonSubmitting]);
+    if (!menuKey) return;
+    const onClick = () => setMenuKey(null);
+    window.addEventListener("click", onClick);
+    return () => window.removeEventListener("click", onClick);
+  }, [menuKey]);
 
   const filteredCourses = useMemo(() => {
-    if (!search.trim()) return courses;
     const term = search.trim().toLowerCase();
+    if (!term) return courses;
     return courses.filter((course) => {
-      const title = getLocalizedText(course.title, course.title_translations, language).toLowerCase();
-      return title.includes(term);
+      const title = getLocalizedText(course.title, course.title_translations, currentLocale).toLowerCase();
+      const description = getLocalizedText(course.description, course.description_translations, currentLocale).toLowerCase();
+      return title.includes(term) || description.includes(term);
     });
-  }, [courses, language, search]);
+  }, [courses, currentLocale, search]);
+
+  const stats = useMemo(() => {
+    const units = Object.values(unitsByCourse).reduce((sum, group) => sum + group.length, 0);
+    const lessons = Object.values(lessonsByUnit).reduce((sum, group) => sum + group.length, 0);
+    return {
+      courses: courses.length,
+      units,
+      lessons,
+      published: courses.filter((course) => (course.status || "").toLowerCase() === "published").length,
+    };
+  }, [courses, lessonsByUnit, unitsByCourse]);
+
+  const resetForms = useCallback(() => {
+    setCourseForm(initialCourseForm);
+    setUnitForm(initialUnitForm);
+    setLessonForm(initialLessonForm);
+  }, []);
+
+  const openCourseEditor = useCallback((course: CourseListItem) => {
+    const courseId = toNumberId(course.id);
+    if (!courseId) return;
+    resetForms();
+    setCourseForm({
+      titleEn: getLocalizedText(course.title, course.title_translations, "en"),
+      titleAr: getLocalizedText(course.title, course.title_translations, "ar"),
+      descriptionEn: getLocalizedText(course.description, course.description_translations, "en"),
+      descriptionAr: getLocalizedText(course.description, course.description_translations, "ar"),
+      durationHours: toStringValue(course.actual_duration_hours),
+      status: course.status || "draft",
+    });
+    setEditor({ type: "course", mode: "edit", courseId });
+    setMenuKey(null);
+  }, [resetForms]);
+
+  const openUnitEditor = useCallback((courseId: number, unit?: UnitItem) => {
+    resetForms();
+    if (unit) {
+      const unitId = toNumberId(unit.id);
+      if (!unitId) return;
+      setUnitForm({
+        titleEn: getLocalizedText(unit.title, unit.title_translations, "en"),
+        titleAr: getLocalizedText(unit.title, unit.title_translations, "ar"),
+        descriptionEn: getLocalizedText(unit.description, unit.description_translations, "en"),
+        descriptionAr: getLocalizedText(unit.description, unit.description_translations, "ar"),
+        unitOrder: toStringValue(unit.unit_order),
+        durationMinutes: toStringValue(unit.actual_duration_minutes),
+      });
+      setEditor({ type: "unit", mode: "edit", courseId, unitId });
+    } else {
+      setEditor({ type: "unit", mode: "create", courseId });
+    }
+    setMenuKey(null);
+  }, [resetForms]);
+
+  const openLessonEditor = useCallback((courseId: number, unitId: number, lesson?: LessonItem) => {
+    resetForms();
+    if (lesson) {
+      const lessonId = toNumberId(lesson.id);
+      if (!lessonId) return;
+      setLessonForm({
+        titleEn: getLocalizedText(lesson.title, lesson.title_translations, "en"),
+        titleAr: getLocalizedText(lesson.title, lesson.title_translations, "ar"),
+        descriptionEn: getLocalizedText(lesson.description, lesson.description_translations, "en"),
+        descriptionAr: getLocalizedText(lesson.description, lesson.description_translations, "ar"),
+        lessonOrder: toStringValue(lesson.lesson_order),
+        lessonType: lesson.lesson_type || "lecture",
+        isRequired: lesson.is_required !== false,
+        durationMinutes: toStringValue(lesson.actual_duration_minutes),
+      });
+      setEditor({ type: "lesson", mode: "edit", courseId, unitId, lessonId });
+    } else {
+      const nextOrder = (lessonsByUnit[unitId]?.length ?? 0) + 1;
+      setLessonForm((current) => ({
+        ...current,
+        lessonOrder: String(nextOrder),
+      }));
+      setEditor({ type: "lesson", mode: "create", courseId, unitId });
+    }
+    setMenuKey(null);
+  }, [lessonsByUnit, resetForms]);
+
+  const toggleCourse = useCallback(async (courseId: number) => {
+    const isExpanded = expandedCourseIds.includes(courseId);
+    if (isExpanded) {
+      setExpandedCourseIds((current) => current.filter((id) => id !== courseId));
+      return;
+    }
+    setExpandedCourseIds((current) => [...current, courseId]);
+    await loadUnits(courseId);
+  }, [expandedCourseIds, loadUnits]);
+
+  const toggleUnit = useCallback(async (courseId: number, unitId: number) => {
+    const key = `${courseId}:${unitId}`;
+    const isExpanded = expandedUnitKeys.includes(key);
+    if (isExpanded) {
+      setExpandedUnitKeys((current) => current.filter((item) => item !== key));
+      return;
+    }
+    setExpandedUnitKeys((current) => [...current, key]);
+    await loadLessons(courseId, unitId);
+  }, [expandedUnitKeys, loadLessons]);
+
+  const refreshSubtree = useCallback(async (courseId: number) => {
+    await loadUnits(courseId, true);
+    const units = unitsByCourse[courseId] ?? [];
+    const expandedKeysForCourse = expandedUnitKeys.filter((key) => key.startsWith(`${courseId}:`));
+    if (expandedKeysForCourse.length > 0) {
+      await Promise.all(
+        units
+          .map((unit) => toNumberId(unit.id))
+          .filter((unitId): unitId is number => unitId !== null && expandedKeysForCourse.includes(`${courseId}:${unitId}`))
+          .map((unitId) => loadLessons(courseId, unitId, true))
+      );
+    }
+  }, [expandedUnitKeys, loadLessons, loadUnits, unitsByCourse]);
+
+  const handleDeleteCourse = useCallback(async (courseId: number) => {
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      await axios.delete(getStudentApiRequestUrl(`/my-courses/${courseId}`), {
+        headers: buildAuthHeaders(),
+      });
+      invalidateStudentApiCache("/my-courses");
+      invalidateStudentApiCache(`/my-courses/${courseId}`);
+      setCourses((current) => current.filter((course) => toNumberId(course.id) !== courseId));
+      setExpandedCourseIds((current) => current.filter((id) => id !== courseId));
+      setSuccessMessage("Course deleted successfully.");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Failed to delete course."));
+    } finally {
+      setIsSubmitting(false);
+      setMenuKey(null);
+    }
+  }, [buildAuthHeaders]);
+
+  const handleDeleteUnit = useCallback(async (courseId: number, unitId: number) => {
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      await axios.delete(getStudentApiRequestUrl(`/my-courses/${courseId}/units/${unitId}`), {
+        headers: buildAuthHeaders(),
+      });
+      invalidateStudentApiCache(`/my-courses/${courseId}/units`);
+      setUnitsByCourse((current) => ({
+        ...current,
+        [courseId]: (current[courseId] ?? []).filter((unit) => toNumberId(unit.id) !== unitId),
+      }));
+      setLessonsByUnit((current) => {
+        const next = { ...current };
+        delete next[unitId];
+        return next;
+      });
+      setExpandedUnitKeys((current) => current.filter((key) => key !== `${courseId}:${unitId}`));
+      setSuccessMessage("Unit deleted successfully.");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Failed to delete unit."));
+    } finally {
+      setIsSubmitting(false);
+      setMenuKey(null);
+    }
+  }, [buildAuthHeaders]);
+
+  const handleDeleteLesson = useCallback(async (courseId: number, unitId: number, lessonId: number) => {
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      await axios.delete(getStudentApiRequestUrl(`/my-courses/${courseId}/units/${unitId}/lessons/${lessonId}`), {
+        headers: buildAuthHeaders(),
+      });
+      invalidateStudentApiCache(`/my-courses/${courseId}/units/${unitId}/lessons`);
+      setLessonsByUnit((current) => ({
+        ...current,
+        [unitId]: (current[unitId] ?? []).filter((lesson) => toNumberId(lesson.id) !== lessonId),
+      }));
+      setSuccessMessage("Lesson deleted successfully.");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error, "Failed to delete lesson."));
+    } finally {
+      setIsSubmitting(false);
+      setMenuKey(null);
+    }
+  }, [buildAuthHeaders]);
+
+  const handleSaveEditor = useCallback(async () => {
+    if (!editor) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      if (editor.type === "course") {
+        const titleEn = courseForm.titleEn.trim();
+        const titleAr = courseForm.titleAr.trim();
+        const descriptionEn = courseForm.descriptionEn.trim();
+        const descriptionAr = courseForm.descriptionAr.trim();
+        const payload = {
+          title: titleEn || titleAr || "Course",
+          title_translations: {
+            en: titleEn || titleAr || "Course",
+            ar: titleAr || titleEn || "Course",
+          },
+          description: descriptionEn || descriptionAr || "",
+          description_translations: {
+            en: descriptionEn || descriptionAr || "",
+            ar: descriptionAr || descriptionEn || "",
+          },
+          actual_duration_hours: Number(courseForm.durationHours || 0),
+          status: courseForm.status || "draft",
+        };
+
+        await axios.put(getStudentApiRequestUrl(`/my-courses/${editor.courseId}`), payload, {
+          headers: buildAuthHeaders(),
+        });
+
+        invalidateStudentApiCache("/my-courses");
+        setSuccessMessage("Course updated successfully.");
+        await loadCourses(true);
+      }
+
+      if (editor.type === "unit") {
+        const titleEn = unitForm.titleEn.trim();
+        const titleAr = unitForm.titleAr.trim();
+        const descriptionEn = unitForm.descriptionEn.trim();
+        const descriptionAr = unitForm.descriptionAr.trim();
+        const payload = {
+          title: titleEn || titleAr || "Unit",
+          title_translations: {
+            en: titleEn || titleAr || "Unit",
+            ar: titleAr || titleEn || "Unit",
+          },
+          description: descriptionEn || descriptionAr || "",
+          description_translations: {
+            en: descriptionEn || descriptionAr || "",
+            ar: descriptionAr || descriptionEn || "",
+          },
+          unit_order: Number(unitForm.unitOrder || (unitsByCourse[editor.courseId]?.length ?? 0) + 1),
+          actual_duration_minutes: Number(unitForm.durationMinutes || 0),
+        };
+
+        const url =
+          editor.mode === "edit"
+            ? `/my-courses/${editor.courseId}/units/${editor.unitId}`
+            : `/my-courses/${editor.courseId}/units`;
+        const method = editor.mode === "edit" ? "put" : "post";
+
+        await axios.request({
+          url: getStudentApiRequestUrl(url),
+          method,
+          headers: buildAuthHeaders(),
+          data: payload,
+        });
+
+        invalidateStudentApiCache(`/my-courses/${editor.courseId}/units`);
+        setSuccessMessage(editor.mode === "edit" ? "Unit updated successfully." : "Unit created successfully.");
+        await loadUnits(editor.courseId, true);
+      }
+
+      if (editor.type === "lesson") {
+        const titleEn = lessonForm.titleEn.trim();
+        const titleAr = lessonForm.titleAr.trim();
+        const descriptionEn = lessonForm.descriptionEn.trim();
+        const descriptionAr = lessonForm.descriptionAr.trim();
+        const payload = {
+          course_id: editor.courseId,
+          unit_id: editor.unitId,
+          title: titleEn || titleAr || "Lesson",
+          title_translations: {
+            en: titleEn || titleAr || "Lesson",
+            ar: titleAr || titleEn || "Lesson",
+          },
+          description: descriptionEn || descriptionAr || "",
+          description_translations: {
+            en: descriptionEn || descriptionAr || "",
+            ar: descriptionAr || descriptionEn || "",
+          },
+          lesson_order: Number(lessonForm.lessonOrder || (lessonsByUnit[editor.unitId]?.length ?? 0) + 1),
+          lesson_type: lessonForm.lessonType || "lecture",
+          is_required: lessonForm.isRequired,
+          actual_duration_minutes: Number(lessonForm.durationMinutes || 0),
+        };
+
+        const url =
+          editor.mode === "edit"
+            ? `/my-courses/${editor.courseId}/units/${editor.unitId}/lessons/${editor.lessonId}`
+            : `/my-courses/${editor.courseId}/units/${editor.unitId}/lessons`;
+        const method = editor.mode === "edit" ? "put" : "post";
+
+        await axios.request({
+          url: getStudentApiRequestUrl(url),
+          method,
+          headers: buildAuthHeaders(),
+          data: payload,
+        });
+
+        invalidateStudentApiCache(`/my-courses/${editor.courseId}/units/${editor.unitId}/lessons`);
+        setSuccessMessage(editor.mode === "edit" ? "Lesson updated successfully." : "Lesson created successfully.");
+        await loadLessons(editor.courseId, editor.unitId, true);
+      }
+
+      setEditor(null);
+      resetForms();
+    } catch (error) {
+      if (error instanceof Error && error.message === "missing_token") {
+        setErrorMessage("Session token is missing. Please log in again.");
+      } else {
+        setErrorMessage(getErrorMessage(error, "Failed to save changes."));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [buildAuthHeaders, courseForm, editor, lessonForm, lessonsByUnit, loadCourses, loadLessons, loadUnits, resetForms, unitForm, unitsByCourse]);
 
   return (
-    <div className="min-h-screen bg-(--background) p-4 sm:p-6 lg:p-8 text-(--foreground)">
-      <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tight">{t("nav.courses")}</h1>
-          <p className="opacity-50 mt-2">Loaded from GET /my-courses and GET /my-courses/:course.</p>
-        </div>
-
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <button
-            onClick={() => void loadCourses(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2 text-sm font-bold hover:border-indigo-400/60"
-          >
-            <RefreshCcw className="h-4 w-4" />
-            Refresh
-          </button>
-          <button
-            onClick={() => {
-              if (!selectedCourseId) {
-                setErrorMessage("Select a course first, then add a unit.");
-                return;
-              }
-              resetUnitForm();
-            }}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-500"
-          >
-            <Plus className="h-4 w-4" />
-            Add Course Unit
-          </button>
-        </div>
-      </div>
-
-      {errorMessage ? (
-        <div className="mb-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-400">
-          {errorMessage}
-        </div>
-      ) : null}
-      {successMessage ? (
-        <div className="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-400">
-          {successMessage}
-        </div>
-      ) : null}
-
-      <div className="mb-6">
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search courses..."
-          className="h-11 w-full max-w-md rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 text-sm outline-none focus:border-indigo-400"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="xl:col-span-2 space-y-4">
-          {isLoading ? (
-            <div className="rounded-3xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-8 text-sm opacity-60">
-              Loading courses...
-            </div>
-          ) : filteredCourses.length === 0 ? (
-            <div className="rounded-3xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-8 text-sm opacity-60">
-              No courses found.
-            </div>
-          ) : (
-            filteredCourses.map((course) => {
-              const unitsCount = Array.isArray(course.units) ? course.units.length : 0;
-              const durationHours = Number(course.actual_duration_hours ?? 0);
-              const title = getLocalizedText(course.title, course.title_translations, language) || `Course #${course.id}`;
-              const description =
-                getLocalizedText(course.description, course.description_translations, language) || "No description.";
-
-              return (
-                <div key={String(course.id)} className="rounded-3xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="text-xl font-bold">{title}</h3>
-                      <p className="mt-2 text-sm opacity-70 line-clamp-2">{description}</p>
-                    </div>
-                    <span className="rounded-full bg-indigo-500/10 px-2 py-1 text-xs font-bold uppercase text-indigo-400">
-                      {course.status ?? "unknown"}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center gap-4 text-sm opacity-70">
-                    <span className="inline-flex items-center gap-1">
-                      <Layers className="h-4 w-4" />
-                      {unitsCount} units
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      {durationHours}h
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => void loadCourseDetails(course.id)}
-                    className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white hover:bg-indigo-500"
-                  >
-                    <BookOpen className="h-4 w-4" />
-                    View details
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="rounded-3xl border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 p-5 h-fit">
-          <h2 className="text-xl font-bold mb-4">Course details</h2>
-          {isDetailsLoading ? (
-            <p className="text-sm opacity-60">Loading details...</p>
-          ) : selected ? (
-            <div className="space-y-3 text-sm">
-              <p className="font-bold text-base">
-                {getLocalizedText(selected.title, selected.title_translations, language) || `Course #${selected.id}`}
+    <div className={`min-h-screen bg-(--background) p-4 text-(--foreground) md:p-8 ${isRTL ? "text-right" : ""}`}>
+      <div className="mx-auto max-w-[1500px]">
+        <section className="relative overflow-hidden rounded-[2.5rem] border border-slate-200 bg-[linear-gradient(145deg,#091224_0%,#101937_42%,#1f2a54_100%)] p-6 text-white shadow-[0_24px_70px_rgba(15,23,42,0.34)] md:p-8 lg:p-10">
+          <div className="absolute -left-16 top-0 h-56 w-56 rounded-full bg-cyan-400/20 blur-3xl" />
+          <div className="absolute -right-20 bottom-0 h-72 w-72 rounded-full bg-fuchsia-400/15 blur-3xl" />
+          <div className={`relative flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between ${isRTL ? "xl:flex-row-reverse" : ""}`}>
+            <div className="max-w-3xl">
+              <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-black uppercase tracking-[0.24em] text-cyan-100/80">
+                <BookOpen className="h-3.5 w-3.5" />
+                Instructor Course Tree
               </p>
-              <p className="opacity-70">
-                {getLocalizedText(selected.description, selected.description_translations, language) || "No description."}
+              <h1 className="mt-4 text-4xl font-black tracking-[-0.06em] md:text-6xl">
+                Manage courses, units, and lessons in one professional tree.
+              </h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300 md:text-base">
+                Fast first load, lazy subtree expansion, and focused editing flows. Courses load first, units open on demand, and lessons only load when a unit is expanded.
               </p>
-              {selected.objectives ? <p><span className="font-semibold">Objectives:</span> {selected.objectives}</p> : null}
-              {selected.prerequisites ? <p><span className="font-semibold">Prerequisites:</span> {selected.prerequisites}</p> : null}
-
-              <div>
-                <p className="font-semibold mb-2">Units</p>
-                {Array.isArray(selected.units) && selected.units.length > 0 ? (
-                  <ul className="space-y-1 opacity-80">
-                    {selected.units.map((unit, idx) => (
-                      <li key={`${unit.id ?? idx}`}>
-                        {idx + 1}. {getLocalizedText(unit.title, unit.title_translations, language) || `Unit #${unit.id ?? idx + 1}`}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="opacity-60">No units in this course.</p>
-                )}
-              </div>
             </div>
-          ) : (
-            <p className="text-sm opacity-60">Select a course to load GET /my-courses/:course details.</p>
-          )}
 
-          {selectedCourseId ? (
-            <div className="mt-6 border-t border-slate-300 dark:border-white/10 pt-5">
-              <h3 className="font-bold mb-3">Units Management</h3>
-              <div className="space-y-2 mb-4">
-                <input
-                  value={unitForm.titleEn}
-                  onChange={(event) => setUnitForm((prev) => ({ ...prev, titleEn: event.target.value }))}
-                  placeholder="Unit title (EN)"
-                  className="h-10 w-full rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 text-sm outline-none focus:border-indigo-400"
-                />
-                <input
-                  value={unitForm.titleAr}
-                  onChange={(event) => setUnitForm((prev) => ({ ...prev, titleAr: event.target.value }))}
-                  placeholder="Unit title (AR)"
-                  className="h-10 w-full rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 text-sm outline-none focus:border-indigo-400"
-                />
-                <input
-                  value={unitForm.descriptionEn}
-                  onChange={(event) => setUnitForm((prev) => ({ ...prev, descriptionEn: event.target.value }))}
-                  placeholder="Description (EN)"
-                  className="h-10 w-full rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 text-sm outline-none focus:border-indigo-400"
-                />
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <input
-                    value={unitForm.unitOrder}
-                    onChange={(event) => setUnitForm((prev) => ({ ...prev, unitOrder: event.target.value }))}
-                    placeholder="Unit order"
-                    type="number"
-                    className="h-10 w-full rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 text-sm outline-none focus:border-indigo-400"
-                  />
-                  <input
-                    value={unitForm.durationMinutes}
-                    onChange={(event) => setUnitForm((prev) => ({ ...prev, durationMinutes: event.target.value }))}
-                    placeholder="Duration min"
-                    type="number"
-                    className="h-10 w-full rounded-lg border border-slate-300 dark:border-white/10 bg-white dark:bg-white/5 px-3 text-sm outline-none focus:border-indigo-400"
-                  />
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 mb-4">
-                <button
-                  onClick={() => void createUnit()}
-                  disabled={isUnitSubmitting}
-                  className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white hover:bg-indigo-500 disabled:opacity-60"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Create Unit
-                </button>
-                <button
-                  onClick={() => void updateUnit()}
-                  disabled={isUnitSubmitting || !editingUnitId}
-                  className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white hover:bg-amber-500 disabled:opacity-60"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  Update Unit
-                </button>
-                <button
-                  onClick={resetUnitForm}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-white/10 px-3 py-2 text-xs font-bold uppercase tracking-wide hover:border-indigo-400/60"
-                >
-                  Reset
-                </button>
-              </div>
-
-              {isUnitsLoading ? (
-                <p className="text-sm opacity-60">Loading units...</p>
-              ) : units.length === 0 ? (
-                <p className="text-sm opacity-60">No units for this course yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {units.map((unit) => (
-                    <div
-                      key={String(unit.id)}
-                      className={`rounded-xl border p-3 transition-all ${
-                        selectedUnitId === unit.id
-                          ? "border-indigo-400/70 bg-indigo-500/10 shadow-[0_8px_24px_rgba(99,102,241,0.2)]"
-                          : "border-slate-300 dark:border-white/10 bg-white/60 dark:bg-white/[0.02]"
-                      }`}
-                    >
-                      <p className="font-semibold text-sm">
-                        {getLocalizedText(unit.title, unit.title_translations, language) || `Unit #${unit.id}`}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <button
-                          onClick={() => void selectUnitForLessons(unit.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-violet-500"
-                        >
-                          <FileText className="h-3 w-3" />
-                          Manage Lessons
-                        </button>
-                        <button
-                          onClick={() => void getUnitById(selectedCourseId, unit.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-sky-500"
-                        >
-                          <Pencil className="h-3 w-3" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => void deleteUnit(unit.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-rose-500"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          {selectedCourseId && selectedUnitId ? (
-            <div className="mt-6 border-t border-slate-300 dark:border-white/10 pt-5">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h3 className="font-bold">Lessons Management</h3>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-violet-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-violet-400">
-                    {lessonsCount} lessons
-                  </span>
-                  <button
-                    onClick={openCreateLessonModal}
-                    className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-[0_8px_24px_rgba(99,102,241,0.35)] transition hover:-translate-y-0.5 hover:bg-violet-500"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Lesson
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-4 rounded-xl border border-slate-300 dark:border-white/10 bg-slate-50/80 px-4 py-3 dark:bg-white/[0.02]">
-                <p className="text-xs opacity-75">
-                  Use <span className="font-semibold text-violet-400">Add Lesson</span> to create a new lesson, or click{" "}
-                  <span className="font-semibold text-sky-400">Edit</span> on an existing lesson.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2 mb-4">
-                <button
-                  onClick={openCreateLessonModal}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 dark:border-white/10 px-3 py-2 text-xs font-bold uppercase tracking-wide hover:border-violet-400/60"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  New Lesson
-                </button>
-              </div>
-
-              {isLessonsLoading ? (
-                <p className="text-sm opacity-60">Loading lessons...</p>
-              ) : lessons.length === 0 ? (
-                <p className="text-sm opacity-60">No lessons in this unit yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {lessons.map((lesson) => (
-                    <div key={String(lesson.id)} className="rounded-xl border border-slate-300 dark:border-white/10 p-3">
-                      <p className="font-semibold text-sm">
-                        {getLocalizedText(lesson.title, lesson.title_translations, language) || `Lesson #${lesson.id}`}
-                      </p>
-                      <div className="mt-1 flex flex-wrap gap-2 text-[10px] uppercase tracking-wide opacity-70">
-                        <span>order {lesson.lesson_order ?? 0}</span>
-                        <span>{lesson.lesson_type ?? "lecture"}</span>
-                        <span>{lesson.actual_duration_minutes ?? 0} min</span>
-                        <span>{lesson.is_required ? "required" : "optional"}</span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <button
-                          onClick={() => void getLessonById(lesson.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-sky-500"
-                        >
-                          <Pencil className="h-3 w-3" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => void deleteLesson(lesson.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-rose-500"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {selectedCourseId && selectedUnitId && isLessonModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 backdrop-blur-sm sm:p-4">
-          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-violet-300/30 bg-[linear-gradient(145deg,#050a1f_0%,#0a1231_45%,#070f2c_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]">
-            <div className="flex items-start justify-between border-b border-white/10 px-5 py-4 md:px-6 md:py-5">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-violet-300/90">Lesson Builder</p>
-                <h3 className="mt-1 text-xl font-black text-white md:text-2xl">
-                  {editingLessonId ? "Edit Lesson" : "Create Lesson"}
-                </h3>
-                <p className="mt-1 text-xs text-white/60">Unit #{selectedUnitId}</p>
-              </div>
+            <div className={`flex flex-wrap gap-3 ${isRTL ? "justify-end" : ""}`}>
               <button
-                onClick={closeLessonModal}
-                disabled={isLessonSubmitting}
-                className="rounded-lg border border-white/15 p-2 text-white/70 transition hover:border-white/30 hover:text-white disabled:opacity-40"
-                aria-label="Close lesson modal"
+                type="button"
+                onClick={() => void loadCourses(true)}
+                disabled={isRefreshing}
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm font-black uppercase tracking-[0.18em] text-white/90 transition hover:bg-white/10 disabled:opacity-60"
               >
-                <X className="h-4 w-4" />
+                <RefreshCcw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+                Refresh
               </button>
-            </div>
-
-            <div className="grid gap-4 px-5 py-5 md:grid-cols-2 md:px-6 md:py-6">
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">Title (English)</label>
-                <input
-                  value={lessonForm.titleEn}
-                  onChange={(event) => setLessonForm((prev) => ({ ...prev, titleEn: event.target.value }))}
-                  placeholder="Lesson title in English"
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-violet-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">Title (Arabic)</label>
-                <input
-                  value={lessonForm.titleAr}
-                  onChange={(event) => setLessonForm((prev) => ({ ...prev, titleAr: event.target.value }))}
-                  placeholder="عنوان الدرس"
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-violet-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">Description (English)</label>
-                <input
-                  value={lessonForm.descriptionEn}
-                  onChange={(event) => setLessonForm((prev) => ({ ...prev, descriptionEn: event.target.value }))}
-                  placeholder="Brief lesson summary"
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-violet-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">Description (Arabic)</label>
-                <input
-                  value={lessonForm.descriptionAr}
-                  onChange={(event) => setLessonForm((prev) => ({ ...prev, descriptionAr: event.target.value }))}
-                  placeholder="وصف مختصر للدرس"
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-violet-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">Lesson Order</label>
-                <input
-                  value={lessonForm.lessonOrder}
-                  onChange={(event) => setLessonForm((prev) => ({ ...prev, lessonOrder: event.target.value }))}
-                  placeholder="1"
-                  type="number"
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-violet-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">Duration (Minutes)</label>
-                <input
-                  value={lessonForm.durationMinutes}
-                  onChange={(event) => setLessonForm((prev) => ({ ...prev, durationMinutes: event.target.value }))}
-                  placeholder="15"
-                  type="number"
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-violet-400"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">Lesson Type</label>
-                <select
-                  value={lessonForm.lessonType}
-                  onChange={(event) => setLessonForm((prev) => ({ ...prev, lessonType: event.target.value }))}
-                  className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition focus:border-violet-400"
-                >
-                  <option value="lecture">Lecture</option>
-                  <option value="practice">Practice</option>
-                  <option value="quiz">Quiz</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">Requirement</label>
-                <label className="inline-flex h-11 w-full items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-white/90">
-                  <input
-                    type="checkbox"
-                    checked={lessonForm.isRequired}
-                    onChange={(event) => setLessonForm((prev) => ({ ...prev, isRequired: event.target.checked }))}
-                    className="h-4 w-4 accent-violet-600"
-                  />
-                  Required lesson
-                </label>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/10 px-5 py-4 md:px-6">
-              <button
-                onClick={closeLessonModal}
-                disabled={isLessonSubmitting}
-                className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white/80 transition hover:border-white/30 hover:text-white disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              {editingLessonId ? (
-                <button
-                  onClick={() => void updateLesson()}
-                  disabled={isLessonSubmitting}
-                  className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white transition hover:bg-amber-500 disabled:opacity-60"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  Update Lesson
-                </button>
-              ) : (
-                <button
-                  onClick={() => void createLesson()}
-                  disabled={isLessonSubmitting}
-                  className="inline-flex items-center gap-1 rounded-lg bg-violet-600 px-4 py-2 text-xs font-bold uppercase tracking-wide text-white shadow-[0_8px_24px_rgba(99,102,241,0.35)] transition hover:bg-violet-500 disabled:opacity-60"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Create Lesson
-                </button>
-              )}
             </div>
           </div>
+        </section>
+
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: "Courses", value: stats.courses, accent: "text-cyan-600 dark:text-cyan-300", icon: BookOpen },
+            { label: "Units", value: stats.units, accent: "text-violet-600 dark:text-violet-300", icon: Layers3 },
+            { label: "Lessons", value: stats.lessons, accent: "text-fuchsia-600 dark:text-fuchsia-300", icon: FileText },
+            { label: "Published", value: stats.published, accent: "text-emerald-600 dark:text-emerald-300", icon: Clock3 },
+          ].map((card) => (
+            <div key={card.label} className="rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-white/[0.04]">
+              <div className="flex items-center justify-between">
+                <div className="rounded-2xl bg-slate-100 p-3 dark:bg-white/[0.06]">
+                  <card.icon className={`h-5 w-5 ${card.accent}`} />
+                </div>
+                <span className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">Live</span>
+              </div>
+              <p className="mt-4 text-[11px] font-black uppercase tracking-[0.22em] text-slate-500 dark:text-white/50">{card.label}</p>
+              <p className={`mt-1 text-4xl font-black tracking-tight ${card.accent}`}>{card.value}</p>
+            </div>
+          ))}
         </div>
-      ) : null}
+
+        <AnimatePresence>
+          {errorMessage ? (
+            <motion.div
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              className="mt-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-600 dark:text-rose-300"
+            >
+              {errorMessage}
+            </motion.div>
+          ) : null}
+          {successMessage ? (
+            <motion.div
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-600 dark:text-emerald-300"
+            >
+              {successMessage}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <div className="mt-8 rounded-[2rem] border border-slate-200 bg-white/90 p-4 shadow-[0_14px_36px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="relative max-w-xl">
+            <Search className={`pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 ${isRTL ? "right-4" : "left-4"}`} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search courses by title or description"
+              className={`h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-11 text-sm font-semibold outline-none transition focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03] ${isRTL ? "text-right" : ""}`}
+            />
+          </div>
+        </div>
+
+        <section className="mt-8 rounded-[2.25rem] border border-slate-200 bg-white/90 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)] dark:border-white/10 dark:bg-white/[0.04] md:p-6">
+          <div className={`mb-5 flex items-center justify-between gap-4 ${isRTL ? "flex-row-reverse" : ""}`}>
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500 dark:text-white/45">Tree Workspace</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">Courses with lazy subtrees</h2>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
+              GET /my-courses first, subtree on demand
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="flex min-h-[30vh] flex-col items-center justify-center gap-4 rounded-[2rem] border border-dashed border-slate-300 bg-slate-50/70 dark:border-white/10 dark:bg-white/[0.03]">
+              <Loader2 className="h-10 w-10 animate-spin text-indigo-500" />
+              <p className="text-sm font-black uppercase tracking-[0.2em] opacity-40">Loading course tree</p>
+            </div>
+          ) : filteredCourses.length === 0 ? (
+            <div className="rounded-[2rem] border border-dashed border-slate-300 bg-slate-50/70 px-6 py-14 text-center text-sm font-semibold text-slate-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">
+              No courses match the current search.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredCourses.map((course) => {
+                const courseId = toNumberId(course.id);
+                if (!courseId) return null;
+                const courseExpanded = expandedCourseIds.includes(courseId);
+                const courseUnits = unitsByCourse[courseId] ?? [];
+                const title = getLocalizedText(course.title, course.title_translations, currentLocale) || `Course #${courseId}`;
+                const description = getLocalizedText(course.description, course.description_translations, currentLocale) || "No description available.";
+
+                return (
+                  <div key={courseId} className="overflow-hidden rounded-[2rem] border border-slate-200 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(248,250,252,0.96))] dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))]">
+                    <div className={`flex flex-col gap-4 p-5 md:flex-row md:items-start md:justify-between ${isRTL ? "md:flex-row-reverse" : ""}`}>
+                      <div className="min-w-0 flex-1">
+                        <div className={`mb-3 flex flex-wrap items-center gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                          <span className="rounded-full bg-indigo-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-indigo-500 dark:text-indigo-300">
+                            {course.status || "draft"}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
+                            {Number(course.actual_duration_hours ?? 0)} hours
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void toggleCourse(courseId)}
+                          className={`flex items-center gap-3 text-left ${isRTL ? "flex-row-reverse" : ""}`}
+                        >
+                          {courseExpanded ? <ChevronDown className="h-5 w-5 text-slate-400" /> : <ChevronRight className="h-5 w-5 text-slate-400" />}
+                          <div>
+                            <h3 className="text-2xl font-black tracking-[-0.04em] text-slate-950 dark:text-white">{title}</h3>
+                            <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600 dark:text-slate-300/75">{description}</p>
+                          </div>
+                        </button>
+                      </div>
+
+                      <div className={`flex items-start gap-3 ${isRTL ? "flex-row-reverse" : ""}`}>
+                        <button
+                          type="button"
+                          onClick={() => void refreshSubtree(courseId)}
+                          className="rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-black uppercase tracking-[0.18em] text-slate-600 transition hover:border-slate-300 hover:bg-white dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70"
+                        >
+                          Refresh
+                        </button>
+                        <div onClick={(event) => event.stopPropagation()}>
+                          <TreeActionMenu
+                            open={menuKey === `course:${courseId}`}
+                            onToggle={() => setMenuKey((current) => (current === `course:${courseId}` ? null : `course:${courseId}`))}
+                            onAdd={() => openUnitEditor(courseId)}
+                            addLabel="Add Unit"
+                            onEdit={() => openCourseEditor(course)}
+                            onDelete={() => void handleDeleteCourse(courseId)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {courseExpanded ? (
+                      <div className="border-t border-slate-200/80 bg-slate-50/70 px-4 py-4 dark:border-white/10 dark:bg-white/[0.02] md:px-6">
+                        {loadingUnitsForCourse === courseId ? (
+                          <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:text-slate-400">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading units...
+                          </div>
+                        ) : courseUnits.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-5 text-sm font-semibold text-slate-500 dark:border-white/10 dark:text-slate-400">
+                            No units yet for this course.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {courseUnits.map((unit) => {
+                              const unitId = toNumberId(unit.id);
+                              if (!unitId) return null;
+                              const unitExpanded = expandedUnitKeys.includes(`${courseId}:${unitId}`);
+                              const unitLessons = lessonsByUnit[unitId] ?? [];
+
+                              return (
+                                <div key={unitId} className="rounded-[1.7rem] border border-slate-200 bg-white/95 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)] dark:border-white/10 dark:bg-white/[0.03]">
+                                  <div className={`flex flex-col gap-3 md:flex-row md:items-start md:justify-between ${isRTL ? "md:flex-row-reverse" : ""}`}>
+                                    <button
+                                      type="button"
+                                      onClick={() => void toggleUnit(courseId, unitId)}
+                                      className={`flex items-start gap-3 text-left ${isRTL ? "flex-row-reverse" : ""}`}
+                                    >
+                                      {unitExpanded ? <ChevronDown className="mt-1 h-4 w-4 text-slate-400" /> : <ChevronRight className="mt-1 h-4 w-4 text-slate-400" />}
+                                      <div>
+                                        <div className={`mb-2 flex flex-wrap items-center gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                                          <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-violet-500 dark:text-violet-300">
+                                            Unit {Number(unit.unit_order ?? 0) || unitId}
+                                          </span>
+                                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
+                                            {Number(unit.actual_duration_minutes ?? 0)} min
+                                          </span>
+                                        </div>
+                                        <h4 className="text-lg font-black tracking-[-0.03em] text-slate-900 dark:text-white">
+                                          {getLocalizedText(unit.title, unit.title_translations, currentLocale) || `Unit #${unitId}`}
+                                        </h4>
+                                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300/70">
+                                          {getLocalizedText(unit.description, unit.description_translations, currentLocale) || "No unit description."}
+                                        </p>
+                                      </div>
+                                    </button>
+
+                                    <div onClick={(event) => event.stopPropagation()}>
+                                      <TreeActionMenu
+                                        open={menuKey === `unit:${courseId}:${unitId}`}
+                                        onToggle={() => setMenuKey((current) => (current === `unit:${courseId}:${unitId}` ? null : `unit:${courseId}:${unitId}`))}
+                                        onAdd={() => openLessonEditor(courseId, unitId)}
+                                        addLabel="Add Lesson"
+                                        onEdit={() => openUnitEditor(courseId, unit)}
+                                        onDelete={() => void handleDeleteUnit(courseId, unitId)}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {unitExpanded ? (
+                                    <div className="mt-4 border-s border-slate-200 ps-4 dark:border-white/10">
+                                      {loadingLessonsForUnit === `${courseId}:${unitId}` ? (
+                                        <div className="flex items-center gap-3 rounded-2xl border border-dashed border-slate-300 px-4 py-4 text-sm font-semibold text-slate-500 dark:border-white/10 dark:text-slate-400">
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                          Loading lessons...
+                                        </div>
+                                      ) : unitLessons.length === 0 ? (
+                                        <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-4 text-sm font-semibold text-slate-500 dark:border-white/10 dark:text-slate-400">
+                                          No lessons yet for this unit.
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-3">
+                                          {unitLessons.map((lesson) => {
+                                            const lessonId = toNumberId(lesson.id);
+                                            if (!lessonId) return null;
+                                            return (
+                                              <div key={lessonId} className="rounded-[1.4rem] border border-slate-200 bg-slate-50/80 p-4 dark:border-white/10 dark:bg-white/[0.025]">
+                                                <div className={`flex flex-col gap-3 md:flex-row md:items-start md:justify-between ${isRTL ? "md:flex-row-reverse" : ""}`}>
+                                                  <div className="min-w-0">
+                                                    <div className={`mb-2 flex flex-wrap items-center gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
+                                                      <span className="rounded-full bg-fuchsia-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-fuchsia-500 dark:text-fuchsia-300">
+                                                        Lesson {Number(lesson.lesson_order ?? 0) || lessonId}
+                                                      </span>
+                                                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
+                                                        {lesson.lesson_type || "lecture"}
+                                                      </span>
+                                                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
+                                                        {Number(lesson.actual_duration_minutes ?? 0)} min
+                                                      </span>
+                                                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${lesson.is_required !== false ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : "bg-amber-500/10 text-amber-600 dark:text-amber-300"}`}>
+                                                        {lesson.is_required !== false ? "Required" : "Optional"}
+                                                      </span>
+                                                    </div>
+                                                    <h5 className="text-base font-black tracking-[-0.02em] text-slate-900 dark:text-white">
+                                                      {getLocalizedText(lesson.title, lesson.title_translations, currentLocale) || `Lesson #${lessonId}`}
+                                                    </h5>
+                                                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300/70">
+                                                      {getLocalizedText(lesson.description, lesson.description_translations, currentLocale) || "No lesson description."}
+                                                    </p>
+                                                  </div>
+
+                                                  <div onClick={(event) => event.stopPropagation()}>
+                                                    <TreeActionMenu
+                                                      open={menuKey === `lesson:${courseId}:${unitId}:${lessonId}`}
+                                                      onToggle={() => setMenuKey((current) => (current === `lesson:${courseId}:${unitId}:${lessonId}` ? null : `lesson:${courseId}:${unitId}:${lessonId}`))}
+                                                      onEdit={() => openLessonEditor(courseId, unitId, lesson)}
+                                                      onDelete={() => void handleDeleteLesson(courseId, unitId, lessonId)}
+                                                    />
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <AnimatePresence>
+        {editor ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-950/70" onClick={() => !isSubmitting && setEditor(null)} />
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 18 }}
+              className="relative z-10 w-full max-w-3xl overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-[#0d1327]"
+            >
+              <div className="border-b border-slate-200 bg-[linear-gradient(145deg,#ffffff_0%,#f8fafc_100%)] px-6 py-5 dark:border-white/10 dark:bg-[linear-gradient(145deg,#11182c_0%,#0d1327_100%)]">
+                <div className={`flex items-start justify-between gap-4 ${isRTL ? "flex-row-reverse" : ""}`}>
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.22em] text-indigo-500">
+                      {editor.type === "course" ? "Course Editor" : editor.type === "unit" ? "Unit Editor" : "Lesson Editor"}
+                    </p>
+                    <h3 className="mt-2 text-3xl font-black tracking-[-0.04em]">
+                      {editor.mode === "edit" ? "Update item" : "Create item"}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => setEditor(null)}
+                    className="rounded-xl border border-slate-200 p-2 transition hover:border-slate-300 dark:border-white/10"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-5 px-6 py-6">
+                {editor.type === "course" ? (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <input value={courseForm.titleEn} onChange={(event) => setCourseForm((current) => ({ ...current, titleEn: event.target.value }))} placeholder="Course title (EN)" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <input value={courseForm.titleAr} onChange={(event) => setCourseForm((current) => ({ ...current, titleAr: event.target.value }))} placeholder="Course title (AR)" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <textarea rows={4} value={courseForm.descriptionEn} onChange={(event) => setCourseForm((current) => ({ ...current, descriptionEn: event.target.value }))} placeholder="Description (EN)" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <textarea rows={4} value={courseForm.descriptionAr} onChange={(event) => setCourseForm((current) => ({ ...current, descriptionAr: event.target.value }))} placeholder="Description (AR)" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <input type="number" value={courseForm.durationHours} onChange={(event) => setCourseForm((current) => ({ ...current, durationHours: event.target.value }))} placeholder="Duration hours" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <select value={courseForm.status} onChange={(event) => setCourseForm((current) => ({ ...current, status: event.target.value }))} className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]">
+                        <option value="draft">Draft</option>
+                        <option value="published">Published</option>
+                        <option value="archived">Archived</option>
+                      </select>
+                    </div>
+                  </>
+                ) : null}
+
+                {editor.type === "unit" ? (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <input value={unitForm.titleEn} onChange={(event) => setUnitForm((current) => ({ ...current, titleEn: event.target.value }))} placeholder="Unit title (EN)" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <input value={unitForm.titleAr} onChange={(event) => setUnitForm((current) => ({ ...current, titleAr: event.target.value }))} placeholder="Unit title (AR)" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <textarea rows={4} value={unitForm.descriptionEn} onChange={(event) => setUnitForm((current) => ({ ...current, descriptionEn: event.target.value }))} placeholder="Description (EN)" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <textarea rows={4} value={unitForm.descriptionAr} onChange={(event) => setUnitForm((current) => ({ ...current, descriptionAr: event.target.value }))} placeholder="Description (AR)" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <input type="number" value={unitForm.unitOrder} onChange={(event) => setUnitForm((current) => ({ ...current, unitOrder: event.target.value }))} placeholder="Unit order" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <input type="number" value={unitForm.durationMinutes} onChange={(event) => setUnitForm((current) => ({ ...current, durationMinutes: event.target.value }))} placeholder="Duration minutes" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                    </div>
+                  </>
+                ) : null}
+
+                {editor.type === "lesson" ? (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <input value={lessonForm.titleEn} onChange={(event) => setLessonForm((current) => ({ ...current, titleEn: event.target.value }))} placeholder="Lesson title (EN)" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <input value={lessonForm.titleAr} onChange={(event) => setLessonForm((current) => ({ ...current, titleAr: event.target.value }))} placeholder="Lesson title (AR)" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <textarea rows={4} value={lessonForm.descriptionEn} onChange={(event) => setLessonForm((current) => ({ ...current, descriptionEn: event.target.value }))} placeholder="Description (EN)" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <textarea rows={4} value={lessonForm.descriptionAr} onChange={(event) => setLessonForm((current) => ({ ...current, descriptionAr: event.target.value }))} placeholder="Description (AR)" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <input type="number" value={lessonForm.lessonOrder} readOnly placeholder="Lesson order" className="h-12 rounded-2xl border border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-500 outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/55" />
+                      <input type="number" value={lessonForm.durationMinutes} onChange={(event) => setLessonForm((current) => ({ ...current, durationMinutes: event.target.value }))} placeholder="Duration minutes" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <select value={lessonForm.lessonType} onChange={(event) => setLessonForm((current) => ({ ...current, lessonType: event.target.value }))} className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]">
+                        <option value="lecture">Lecture</option>
+                        <option value="practice">Practice</option>
+                        <option value="video">Video</option>
+                        <option value="quiz">Quiz</option>
+                      </select>
+                      <label className="inline-flex h-12 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold dark:border-white/10 dark:bg-white/[0.03]">
+                        <input type="checkbox" checked={lessonForm.isRequired} onChange={(event) => setLessonForm((current) => ({ ...current, isRequired: event.target.checked }))} className="h-4 w-4 accent-indigo-600" />
+                        Required lesson
+                      </label>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+
+              <div className={`flex flex-wrap justify-end gap-3 border-t border-slate-200 px-6 py-4 dark:border-white/10 ${isRTL ? "justify-start" : ""}`}>
+                <button type="button" onClick={() => setEditor(null)} disabled={isSubmitting} className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-bold dark:border-white/10">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => void handleSaveEditor()}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#4f46e5_0%,#9333ea_100%)] px-6 py-3 text-sm font-black uppercase tracking-[0.18em] text-white shadow-[0_16px_40px_rgba(79,70,229,0.28)] disabled:opacity-60"
+                >
+                  {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
