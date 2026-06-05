@@ -83,6 +83,26 @@ type ProgressDetails = {
   remaining_lessons: number;
   is_completed: boolean;
 };
+type CourseUnitItem = {
+  id: number;
+  title: string;
+  name?: string;
+  title_translations?: LocalizedText;
+  name_translations?: LocalizedText;
+  lessons: CourseLessonItem[];
+};
+
+type CourseLessonItem = {
+  id: number;
+  unit_id?: number;
+  title: string;
+  description?: string;
+  title_translations?: LocalizedText;
+  description_translations?: LocalizedText;
+  is_completed?: boolean;
+  completed?: boolean;
+  completed_at?: string | null;
+};
 
 type EnrolledCourse = CourseSummary & {
   enrollment?: Enrollment;
@@ -238,6 +258,76 @@ function parseCourseList(payload: unknown) {
     .map(parseCourseSummary)
     .filter((course): course is CourseSummary => course !== null);
 }
+function unwrapApiPayload(payload: unknown): unknown {
+  if (!isRecord(payload)) return payload;
+
+  const data = payload.data;
+
+  if (isRecord(data) && "data" in data) {
+    return data.data;
+  }
+
+  return data ?? payload;
+}
+
+function parseLessonItem(raw: unknown): CourseLessonItem | null {
+  if (!isRecord(raw)) return null;
+
+  const id = asNumber(raw.id || raw.lesson_id);
+  if (!id) return null;
+
+  const progress = isRecord(raw.progress) ? raw.progress : {};
+  const pivot = isRecord(raw.pivot) ? raw.pivot : {};
+  const enrollmentLesson = isRecord(raw.enrollment_lesson) ? raw.enrollment_lesson : {};
+
+  return {
+    id,
+    unit_id: asNumber(raw.unit_id),
+    title: asString(raw.title || raw.name, `Lesson #${id}`),
+    description: asString(raw.description),
+    title_translations: isRecord(raw.title_translations) ? (raw.title_translations as LocalizedText) : undefined,
+    description_translations: isRecord(raw.description_translations) ? (raw.description_translations as LocalizedText) : undefined,
+    is_completed:
+      raw.is_completed === true ||
+      raw.completed === true ||
+      raw.completed_at !== null && raw.completed_at !== undefined ||
+      progress.is_completed === true ||
+      progress.completed === true ||
+      pivot.is_completed === true ||
+      pivot.completed === true ||
+      enrollmentLesson.is_completed === true ||
+      enrollmentLesson.completed === true,
+    completed: raw.completed === true,
+    completed_at: typeof raw.completed_at === "string" ? raw.completed_at : null,
+  };
+}
+
+function parseLessonList(payload: unknown): CourseLessonItem[] {
+  return parseCoursesArray<unknown>(payload)
+    .map(parseLessonItem)
+    .filter((lesson): lesson is CourseLessonItem => lesson !== null);
+}
+
+function parseCourseUnit(raw: unknown): CourseUnitItem | null {
+  if (!isRecord(raw)) return null;
+
+  const id = asNumber(raw.id || raw.unit_id);
+  if (!id) return null;
+
+  const lessonPayload =
+    raw.lessons ||
+    raw.course_lessons ||
+    raw.courseLessons;
+
+  return {
+    id,
+    title: asString(raw.title || raw.name, `Unit #${id}`),
+    name: asString(raw.name),
+    title_translations: isRecord(raw.title_translations) ? (raw.title_translations as LocalizedText) : undefined,
+    name_translations: isRecord(raw.name_translations) ? (raw.name_translations as LocalizedText) : undefined,
+    lessons: parseLessonList(lessonPayload),
+  };
+}
 
 function parsePagination(payload: unknown, fallbackCount = 0): PaginationMeta {
   const root = isRecord(payload) ? payload : {};
@@ -331,7 +421,10 @@ export default function StudentCoursesPage() {
   const [enrolledPage, setEnrolledPage] = useState(1);
   const [discoverablePage, setDiscoverablePage] = useState(1);
   const [hasLoadedDiscover, setHasLoadedDiscover] = useState(false);
-
+const [unitsByEnrollment, setUnitsByEnrollment] = useState<Record<number, CourseUnitItem[]>>({});
+const [lessonsLoading, setLessonsLoading] = useState<Record<number, boolean>>({});
+const [lessonsErrors, setLessonsErrors] = useState<Record<number, string>>({});
+const [completingLessonIds, setCompletingLessonIds] = useState<Record<string, boolean>>({});
   const fetchLearningPage = useCallback(async (page: number, force = false) => {
     setLearningLoading(true);
     setErrorMessage(null);
@@ -374,7 +467,7 @@ export default function StudentCoursesPage() {
       setEnrolledCourses(enrolledMerged);
       setLearningMeta(pagination);
     } catch (error) {
-      console.error("Failed to load my learning courses:", error);
+      console.log("Failed to load my learning courses:", error);
       if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
         setErrorMessage(error.response.data.message);
       } else if (error instanceof Error && error.message === "missing_token") {
@@ -418,7 +511,7 @@ export default function StudentCoursesPage() {
       setDiscoverMeta(pagination);
       setHasLoadedDiscover(true);
     } catch (error) {
-      console.error("Failed to load discoverable courses:", error);
+      console.log("Failed to load discoverable courses:", error);
       if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
         setErrorMessage(error.response.data.message);
       } else if (error instanceof Error && error.message === "missing_token") {
@@ -531,7 +624,7 @@ export default function StudentCoursesPage() {
       setSuccessMessage(response.data?.message || "Enrollment created successfully.");
       void fetchLearningPage(1, true);
     } catch (error) {
-      console.error("Failed to create enrollment:", error);
+      console.log("Failed to create enrollment:", error);
       if (axios.isAxiosError(error) && typeof error.response?.data?.message === "string") {
         setErrorMessage(error.response.data.message);
       } else {
@@ -542,8 +635,8 @@ export default function StudentCoursesPage() {
     }
   };
 
-  const fetchProgress = async (enrollmentId: number) => {
-    if (progressData[enrollmentId] || progressLoading[enrollmentId]) return;
+  const fetchProgress = async (enrollmentId: number, force = false) => {
+    if (!force && (progressData[enrollmentId] || progressLoading[enrollmentId])) return;
 
     try {
       setProgressLoading((prev) => ({ ...prev, [enrollmentId]: true }));
@@ -562,12 +655,12 @@ export default function StudentCoursesPage() {
         {
           headers: buildStudentHeaders(token, language),
         },
-        { ttlMs: 30_000 }
+        { ttlMs: 30_000, force }
       );
 
       setProgressData((prev) => ({ ...prev, [enrollmentId]: response.data.data }));
     } catch (error) {
-      console.error("Failed to fetch progress:", error);
+      console.log("Failed to fetch progress:", error);
       const apiMessage =
         axios.isAxiosError(error) && typeof error.response?.data?.message === "string"
           ? error.response.data.message
@@ -575,6 +668,201 @@ export default function StudentCoursesPage() {
       setProgressErrors((prev) => ({ ...prev, [enrollmentId]: apiMessage }));
     } finally {
       setProgressLoading((prev) => ({ ...prev, [enrollmentId]: false }));
+    }
+  };
+
+  const fetchUnitsAndLessons = async (course: EnrolledCourse, force = false) => {
+    const enrollmentId = course.enrollment?.id;
+    const courseId = course.enrollment?.course_id ?? course.id;
+
+    if (!enrollmentId || !courseId) return;
+    if (!force && unitsByEnrollment[enrollmentId]) return;
+
+    setLessonsLoading((prev) => ({ ...prev, [enrollmentId]: true }));
+    setLessonsErrors((prev) => {
+      const next = { ...prev };
+      delete next[enrollmentId];
+      return next;
+    });
+
+    try {
+      const token = getStudentToken();
+      if (!token) throw new Error("missing_token");
+
+      const headers = buildStudentHeaders(token, language);
+
+      let rawUnits: unknown[] = Array.isArray(course.units) ? course.units : [];
+
+      if (rawUnits.length === 0) {
+        const courseResponse = await requestStudentApi<ApiEnvelope<CourseSummary>>({
+          method: "GET",
+          url: `/courses/${courseId}`,
+          headers,
+        });
+
+        let coursePayload = unwrapApiPayload(courseResponse.data);
+
+        if (isRecord(coursePayload) && isRecord(coursePayload.course)) {
+          coursePayload = coursePayload.course;
+        }
+
+        if (isRecord(coursePayload) && Array.isArray(coursePayload.units)) {
+          rawUnits = coursePayload.units;
+        }
+      }
+
+      const parsedUnits = rawUnits
+        .map(parseCourseUnit)
+        .filter((unit): unit is CourseUnitItem => unit !== null);
+
+      const enrichedUnits = await Promise.all(
+        parsedUnits.map(async (unit) => {
+          if (unit.lessons.length > 0) return unit;
+
+          const lessonsResponse = await requestStudentApi<ApiEnvelope<CourseLessonItem[]>>({
+            method: "GET",
+            url: "/lessons",
+            headers,
+            params: {
+              unit_id: unit.id,
+              per_page: 100,
+            },
+          });
+
+          const lessons = parseLessonList(lessonsResponse.data).filter(
+            (lesson) => !lesson.unit_id || lesson.unit_id === unit.id
+          );
+
+          return {
+            ...unit,
+            lessons,
+          };
+        })
+      );
+
+      setUnitsByEnrollment((prev) => ({
+        ...prev,
+        [enrollmentId]: enrichedUnits,
+      }));
+    } catch (error) {
+      console.log("Failed to fetch units and lessons:", error);
+
+      if (axios.isAxiosError(error)) {
+        console.log("Lessons fetch status:", error.response?.status);
+        console.log("Lessons fetch response:", error.response?.data);
+      }
+
+      const apiMessage =
+        axios.isAxiosError(error) && typeof error.response?.data?.message === "string"
+          ? error.response.data.message
+          : "Failed to load units and lessons.";
+
+      setLessonsErrors((prev) => ({
+        ...prev,
+        [enrollmentId]: apiMessage,
+      }));
+    } finally {
+      setLessonsLoading((prev) => ({ ...prev, [enrollmentId]: false }));
+    }
+  };
+
+  const completeEnrollmentLesson = async (
+    course: EnrolledCourse,
+    lesson: CourseLessonItem
+  ) => {
+    const enrollmentId = course.enrollment?.id;
+
+    if (!enrollmentId) {
+      setErrorMessage("Enrollment is missing.");
+      return;
+    }
+
+    const lessonKey = `${enrollmentId}:${lesson.id}`;
+
+    setCompletingLessonIds((prev) => ({
+      ...prev,
+      [lessonKey]: true,
+    }));
+
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const token = getStudentToken();
+      if (!token) throw new Error("missing_token");
+
+      const response = await requestStudentApi<ApiEnvelope<unknown>>({
+        method: "POST",
+        url: `/enrollments/${enrollmentId}/lessons/${lesson.id}/complete`,
+        headers: {
+          ...buildStudentHeaders(token, language),
+          "Content-Type": "application/json",
+        },
+        data: {},
+        validateStatus: (status) => status < 500,
+      });
+
+      console.log("Complete lesson status:", response.status);
+      console.log("Complete lesson response:", response.data);
+
+      if (response.status >= 400) {
+        const apiMessage =
+          typeof response.data?.message === "string"
+            ? response.data.message
+            : response.status === 403
+              ? "You are not allowed to complete this lesson."
+              : response.status === 422
+                ? "The lesson could not be completed. Check enrollment or lesson status."
+                : "Failed to complete lesson.";
+
+        setErrorMessage(apiMessage);
+        return;
+      }
+
+      setUnitsByEnrollment((prev) => ({
+        ...prev,
+        [enrollmentId]: (prev[enrollmentId] ?? []).map((unit) => ({
+          ...unit,
+          lessons: unit.lessons.map((item) =>
+            item.id === lesson.id
+              ? {
+                  ...item,
+                  is_completed: true,
+                  completed: true,
+                  completed_at: new Date().toISOString(),
+                }
+              : item
+          ),
+        })),
+      }));
+
+      invalidateStudentApiCache(`/enrollments/${enrollmentId}/progress`);
+      invalidateStudentApiCache("/my-learning");
+      invalidateStudentApiCache("/enrollments");
+
+      await fetchProgress(enrollmentId, true);
+      await fetchLearningPage(enrolledPage, true);
+
+      setSuccessMessage(
+        typeof response.data?.message === "string"
+          ? response.data.message
+          : "Lesson completed successfully."
+      );
+    } catch (error) {
+      console.log("Complete lesson unexpected error:", error);
+
+      const apiMessage =
+        error instanceof Error
+          ? error.message
+          : "Failed to complete lesson.";
+
+      setErrorMessage(apiMessage);
+    } finally {
+      setCompletingLessonIds((prev) => {
+        const next = { ...prev };
+        delete next[lessonKey];
+        return next;
+      });
     }
   };
 
@@ -674,6 +962,12 @@ export default function StudentCoursesPage() {
                     progressError={course.enrollment ? progressErrors[course.enrollment.id] : undefined}
                     isProgressLoading={course.enrollment ? progressLoading[course.enrollment.id] === true : false}
                     onFetchProgress={course.enrollment ? () => void fetchProgress(course.enrollment!.id) : undefined}
+                    units={course.enrollment ? unitsByEnrollment[course.enrollment.id] : undefined}
+                    isLessonsLoading={course.enrollment ? lessonsLoading[course.enrollment.id] === true : false}
+                    lessonsError={course.enrollment ? lessonsErrors[course.enrollment.id] : undefined}
+                    completingLessonIds={completingLessonIds}
+                    onFetchLessons={course.enrollment ? () => void fetchUnitsAndLessons(course) : undefined}
+                    onCompleteLesson={(lesson) => void completeEnrollmentLesson(course, lesson)}
                     isRTL={isRTL}
                     language={language}
                     t={t}
@@ -836,6 +1130,12 @@ function CourseCard({
   progressError,
   isProgressLoading,
   onFetchProgress,
+  units,
+  isLessonsLoading,
+  lessonsError,
+  completingLessonIds,
+  onFetchLessons,
+  onCompleteLesson,
   onEnroll,
   isActionLoading,
   isRTL,
@@ -848,6 +1148,12 @@ function CourseCard({
   progressError?: string;
   isProgressLoading?: boolean;
   onFetchProgress?: () => void;
+  units?: CourseUnitItem[];
+  isLessonsLoading?: boolean;
+  lessonsError?: string;
+  completingLessonIds?: Record<string, boolean>;
+  onFetchLessons?: () => void;
+  onCompleteLesson?: (lesson: CourseLessonItem) => void;
   onEnroll?: () => void;
   isActionLoading?: boolean;
   isRTL: boolean;
@@ -888,7 +1194,16 @@ function CourseCard({
   const shouldShowHoverVideo = Boolean(normalizedCoverUrl && normalizedVideoUrl && isMediaHovered);
 
   const toggleProgress = () => {
-    if (!showProgress && onFetchProgress && !progress && !progressError && !isProgressLoading) onFetchProgress();
+    if (!showProgress) {
+      if (onFetchProgress && !progress && !progressError && !isProgressLoading) {
+        onFetchProgress();
+      }
+
+      if (onFetchLessons && !units && !lessonsError && !isLessonsLoading) {
+        onFetchLessons();
+      }
+    }
+
     setShowProgress(!showProgress);
   };
 
@@ -1041,6 +1356,123 @@ function CourseCard({
                               <Loader2 className="h-5 w-5 animate-spin opacity-20" />
                             </div>
                           )}
+
+                          <div className="mt-5 space-y-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest opacity-40">
+                              Units and lessons
+                            </p>
+
+                            {isLessonsLoading ? (
+                              <div className="flex items-center justify-center py-4">
+                                <Loader2 className="h-5 w-5 animate-spin opacity-20" />
+                              </div>
+                            ) : lessonsError ? (
+                              <div className="flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-rose-500">
+                                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                                <p className="text-xs font-semibold leading-relaxed">{lessonsError}</p>
+                              </div>
+                            ) : units && units.length > 0 ? (
+                              <div className="space-y-3">
+                                {units.map((unit) => {
+                                  const unitTitle =
+                                    getLocalizedValue(unit.title_translations, "") ||
+                                    getLocalizedValue(unit.name_translations, "") ||
+                                    unit.title ||
+                                    unit.name ||
+                                    `Unit #${unit.id}`;
+
+                                  return (
+                                    <div
+                                      key={unit.id}
+                                      className="rounded-2xl border border-slate-200/60 bg-white p-3 dark:border-white/10 dark:bg-white/5"
+                                    >
+                                      <p className="mb-3 text-xs font-black">{unitTitle}</p>
+
+                                      {unit.lessons.length > 0 ? (
+                                        <div className="space-y-2">
+                                          {unit.lessons.map((lesson) => {
+                                            const lessonTitle =
+                                              getLocalizedValue(lesson.title_translations, "") ||
+                                              lesson.title ||
+                                              `Lesson #${lesson.id}`;
+
+                                            const lessonDescription =
+                                              getLocalizedValue(lesson.description_translations, "") ||
+                                              lesson.description ||
+                                              "";
+
+                                            const isLessonDone =
+                                              lesson.is_completed === true ||
+                                              lesson.completed === true ||
+                                              Boolean(lesson.completed_at);
+
+                                            const lessonKey = enrolledData
+                                              ? `${enrolledData.id}:${lesson.id}`
+                                              : `${lesson.id}`;
+
+                                            const isCompleting = completingLessonIds?.[lessonKey] === true;
+
+                                            return (
+                                              <div
+                                                key={lesson.id}
+                                                className={`flex gap-3 rounded-xl border border-slate-200/60 bg-slate-50 p-3 dark:border-white/10 dark:bg-black/10 ${
+                                                  isRTL ? "flex-row-reverse text-right" : ""
+                                                }`}
+                                              >
+                                                <div className="pt-1">
+                                                  {isLessonDone ? (
+                                                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                                                  ) : (
+                                                    <PlayCircle className="h-4 w-4 text-indigo-500" />
+                                                  )}
+                                                </div>
+
+                                                <div className="min-w-0 flex-1">
+                                                  <p className="text-xs font-black">{lessonTitle}</p>
+                                                  {lessonDescription ? (
+                                                    <p className="mt-1 line-clamp-2 text-[11px] font-medium opacity-50">
+                                                      {lessonDescription}
+                                                    </p>
+                                                  ) : null}
+                                                </div>
+
+                                                {isLessonDone ? (
+                                                  <span className="self-center rounded-full bg-emerald-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                                                    Done
+                                                  </span>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => onCompleteLesson?.(lesson)}
+                                                    disabled={isCompleting}
+                                                    className="self-center rounded-full bg-indigo-600 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                  >
+                                                    {isCompleting ? (
+                                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                    ) : (
+                                                      "Complete"
+                                                    )}
+                                                  </button>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs font-semibold opacity-40">
+                                          No lessons in this unit.
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <p className="text-xs font-semibold opacity-40">
+                                No units or lessons found.
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </motion.div>
                     ) : null}
