@@ -26,7 +26,6 @@ class _StudentCoursesPageState extends State<StudentCoursesPage> {
   List<_CourseCardData> _discoverCourses = const [];
   final Map<int, _EnrollmentProgress> _progressByEnrollment = {};
   final Set<int> _loadingProgress = {};
-  final Set<int> _completingLesson = {}; 
   @override
   void initState() {
     super.initState();
@@ -467,48 +466,78 @@ Future<void> _completeNextLesson(_EnrollmentRow enrollment) async {
               icon: Icons.school_outlined,
             )
           else
-            GridView.builder(
-              itemCount: activeRows.length,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 420,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                childAspectRatio: .72,
-              ),
-              itemBuilder: (context, index) {
-                if (_discoverTab) {
-                  final course = _discoverCourses[index];
-                  return _DiscoverCourseCard(
-                    course: course,
-                    joining: _joiningCourseId == course.id,
-                    onJoin: () => _joinCourse(course),
-                  );
-                }
-
-                final enrollment = _enrollments[index];
-                return _EnrollmentCard(
-  enrollment: enrollment,
-  progress: _progressByEnrollment[enrollment.enrollmentId],
-  loadingProgress: _loadingProgress.contains(enrollment.enrollmentId),
-  completingLesson: _completingLesson.contains(enrollment.enrollmentId),
-  onProgress: () => _loadProgress(enrollment),
-  onCompleteLesson: () => _openLessonsAndUnitsSheet(enrollment),
-  onOffline: () {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => OfflineCoursePage(
-          courseId: enrollment.courseId,
-          courseTitle: enrollment.title,
-        ),
-      ),
-    );
-  },
-);
-   } ),
+            _ResponsiveCardsWrap(
+              children: _discoverTab
+                  ? _discoverCourses
+                      .map(
+                        (course) => _DiscoverCourseCard(
+                          course: course,
+                          joining: _joiningCourseId == course.id,
+                          onJoin: () => _joinCourse(course),
+                        ),
+                      )
+                      .toList(growable: false)
+                  : _enrollments
+                      .map(
+                        (enrollment) => _EnrollmentCard(
+                          enrollment: enrollment,
+                          progress: _progressByEnrollment[enrollment.enrollmentId],
+                          loadingProgress: _loadingProgress.contains(enrollment.enrollmentId),
+                          onProgress: () => _loadProgress(enrollment),
+                          onLessons: () => _openLessonsAndUnitsSheet(enrollment),
+                          onOffline: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => OfflineCoursePage(
+                                  courseId: enrollment.courseId,
+                                  courseTitle: enrollment.title,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                      .toList(growable: false),
+            ),
         ],
       ),
+    );
+  }
+}
+
+
+class _ResponsiveCardsWrap extends StatelessWidget {
+  const _ResponsiveCardsWrap({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 16.0;
+        final width = constraints.maxWidth;
+
+        final columns = width >= 920
+            ? 3
+            : width >= 560
+                ? 2
+                : 1;
+
+        final itemWidth = (width - spacing * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (final child in children)
+              SizedBox(
+                width: itemWidth,
+                child: child,
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -722,24 +751,23 @@ class _TabButton extends StatelessWidget {
   }
 }
 
+
 class _EnrollmentCard extends StatelessWidget {
   const _EnrollmentCard({
-  required this.enrollment,
-  required this.progress,
-  required this.loadingProgress,
-  required this.completingLesson,
-  required this.onProgress,
-  required this.onCompleteLesson,
-  required this.onOffline,
-});
+    required this.enrollment,
+    required this.progress,
+    required this.loadingProgress,
+    required this.onProgress,
+    required this.onLessons,
+    required this.onOffline,
+  });
 
   final _EnrollmentRow enrollment;
   final _EnrollmentProgress? progress;
   final bool loadingProgress;
   final VoidCallback onProgress;
+  final VoidCallback onLessons;
   final VoidCallback onOffline;
-  final bool completingLesson;
-  final VoidCallback onCompleteLesson;
 
   @override
   Widget build(BuildContext context) {
@@ -749,10 +777,13 @@ class _EnrollmentCard extends StatelessWidget {
 
     return AfaqPanel(
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             enrollment.category,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AfaqColors.primary,
               fontWeight: FontWeight.w800,
@@ -762,19 +793,21 @@ class _EnrollmentCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             enrollment.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: titleColor,
-            ),
+                  fontWeight: FontWeight.w900,
+                  color: titleColor,
+                ),
           ),
           const SizedBox(height: 8),
           Text(
             enrollment.description,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: secondary),
+            style: TextStyle(color: secondary, height: 1.4),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Text(
             'Progress ${enrollment.progress.toStringAsFixed(1)}%',
             style: TextStyle(
@@ -797,45 +830,43 @@ class _EnrollmentCard extends StatelessWidget {
               _MetaChip(label: enrollment.completed ? 'Completed' : 'Active'),
             ],
           ),
-          const SizedBox(height: 14),
-          Wrap(
-  spacing: 10,
-  runSpacing: 10,
-  children: [
-    OutlinedButton.icon(
-      onPressed: onProgress,
-      icon: loadingProgress
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.insights_outlined),
-      label: const Text('Progress Details'),
-    ),
-    FilledButton.icon(
-      onPressed: enrollment.completed || completingLesson ? null : onCompleteLesson,
-      icon: completingLesson
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: enrollment.completed ? null : onLessons,
+              icon: const Icon(Icons.menu_book_rounded),
+              label: const Text('Lessons'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onProgress,
+                  icon: loadingProgress
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.insights_outlined),
+                  label: const Text('Progress'),
+                ),
               ),
-            )
-          : const Icon(Icons.check_circle_outline_rounded),
-      label: const Text('Complete Next Lesson'),
-    ),
-    OutlinedButton.icon(
-      onPressed: onOffline,
-      icon: const Icon(Icons.download_for_offline_rounded),
-      label: const Text('Offline Package'),
-    ),
-  ],
-),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onOffline,
+                  icon: const Icon(Icons.download_for_offline_rounded),
+                  label: const Text('Offline'),
+                ),
+              ),
+            ],
+          ),
           if (progress != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -852,6 +883,7 @@ class _EnrollmentCard extends StatelessWidget {
     );
   }
 }
+
 
 class _DiscoverCourseCard extends StatelessWidget {
   const _DiscoverCourseCard({
@@ -872,10 +904,13 @@ class _DiscoverCourseCard extends StatelessWidget {
 
     return AfaqPanel(
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             course.category,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AfaqColors.primary,
               fontWeight: FontWeight.w800,
@@ -885,19 +920,21 @@ class _DiscoverCourseCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             course.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: titleColor,
-            ),
+                  fontWeight: FontWeight.w900,
+                  color: titleColor,
+                ),
           ),
           const SizedBox(height: 8),
           Text(
             course.description,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: secondary),
+            style: TextStyle(color: secondary, height: 1.4),
           ),
-          const Spacer(),
+          const SizedBox(height: 16),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -907,19 +944,22 @@ class _DiscoverCourseCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: joining ? null : onJoin,
-            icon: joining
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.play_circle_fill_rounded),
-            label: const Text('Join Course'),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: joining ? null : onJoin,
+              icon: joining
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.play_circle_fill_rounded),
+              label: const Text('Join Course'),
+            ),
           ),
         ],
       ),
