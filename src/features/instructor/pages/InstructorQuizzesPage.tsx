@@ -2206,7 +2206,7 @@ export default function InstructorQuizzesPage() {
                       <div className="space-y-2">
                         <label className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/50">Unit</label>
                         <select
-                          required={quizForm.quizableType !== "course"}
+                          required
                           value={quizForm.unitId}
                           onChange={(event) =>
                             setQuizForm((current) => ({
