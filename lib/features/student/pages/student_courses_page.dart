@@ -26,7 +26,7 @@ class _StudentCoursesPageState extends State<StudentCoursesPage> {
   List<_CourseCardData> _discoverCourses = const [];
   final Map<int, _EnrollmentProgress> _progressByEnrollment = {};
   final Set<int> _loadingProgress = {};
-
+  final Set<int> _completingLesson = {}; 
   @override
   void initState() {
     super.initState();
@@ -67,7 +67,243 @@ class _StudentCoursesPageState extends State<StudentCoursesPage> {
       });
     }
   }
+Future<void> _openLessonsAndUnitsSheet(_EnrollmentRow enrollment) async {
+  Future<_CourseContent> loadContent() async {
+  final response = await _service.getCourseContent(
+    courseId: enrollment.courseId,
+  );
 
+  final data = unwrapDataMap(response.data);
+  final courseMap = asMap(data['course']) ?? data;
+
+  final baseContent = _CourseContent.fromMap(
+    courseMap,
+    localeNotifier.value.languageCode,
+  );
+
+  final enrichedUnits = <_CourseUnit>[];
+
+  for (final unit in baseContent.units) {
+    if (unit.lessons.isNotEmpty) {
+      enrichedUnits.add(unit);
+      continue;
+    }
+
+    final lessonsResponse = await _service.getLessonsByUnit(
+      unitId: unit.id,
+    );
+
+    final lessonItems = unwrapDataList(lessonsResponse.data);
+
+    final lessons = lessonItems
+        .where((item) {
+          final map = asMap(item);
+          return map != null && readInt(map['unit_id']) == unit.id;
+        })
+        .map((item) => _CourseLesson.fromMap(item, localeNotifier.value.languageCode))
+        .toList(growable: false);
+
+    enrichedUnits.add(
+      unit.copyWith(lessons: lessons),
+    );
+  }
+
+  return _CourseContent(units: enrichedUnits);
+}
+
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (sheetContext) {
+      Future<_CourseContent> contentFuture = loadContent();
+      final completingLessons = <int>{};
+
+      return StatefulBuilder(
+        builder: (context, sheetSetState) {
+          Future<void> completeLesson(_CourseLesson lesson) async {
+            if (completingLessons.contains(lesson.id)) return;
+
+            sheetSetState(() => completingLessons.add(lesson.id));
+
+            try {
+              await _service.completeLesson(
+                enrollmentId: enrollment.enrollmentId,
+                lessonId: lesson.id,
+              );
+
+              if (!mounted) return;
+
+              AfaqToast.show(
+                context,
+                message: 'Lesson completed successfully.',
+                type: AfaqToastType.success,
+              );
+
+              _progressByEnrollment.remove(enrollment.enrollmentId);
+
+              sheetSetState(() {
+                completingLessons.remove(lesson.id);
+                contentFuture = loadContent();
+              });
+
+              await _load();
+            } catch (error) {
+              sheetSetState(() => completingLessons.remove(lesson.id));
+
+              if (!mounted) return;
+
+              AfaqToast.show(
+                context,
+                message: error.toString(),
+                type: AfaqToastType.error,
+              );
+            }
+          }
+
+          return DraggableScrollableSheet(
+            expand: false,
+            initialChildSize: 0.82,
+            minChildSize: 0.45,
+            maxChildSize: 0.95,
+            builder: (context, scrollController) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: FutureBuilder<_CourseContent>(
+                  future: contentFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (snapshot.hasError) {
+                      return StudentErrorPanel(
+                        message: snapshot.error.toString(),
+                        onRetry: () async {
+  sheetSetState(() {
+    contentFuture = loadContent();
+  });
+},
+                      );
+                    }
+
+                    final content = snapshot.data;
+
+                    if (content == null || content.units.isEmpty) {
+                      return const StudentEmptyPanel(
+                        message: 'No units or lessons were found for this course.',
+                        icon: Icons.menu_book_outlined,
+                      );
+                    }
+
+                    return ListView(
+                      controller: scrollController,
+                      children: [
+                        Text(
+                          enrollment.title,
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Units and lessons',
+                          style: TextStyle(
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? AfaqColors.slate300
+                                : AfaqColors.slate500,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+
+                        for (final unit in content.units)
+                          Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: ExpansionTile(
+                              initiallyExpanded: true,
+                              title: Text(
+                                unit.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              subtitle: Text('${unit.lessons.length} lessons'),
+                              children: [
+                                if (unit.lessons.isEmpty)
+                                  const ListTile(
+                                    title: Text('No lessons in this unit.'),
+                                  )
+                                else
+                                  for (final lesson in unit.lessons)
+                                    ListTile(
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 6,
+                                      ),
+                                      leading: Icon(
+                                        lesson.completed
+                                            ? Icons.check_circle_rounded
+                                            : Icons.play_circle_outline_rounded,
+                                        color: lesson.completed
+                                            ? Colors.green
+                                            : AfaqColors.primary,
+                                      ),
+                                      title: Text(
+                                        lesson.title,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      subtitle: lesson.description.isEmpty
+                                          ? null
+                                          : Text(
+                                              lesson.description,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                      trailing: lesson.completed
+                                          ? const Text(
+                                              'Done',
+                                              style: TextStyle(
+                                                color: Colors.green,
+                                                fontWeight: FontWeight.w900,
+                                              ),
+                                            )
+                                          : FilledButton(
+                                              onPressed: completingLessons.contains(lesson.id)
+                                                  ? null
+                                                  : () => completeLesson(lesson),
+                                              child: completingLessons.contains(lesson.id)
+                                                  ? const SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.white,
+                                                      ),
+                                                    )
+                                                  : const Text('Complete'),
+                                            ),
+                                    ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            },
+          );
+        },
+      );
+    },
+  );
+}
   Future<void> _joinCourse(_CourseCardData course) async {
     setState(() => _joiningCourseId = course.id);
     try {
@@ -96,36 +332,96 @@ class _StudentCoursesPageState extends State<StudentCoursesPage> {
     }
   }
 
-  Future<void> _loadProgress(_EnrollmentRow enrollment) async {
-    if (_progressByEnrollment.containsKey(enrollment.enrollmentId) ||
-        _loadingProgress.contains(enrollment.enrollmentId)) {
-      return;
-    }
+  Future<_EnrollmentProgress?> _fetchProgress(
+  _EnrollmentRow enrollment, {
+  bool showErrorToast = true,
+}) async {
+  if (_progressByEnrollment.containsKey(enrollment.enrollmentId)) {
+    return _progressByEnrollment[enrollment.enrollmentId];
+  }
 
-    setState(() => _loadingProgress.add(enrollment.enrollmentId));
-    try {
-      final response = await _service.getEnrollmentProgress(
-        enrollmentId: enrollment.enrollmentId,
-      );
-      final data = _EnrollmentProgress.fromMap(unwrapDataMap(response.data));
-      if (!mounted) return;
-      setState(() {
-        _progressByEnrollment[enrollment.enrollmentId] = data;
-      });
-    } catch (_) {
-      if (!mounted) return;
+  if (_loadingProgress.contains(enrollment.enrollmentId)) {
+    return null;
+  }
+
+  setState(() => _loadingProgress.add(enrollment.enrollmentId));
+
+  try {
+    final response = await _service.getEnrollmentProgress(
+      enrollmentId: enrollment.enrollmentId,
+    );
+
+    final data = _EnrollmentProgress.fromMap(unwrapDataMap(response.data));
+
+    if (!mounted) return data;
+
+    setState(() {
+      _progressByEnrollment[enrollment.enrollmentId] = data;
+    });
+
+    return data;
+  } catch (_) {
+    if (!mounted) return null;
+
+    if (showErrorToast) {
       AfaqToast.show(
         context,
         message: 'Unable to load progress details right now.',
         type: AfaqToastType.error,
       );
-    } finally {
-      if (mounted) {
-        setState(() => _loadingProgress.remove(enrollment.enrollmentId));
-      }
+    }
+
+    return null;
+  } finally {
+    if (mounted) {
+      setState(() => _loadingProgress.remove(enrollment.enrollmentId));
     }
   }
+}
 
+Future<void> _loadProgress(_EnrollmentRow enrollment) async {
+  await _fetchProgress(enrollment);
+}
+Future<void> _completeNextLesson(_EnrollmentRow enrollment) async {
+  final progress = await _fetchProgress(enrollment);
+
+  if (!mounted) return;
+
+  if (progress?.nextLessonId == null) {
+    AfaqToast.show(
+      context,
+      message: 'Open Progress Details and complete a specific lesson from there.',
+      type: AfaqToastType.error,
+    );
+    return;
+  }
+
+  try {
+    await _service.completeLesson(
+      enrollmentId: enrollment.enrollmentId,
+      lessonId: progress!.nextLessonId!,
+    );
+
+    if (!mounted) return;
+
+    AfaqToast.show(
+      context,
+      message: 'Lesson completed successfully.',
+      type: AfaqToastType.success,
+    );
+
+    _progressByEnrollment.remove(enrollment.enrollmentId);
+    await _load();
+  } catch (error) {
+    if (!mounted) return;
+
+    AfaqToast.show(
+      context,
+      message: error.toString(),
+      type: AfaqToastType.error,
+    );
+  }
+}
   @override
   Widget build(BuildContext context) {
     final lang = localeNotifier.value.languageCode;
@@ -179,7 +475,7 @@ class _StudentCoursesPageState extends State<StudentCoursesPage> {
                 maxCrossAxisExtent: 420,
                 mainAxisSpacing: 16,
                 crossAxisSpacing: 16,
-                childAspectRatio: .97,
+                childAspectRatio: .72,
               ),
               itemBuilder: (context, index) {
                 if (_discoverTab) {
@@ -193,21 +489,24 @@ class _StudentCoursesPageState extends State<StudentCoursesPage> {
 
                 final enrollment = _enrollments[index];
                 return _EnrollmentCard(
-                  enrollment: enrollment,
-                  progress: _progressByEnrollment[enrollment.enrollmentId],
-                  loadingProgress: _loadingProgress.contains(enrollment.enrollmentId),
-                  onProgress: () => _loadProgress(enrollment),
-                  onOffline: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => OfflineCoursePage(
-                        courseId: enrollment.courseId,
-                        courseTitle: enrollment.title,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+  enrollment: enrollment,
+  progress: _progressByEnrollment[enrollment.enrollmentId],
+  loadingProgress: _loadingProgress.contains(enrollment.enrollmentId),
+  completingLesson: _completingLesson.contains(enrollment.enrollmentId),
+  onProgress: () => _loadProgress(enrollment),
+  onCompleteLesson: () => _openLessonsAndUnitsSheet(enrollment),
+  onOffline: () {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => OfflineCoursePage(
+          courseId: enrollment.courseId,
+          courseTitle: enrollment.title,
+        ),
+      ),
+    );
+  },
+);
+   } ),
         ],
       ),
     );
@@ -299,20 +598,89 @@ class _EnrollmentProgress {
     required this.totalLessons,
     required this.completedLessons,
     required this.remainingLessons,
+    required this.nextLessonId,
+    required this.nextLessonTitle,
   });
 
   final int totalUnits;
   final int totalLessons;
   final int completedLessons;
   final int remainingLessons;
+  final int? nextLessonId;
+  final String? nextLessonTitle;
 
   factory _EnrollmentProgress.fromMap(Map<String, dynamic> map) {
+    final explicitNextLesson = asMap(map['next_lesson'] ?? map['nextLesson']);
+    final lessons = _extractLessons(map);
+
+    Map<String, dynamic>? nextLesson;
+
+    for (final lesson in lessons) {
+      if (!_isLessonCompleted(lesson)) {
+        nextLesson = lesson;
+        break;
+      }
+    }
+
+    final nextId = _readNullableInt(
+          map['next_lesson_id'] ??
+              map['nextLessonId'] ??
+              explicitNextLesson?['id'] ??
+              explicitNextLesson?['lesson_id'],
+        ) ??
+        _readNullableInt(nextLesson?['id'] ?? nextLesson?['lesson_id']);
+
+    final nextTitle = readString(
+      explicitNextLesson?['title'] ?? nextLesson?['title'],
+      fallback: '',
+    );
+
     return _EnrollmentProgress(
       totalUnits: readInt(map['total_units']),
       totalLessons: readInt(map['total_lessons']),
       completedLessons: readInt(map['completed_lessons']),
       remainingLessons: readInt(map['remaining_lessons']),
+      nextLessonId: nextId,
+      nextLessonTitle: nextTitle.isEmpty ? null : nextTitle,
     );
+  }
+
+  static List<Map<String, dynamic>> _extractLessons(Map<String, dynamic> map) {
+    final directLessons = unwrapDataList(map['lessons']);
+
+    if (directLessons.isNotEmpty) {
+      return directLessons;
+    }
+
+    final units = unwrapDataList(map['units']);
+    final lessons = <Map<String, dynamic>>[];
+
+    for (final unit in units) {
+      final unitMap = asMap(unit);
+      if (unitMap == null) continue;
+
+      lessons.addAll(unwrapDataList(unitMap['lessons']));
+    }
+
+    return lessons;
+  }
+
+  static bool _isLessonCompleted(Map<String, dynamic> lesson) {
+    final progress = asMap(lesson['progress']);
+    final pivot = asMap(lesson['pivot']);
+
+    return lesson['is_completed'] == true ||
+        lesson['completed'] == true ||
+        lesson['completed_at'] != null ||
+        progress?['is_completed'] == true ||
+        progress?['completed'] == true ||
+        pivot?['is_completed'] == true ||
+        pivot?['completed'] == true;
+  }
+
+  static int? _readNullableInt(dynamic value) {
+    final parsed = readInt(value);
+    return parsed <= 0 ? null : parsed;
   }
 }
 
@@ -356,18 +724,22 @@ class _TabButton extends StatelessWidget {
 
 class _EnrollmentCard extends StatelessWidget {
   const _EnrollmentCard({
-    required this.enrollment,
-    required this.progress,
-    required this.loadingProgress,
-    required this.onProgress,
-    required this.onOffline,
-  });
+  required this.enrollment,
+  required this.progress,
+  required this.loadingProgress,
+  required this.completingLesson,
+  required this.onProgress,
+  required this.onCompleteLesson,
+  required this.onOffline,
+});
 
   final _EnrollmentRow enrollment;
   final _EnrollmentProgress? progress;
   final bool loadingProgress;
   final VoidCallback onProgress;
   final VoidCallback onOffline;
+  final bool completingLesson;
+  final VoidCallback onCompleteLesson;
 
   @override
   Widget build(BuildContext context) {
@@ -402,7 +774,7 @@ class _EnrollmentCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: secondary),
           ),
-          const Spacer(),
+          const SizedBox(height: 12),
           Text(
             'Progress ${enrollment.progress.toStringAsFixed(1)}%',
             style: TextStyle(
@@ -427,27 +799,41 @@ class _EnrollmentCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              OutlinedButton.icon(
-                onPressed: onProgress,
-                icon: loadingProgress
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.insights_outlined),
-                label: const Text('Progress Details'),
+  spacing: 10,
+  runSpacing: 10,
+  children: [
+    OutlinedButton.icon(
+      onPressed: onProgress,
+      icon: loadingProgress
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.insights_outlined),
+      label: const Text('Progress Details'),
+    ),
+    FilledButton.icon(
+      onPressed: enrollment.completed || completingLesson ? null : onCompleteLesson,
+      icon: completingLesson
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
               ),
-              FilledButton.icon(
-                onPressed: onOffline,
-                icon: const Icon(Icons.download_for_offline_rounded),
-                label: const Text('Offline Package'),
-              ),
-            ],
-          ),
+            )
+          : const Icon(Icons.check_circle_outline_rounded),
+      label: const Text('Complete Next Lesson'),
+    ),
+    OutlinedButton.icon(
+      onPressed: onOffline,
+      icon: const Icon(Icons.download_for_offline_rounded),
+      label: const Text('Offline Package'),
+    ),
+  ],
+),
           if (progress != null) ...[
             const SizedBox(height: 12),
             Wrap(
@@ -565,6 +951,145 @@ class _MetaChip extends StatelessWidget {
           fontWeight: FontWeight.w700,
         ),
       ),
+    );
+  }
+}
+class _CourseContent {
+  const _CourseContent({
+    required this.units,
+  });
+
+  final List<_CourseUnit> units;
+
+  factory _CourseContent.fromMap(Map<String, dynamic> map, String lang) {
+    final unitItems = unwrapDataList(
+      map['units'] ??
+          map['course_units'] ??
+          map['courseUnits'],
+    );
+
+    if (unitItems.isNotEmpty) {
+      return _CourseContent(
+        units: unitItems
+            .map((item) => _CourseUnit.fromMap(item, lang))
+            .toList(growable: false),
+      );
+    }
+
+    final directLessons = unwrapDataList(
+      map['lessons'] ??
+          map['course_lessons'] ??
+          map['courseLessons'],
+    );
+
+    if (directLessons.isNotEmpty) {
+      return _CourseContent(
+        units: [
+          _CourseUnit(
+            id: 0,
+            title: 'Lessons',
+            lessons: directLessons
+                .map((item) => _CourseLesson.fromMap(item, lang))
+                .toList(growable: false),
+          ),
+        ],
+      );
+    }
+
+    return const _CourseContent(units: []);
+  }
+}
+
+class _CourseUnit {
+  const _CourseUnit({
+    required this.id,
+    required this.title,
+    required this.lessons,
+  });
+
+  final int id;
+  final String title;
+  final List<_CourseLesson> lessons;
+
+  _CourseUnit copyWith({
+    List<_CourseLesson>? lessons,
+  }) {
+    return _CourseUnit(
+      id: id,
+      title: title,
+      lessons: lessons ?? this.lessons,
+    );
+  }
+
+  factory _CourseUnit.fromMap(Map<String, dynamic> map, String lang) {
+    final lessons = unwrapDataList(
+      map['lessons'] ??
+          map['course_lessons'] ??
+          map['courseLessons'],
+    );
+
+    return _CourseUnit(
+      id: readInt(map['id']),
+      title: localizedValue(
+        map['title_translations'] ?? map['name_translations'],
+        lang,
+        fallback: readString(
+          map['title'] ?? map['name'],
+          fallback: 'Unit',
+        ),
+      ),
+      lessons: lessons
+          .map((item) => _CourseLesson.fromMap(item, lang))
+          .toList(growable: false),
+    );
+  }
+}
+
+class _CourseLesson {
+  const _CourseLesson({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.completed,
+  });
+
+  final int id;
+  final String title;
+  final String description;
+  final bool completed;
+
+  factory _CourseLesson.fromMap(Map<String, dynamic> map, String lang) {
+    final progress = asMap(map['progress']);
+    final pivot = asMap(map['pivot']);
+    final enrollmentLesson = asMap(map['enrollment_lesson']);
+
+    return _CourseLesson(
+      id: readInt(map['id'] ?? map['lesson_id']),
+      title: localizedValue(
+        map['title_translations'],
+        lang,
+        fallback: readString(
+          map['title'] ?? map['name'],
+          fallback: 'Lesson',
+        ),
+      ),
+      description: localizedValue(
+        map['description_translations'],
+        lang,
+        fallback: readString(
+          map['description'],
+          fallback: '',
+        ),
+      ),
+      completed: map['is_completed'] == true ||
+          map['completed'] == true ||
+          map['completed_at'] != null ||
+          progress?['is_completed'] == true ||
+          progress?['completed'] == true ||
+          pivot?['is_completed'] == true ||
+          pivot?['completed'] == true ||
+          enrollmentLesson?['is_completed'] == true ||
+          enrollmentLesson?['completed'] == true,
     );
   }
 }
