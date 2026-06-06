@@ -33,8 +33,6 @@ class _InstructorCoursesPageState extends State<InstructorCoursesPage> {
   _InstructorUnitItem? _selectedUnit;
   int _lessonsCount = 0;
 
-  final _unitTitleController = TextEditingController();
-  final _lessonTitleController = TextEditingController();
   late String _lastLocaleCode;
 
   int get _currentInstructorId => SessionStore.instance.userId ?? 0;
@@ -50,8 +48,6 @@ class _InstructorCoursesPageState extends State<InstructorCoursesPage> {
   @override
   void dispose() {
     localeNotifier.removeListener(_handleLocaleChanged);
-    _unitTitleController.dispose();
-    _lessonTitleController.dispose();
     super.dispose();
   }
 
@@ -201,26 +197,21 @@ class _InstructorCoursesPageState extends State<InstructorCoursesPage> {
     }
   }
 
-  Future<void> _createUnit() async {
+  Future<void> _showCreateUnitDialog() async {
     final course = _selectedCourse;
-    final title = _unitTitleController.text.trim();
+    if (course == null) return;
     final lang = localeNotifier.value.languageCode;
-    if (course == null || title.isEmpty) return;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _UnitEditorDialog(order: _units.length + 1),
+    );
+    if (result == null || !mounted) return;
 
     setState(() => _submitting = true);
     try {
-      await _coursesService.createUnit(
-        courseId: course.id,
-        body: {
-          'title': title,
-          'title_translations': {'en': title, 'ar': title},
-          'description': '',
-          'description_translations': {'en': '', 'ar': ''},
-          'unit_order': _units.length + 1,
-          'actual_duration_minutes': 0,
-        },
-      );
-      _unitTitleController.clear();
+      await _coursesService.createUnit(courseId: course.id, body: result);
       await _selectCourse(course);
       if (!mounted) return;
       AfaqToast.show(
@@ -271,32 +262,30 @@ class _InstructorCoursesPageState extends State<InstructorCoursesPage> {
     }
   }
 
-  Future<void> _createLesson() async {
+  Future<void> _showCreateLessonDialog() async {
     final course = _selectedCourse;
     final unit = _selectedUnit;
-    final title = _lessonTitleController.text.trim();
+    if (course == null || unit == null) return;
     final lang = localeNotifier.value.languageCode;
-    if (course == null || unit == null || title.isEmpty) return;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _LessonEditorDialog(
+        order: _lessons.length + 1,
+        courseId: course.id,
+        unitId: unit.id,
+      ),
+    );
+    if (result == null || !mounted) return;
 
     setState(() => _submitting = true);
     try {
       await _lessonsService.createLesson(
         courseId: course.id,
         unitId: unit.id,
-        body: {
-          'course_id': course.id,
-          'unit_id': unit.id,
-          'title': title,
-          'title_translations': {'en': title, 'ar': title},
-          'description': '',
-          'description_translations': {'en': '', 'ar': ''},
-          'lesson_order': _lessons.length + 1,
-          'lesson_type': 'lecture',
-          'is_required': true,
-          'actual_duration_minutes': 0,
-        },
+        body: result,
       );
-      _lessonTitleController.clear();
       await _selectUnit(unit);
       if (!mounted) return;
       AfaqToast.show(
@@ -389,14 +378,12 @@ class _InstructorCoursesPageState extends State<InstructorCoursesPage> {
                                 selectedUnit: _selectedUnit,
                                 unitsLoading: _unitsLoading,
                                 lessonsLoading: _lessonsLoading,
-                                unitTitleController: _unitTitleController,
-                                lessonTitleController: _lessonTitleController,
                                 submitting: _submitting,
                                 lessonsCount: _lessonsCount,
-                                onCreateUnit: _createUnit,
+                                onCreateUnit: _showCreateUnitDialog,
                                 onDeleteUnit: _deleteUnit,
                                 onSelectUnit: _selectUnit,
-                                onCreateLesson: _createLesson,
+                                onCreateLesson: _showCreateLessonDialog,
                                 onDeleteLesson: _deleteLesson,
                               ),
                             ],
@@ -426,14 +413,12 @@ class _InstructorCoursesPageState extends State<InstructorCoursesPage> {
                                 selectedUnit: _selectedUnit,
                                 unitsLoading: _unitsLoading,
                                 lessonsLoading: _lessonsLoading,
-                                unitTitleController: _unitTitleController,
-                                lessonTitleController: _lessonTitleController,
                                 submitting: _submitting,
                                 lessonsCount: _lessonsCount,
-                                onCreateUnit: _createUnit,
+                                onCreateUnit: _showCreateUnitDialog,
                                 onDeleteUnit: _deleteUnit,
                                 onSelectUnit: _selectUnit,
-                                onCreateLesson: _createLesson,
+                                onCreateLesson: _showCreateLessonDialog,
                                 onDeleteLesson: _deleteLesson,
                               ),
                             ),
@@ -919,8 +904,6 @@ class _CourseBuilderPanel extends StatelessWidget {
     required this.selectedUnit,
     required this.unitsLoading,
     required this.lessonsLoading,
-    required this.unitTitleController,
-    required this.lessonTitleController,
     required this.submitting,
     required this.lessonsCount,
     required this.onCreateUnit,
@@ -937,14 +920,12 @@ class _CourseBuilderPanel extends StatelessWidget {
   final _InstructorUnitItem? selectedUnit;
   final bool unitsLoading;
   final bool lessonsLoading;
-  final TextEditingController unitTitleController;
-  final TextEditingController lessonTitleController;
   final bool submitting;
   final int lessonsCount;
-  final Future<void> Function() onCreateUnit;
+  final VoidCallback onCreateUnit;
   final Future<void> Function(_InstructorUnitItem unit) onDeleteUnit;
   final ValueChanged<_InstructorUnitItem> onSelectUnit;
-  final Future<void> Function() onCreateLesson;
+  final VoidCallback onCreateLesson;
   final Future<void> Function(_InstructorLessonItem lesson) onDeleteLesson;
 
   @override
@@ -1002,12 +983,17 @@ class _CourseBuilderPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          _QuickCreateField(
-            controller: unitTitleController,
-            hintText: instructorText('new_unit_hint', lang),
-            buttonLabel: instructorText('add_unit', lang),
-            busy: submitting,
-            onSubmit: onCreateUnit,
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: submitting ? null : onCreateUnit,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: Text(instructorText('add_unit', lang)),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+              ),
+            ),
           ),
           const SizedBox(height: 18),
           Container(
@@ -1056,12 +1042,17 @@ class _CourseBuilderPanel extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           if (selectedUnit != null) ...[
-            _QuickCreateField(
-              controller: lessonTitleController,
-              hintText: instructorText('new_lesson_hint', lang),
-              buttonLabel: instructorText('add_lesson', lang),
-              busy: submitting,
-              onSubmit: onCreateLesson,
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: submitting ? null : onCreateLesson,
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text(instructorText('add_lesson', lang)),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                ),
+              ),
             ),
             const SizedBox(height: 18),
             Container(
@@ -1162,57 +1153,456 @@ class _EditorMetric extends StatelessWidget {
   }
 }
 
-class _QuickCreateField extends StatelessWidget {
-  const _QuickCreateField({
-    required this.controller,
-    required this.hintText,
-    required this.buttonLabel,
-    required this.busy,
-    required this.onSubmit,
-  });
+// ─── Unit Editor Dialog ───────────────────────────────────────────────────────
 
-  final TextEditingController controller;
-  final String hintText;
-  final String buttonLabel;
-  final bool busy;
-  final Future<void> Function() onSubmit;
+class _UnitEditorDialog extends StatefulWidget {
+  const _UnitEditorDialog({required this.order});
+  final int order;
+
+  @override
+  State<_UnitEditorDialog> createState() => _UnitEditorDialogState();
+}
+
+class _UnitEditorDialogState extends State<_UnitEditorDialog> {
+  final _titleEnCtrl = TextEditingController();
+  final _titleArCtrl = TextEditingController();
+  final _descEnCtrl = TextEditingController();
+  final _descArCtrl = TextEditingController();
+  final _durationCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _titleEnCtrl.dispose();
+    _titleArCtrl.dispose();
+    _descEnCtrl.dispose();
+    _descArCtrl.dispose();
+    _durationCtrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final titleEn = _titleEnCtrl.text.trim();
+    final titleAr = _titleArCtrl.text.trim();
+    if (titleEn.isEmpty && titleAr.isEmpty) return;
+    Navigator.of(context).pop({
+      'title': titleEn.isNotEmpty ? titleEn : titleAr,
+      'title_translations': {
+        'en': titleEn.isNotEmpty ? titleEn : titleAr,
+        'ar': titleAr.isNotEmpty ? titleAr : titleEn,
+      },
+      'description': _descEnCtrl.text.trim(),
+      'description_translations': {
+        'en': _descEnCtrl.text.trim(),
+        'ar': _descArCtrl.text.trim(),
+      },
+      'unit_order': widget.order,
+      'actual_duration_minutes': int.tryParse(_durationCtrl.text.trim()) ?? 0,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF0F172A),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _EditorDialogHeader(
+                tag: 'UNIT EDITOR',
+                title: 'Create item',
+                onClose: () => Navigator.of(context).pop(),
+              ),
+              const SizedBox(height: 24),
+              Row(children: [
+                Expanded(child: _DialogField(controller: _titleEnCtrl, hint: 'Unit title (EN)')),
+                const SizedBox(width: 14),
+                Expanded(child: _DialogField(controller: _titleArCtrl, hint: 'Unit title (AR)', textAlign: TextAlign.right)),
+              ]),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(child: _DialogField(controller: _descEnCtrl, hint: 'Description (EN)', minLines: 3, maxLines: 5)),
+                const SizedBox(width: 14),
+                Expanded(child: _DialogField(controller: _descArCtrl, hint: 'Description (AR)', minLines: 3, maxLines: 5, textAlign: TextAlign.right)),
+              ]),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(child: _DialogReadOnly(label: '${widget.order}', hint: 'Order')),
+                const SizedBox(width: 14),
+                Expanded(child: _DialogField(controller: _durationCtrl, hint: 'Duration minutes', keyboardType: TextInputType.number)),
+              ]),
+              const SizedBox(height: 28),
+              _EditorDialogActions(onCancel: () => Navigator.of(context).pop(), onSave: _save),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Lesson Editor Dialog ─────────────────────────────────────────────────────
+
+class _LessonEditorDialog extends StatefulWidget {
+  const _LessonEditorDialog({
+    required this.order,
+    required this.courseId,
+    required this.unitId,
+  });
+  final int order;
+  final int courseId;
+  final int unitId;
+
+  @override
+  State<_LessonEditorDialog> createState() => _LessonEditorDialogState();
+}
+
+class _LessonEditorDialogState extends State<_LessonEditorDialog> {
+  final _titleEnCtrl = TextEditingController();
+  final _titleArCtrl = TextEditingController();
+  final _descEnCtrl = TextEditingController();
+  final _descArCtrl = TextEditingController();
+  final _durationCtrl = TextEditingController();
+  String _lessonType = 'lecture';
+  bool _isRequired = true;
+
+  static const _lessonTypes = ['lecture', 'video', 'quiz', 'assignment'];
+
+  @override
+  void dispose() {
+    _titleEnCtrl.dispose();
+    _titleArCtrl.dispose();
+    _descEnCtrl.dispose();
+    _descArCtrl.dispose();
+    _durationCtrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final titleEn = _titleEnCtrl.text.trim();
+    final titleAr = _titleArCtrl.text.trim();
+    if (titleEn.isEmpty && titleAr.isEmpty) return;
+    Navigator.of(context).pop({
+      'course_id': widget.courseId,
+      'unit_id': widget.unitId,
+      'title': titleEn.isNotEmpty ? titleEn : titleAr,
+      'title_translations': {
+        'en': titleEn.isNotEmpty ? titleEn : titleAr,
+        'ar': titleAr.isNotEmpty ? titleAr : titleEn,
+      },
+      'description': _descEnCtrl.text.trim(),
+      'description_translations': {
+        'en': _descEnCtrl.text.trim(),
+        'ar': _descArCtrl.text.trim(),
+      },
+      'lesson_order': widget.order,
+      'lesson_type': _lessonType,
+      'is_required': _isRequired,
+      'actual_duration_minutes': int.tryParse(_durationCtrl.text.trim()) ?? 0,
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = localeNotifier.value.languageCode;
+    return Dialog(
+      backgroundColor: const Color(0xFF0F172A),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 620),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _EditorDialogHeader(
+                tag: 'LESSON EDITOR',
+                title: 'Create item',
+                onClose: () => Navigator.of(context).pop(),
+              ),
+              const SizedBox(height: 24),
+              Row(children: [
+                Expanded(child: _DialogField(controller: _titleEnCtrl, hint: 'Lesson title (EN)')),
+                const SizedBox(width: 14),
+                Expanded(child: _DialogField(controller: _titleArCtrl, hint: 'Lesson title (AR)', textAlign: TextAlign.right)),
+              ]),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(child: _DialogField(controller: _descEnCtrl, hint: 'Description (EN)', minLines: 3, maxLines: 5)),
+                const SizedBox(width: 14),
+                Expanded(child: _DialogField(controller: _descArCtrl, hint: 'Description (AR)', minLines: 3, maxLines: 5, textAlign: TextAlign.right)),
+              ]),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(child: _DialogReadOnly(label: '${widget.order}', hint: 'Order')),
+                const SizedBox(width: 14),
+                Expanded(child: _DialogField(controller: _durationCtrl, hint: 'Duration minutes', keyboardType: TextInputType.number)),
+              ]),
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(
+                  child: _DialogDropdown<String>(
+                    value: _lessonType,
+                    items: _lessonTypes,
+                    labelOf: (t) => instructorLessonTypeText(t, lang),
+                    onChanged: (v) => setState(() => _lessonType = v),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: _DialogCheckboxTile(
+                    label: 'Required lesson',
+                    value: _isRequired,
+                    onChanged: (v) => setState(() => _isRequired = v),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 28),
+              _EditorDialogActions(onCancel: () => Navigator.of(context).pop(), onSave: _save),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Shared dialog sub-widgets ────────────────────────────────────────────────
+
+class _EditorDialogHeader extends StatelessWidget {
+  const _EditorDialogHeader({
+    required this.tag,
+    required this.title,
+    required this.onClose,
+  });
+  final String tag;
+  final String title;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              hintText: hintText,
-              filled: true,
-              fillColor: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withValues(alpha: .05)
-                  : const Color(0xFFF8FAFC),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(20),
-                borderSide: BorderSide.none,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                tag,
+                style: const TextStyle(
+                  color: AfaqColors.primary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                ),
               ),
-            ),
+              const SizedBox(height: 6),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
+        ),
+        IconButton(
+          onPressed: onClose,
+          icon: const Icon(Icons.close_rounded, color: Colors.white70),
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white12,
+            shape: const CircleBorder(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditorDialogActions extends StatelessWidget {
+  const _EditorDialogActions({required this.onCancel, required this.onSave});
+  final VoidCallback onCancel;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        TextButton(
+          onPressed: onCancel,
+          child: const Text('Cancel', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700)),
         ),
         const SizedBox(width: 12),
         FilledButton.icon(
-          onPressed: busy ? null : () => onSubmit(),
-          icon: busy
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              : const Icon(Icons.add_rounded),
-          label: Text(buttonLabel),
+          onPressed: onSave,
+          icon: const Icon(Icons.save_rounded, size: 18),
+          label: const Text('SAVE', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1)),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _DialogField extends StatelessWidget {
+  const _DialogField({
+    required this.controller,
+    required this.hint,
+    this.minLines = 1,
+    this.maxLines = 1,
+    this.keyboardType,
+    this.textAlign = TextAlign.start,
+  });
+  final TextEditingController controller;
+  final String hint;
+  final int minLines;
+  final int maxLines;
+  final TextInputType? keyboardType;
+  final TextAlign textAlign;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      minLines: minLines,
+      maxLines: maxLines,
+      keyboardType: keyboardType,
+      textAlign: textAlign,
+      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.white38, fontWeight: FontWeight.w500),
+        filled: true,
+        fillColor: const Color(0xFF1A2436),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: .08)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: .08)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: AfaqColors.primary.withValues(alpha: .6)),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+    );
+  }
+}
+
+class _DialogReadOnly extends StatelessWidget {
+  const _DialogReadOnly({required this.label, required this.hint});
+  final String label;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A2436),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+      ),
+    );
+  }
+}
+
+class _DialogDropdown<T> extends StatelessWidget {
+  const _DialogDropdown({
+    required this.value,
+    required this.items,
+    required this.labelOf,
+    required this.onChanged,
+  });
+  final T value;
+  final List<T> items;
+  final String Function(T) labelOf;
+  final void Function(T) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A2436),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          dropdownColor: const Color(0xFF1A2436),
+          isExpanded: true,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+          iconEnabledColor: Colors.white54,
+          items: items.map((t) => DropdownMenuItem(value: t, child: Text(labelOf(t)))).toList(),
+          onChanged: (v) { if (v != null) onChanged(v); },
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogCheckboxTile extends StatelessWidget {
+  const _DialogCheckboxTile({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+  final String label;
+  final bool value;
+  final void Function(bool) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onChanged(!value),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A2436),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: .08)),
+        ),
+        child: Row(
+          children: [
+            Checkbox(
+              value: value,
+              onChanged: (v) => onChanged(v ?? false),
+              activeColor: AfaqColors.primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

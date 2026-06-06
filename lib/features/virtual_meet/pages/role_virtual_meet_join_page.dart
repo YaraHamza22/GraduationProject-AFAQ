@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+﻿import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -599,53 +599,159 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
     );
   }
 
+  Color _providerColor(String provider) {
+    switch (provider) {
+      case 'zoom': return const Color(0xFF2D8CFF);
+      case 'google_meet': return const Color(0xFF00897B);
+      default: return const Color(0xFF6366F1);
+    }
+  }
+
+  IconData _providerIcon(String provider) {
+    switch (provider) {
+      case 'zoom': return Icons.videocam_rounded;
+      case 'google_meet': return Icons.video_call_rounded;
+      default: return Icons.live_tv_rounded;
+    }
+  }
+
   Widget _buildSessionTile(_JoinSession session) {
     final sessionUri = _tryParseUrl(session.joinUrl);
     final provider = sessionUri == null ? _providerLabel(session.provider) : _providerFromUri(sessionUri);
     final isAfaqSession = sessionUri != null && _isAfaqLink(sessionUri);
+    final providerColor = _providerColor(session.provider);
+    final providerIcon = _providerIcon(session.provider);
+    final hasUrl = session.joinUrl.trim().isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .78),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE8EDF3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    session.title,
-                    style: const TextStyle(
-                      color: Color(0xFF0F172A),
-                      fontWeight: FontWeight.w900,
-                    ),
+          // ── Header ──────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: providerColor.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${_providerLabel(session.provider)} Ã¢â‚¬Â¢ ${session.startsAtLabel}',
-                    style: const TextStyle(
-                      color: Color(0xFF475569),
-                      fontWeight: FontWeight.w600,
+                  child: Icon(providerIcon, color: providerColor, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        session.title,
+                        style: const TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 15,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: providerColor.withValues(alpha: .10),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              provider,
+                              style: TextStyle(
+                                color: providerColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.schedule_rounded, size: 12, color: Color(0xFF94A3B8)),
+                              const SizedBox(width: 4),
+                              Text(
+                                session.startsAtLabel,
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // ── URL strip ───────────────────────────────────────
+          if (hasUrl) ...[
+            const SizedBox(height: 12),
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.link_rounded, size: 14, color: Color(0xFF94A3B8)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      session.joinUrl,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ],
               ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (sessionUri != null)
-                    FilledButton.icon(
+            ),
+          ],
+          // ── Actions ─────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Row(
+              children: [
+                if (sessionUri != null)
+                  Expanded(
+                    child: FilledButton.icon(
                       onPressed: _launching
                           ? null
                           : () {
@@ -663,45 +769,45 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
                                 label: session.title,
                               );
                             },
-                      style: FilledButton.styleFrom(backgroundColor: const Color(0xFF4F46E5)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: providerColor,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
                       icon: Icon(
                         isAfaqSession ? Icons.video_camera_front_rounded : Icons.open_in_new_rounded,
-                        size: 16,
+                        size: 17,
                       ),
-                      label: Text(_isArabic ? 'Ã˜Â§Ã™â€ Ã˜Â¶Ã™â€¦' : isAfaqSession ? 'Open Room' : 'Join'),
+                      label: Text(
+                        isAfaqSession ? 'Open Room' : 'Join',
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                      ),
                     ),
-                  OutlinedButton.icon(
-                    onPressed: session.joinUrl.trim().isEmpty
-                        ? null
-                        : () => _copyToClipboard(
-                              session.joinUrl,
-                              _isArabic ? 'Ã˜Â±Ã˜Â§Ã˜Â¨Ã˜Â· Ã˜Â§Ã™â€žÃ˜Â§Ã˜Â¬Ã˜ÂªÃ™â€¦Ã˜Â§Ã˜Â¹' : '$provider link',
-                            ),
-                    icon: const Icon(Icons.copy_rounded, size: 16),
-                    label: Text(_isArabic ? 'Ã™â€ Ã˜Â³Ã˜Â® Ã˜Â§Ã™â€žÃ˜Â±Ã˜Â§Ã˜Â¨Ã˜Â·' : 'Copy Link'),
                   ),
-                ],
-              ),
-            ],
-          ),
-          if (session.joinUrl.trim().isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                session.joinUrl,
-                style: const TextStyle(
-                  color: Color(0xFF475569),
-                  fontWeight: FontWeight.w600,
+                if (sessionUri != null) const SizedBox(width: 10),
+                SizedBox(
+                  height: 46,
+                  child: OutlinedButton.icon(
+                    onPressed: hasUrl
+                        ? () => _copyToClipboard(session.joinUrl, '$provider link')
+                        : null,
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: providerColor.withValues(alpha: .35)),
+                      foregroundColor: providerColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                    ),
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    label: const Text('Copy', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ],
       ),
     );
