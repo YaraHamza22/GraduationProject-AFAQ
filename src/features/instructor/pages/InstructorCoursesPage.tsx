@@ -177,6 +177,17 @@ function isOwnedByInstructor(course: CourseListItem, instructorId: number | null
   return false;
 }
 
+function getNextUnitOrder(units: UnitItem[] | undefined) {
+  if (!units || units.length === 0) return 1;
+
+  const highestOrder = units.reduce((maxOrder, unit) => {
+    const nextOrder = toNumberId(unit.unit_order) ?? 0;
+    return Math.max(maxOrder, nextOrder);
+  }, 0);
+
+  return highestOrder + 1;
+}
+
 function TreeActionMenu({
   open,
   onToggle,
@@ -386,10 +397,14 @@ export default function InstructorCoursesPage() {
       });
       setEditor({ type: "unit", mode: "edit", courseId, unitId });
     } else {
+      setUnitForm((current) => ({
+        ...current,
+        unitOrder: String(getNextUnitOrder(unitsByCourse[courseId])),
+      }));
       setEditor({ type: "unit", mode: "create", courseId });
     }
     setMenuKey(null);
-  }, [resetForms]);
+  }, [resetForms, unitsByCourse]);
 
   const openLessonEditor = useCallback((courseId: number, unitId: number, lesson?: LessonItem) => {
     resetForms();
@@ -565,6 +580,10 @@ export default function InstructorCoursesPage() {
         const titleAr = unitForm.titleAr.trim();
         const descriptionEn = unitForm.descriptionEn.trim();
         const descriptionAr = unitForm.descriptionAr.trim();
+        const resolvedUnitOrder =
+          editor.mode === "edit"
+            ? Number(unitForm.unitOrder || 0)
+            : getNextUnitOrder(unitsByCourse[editor.courseId]);
         const payload = {
           title: titleEn || titleAr || "Unit",
           title_translations: {
@@ -576,7 +595,7 @@ export default function InstructorCoursesPage() {
             en: descriptionEn || descriptionAr || "",
             ar: descriptionAr || descriptionEn || "",
           },
-          unit_order: Number(unitForm.unitOrder || (unitsByCourse[editor.courseId]?.length ?? 0) + 1),
+          unit_order: resolvedUnitOrder,
           actual_duration_minutes: Number(unitForm.durationMinutes || 0),
         };
 
@@ -1013,7 +1032,7 @@ export default function InstructorCoursesPage() {
                       <textarea rows={4} value={unitForm.descriptionAr} onChange={(event) => setUnitForm((current) => ({ ...current, descriptionAr: event.target.value }))} placeholder="Description (AR)" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
-                      <input type="number" value={unitForm.unitOrder} onChange={(event) => setUnitForm((current) => ({ ...current, unitOrder: event.target.value }))} placeholder="Unit order" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
+                      <input type="number" value={unitForm.unitOrder} readOnly placeholder="Unit order" className="h-12 rounded-2xl border border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-500 outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/55" />
                       <input type="number" value={unitForm.durationMinutes} onChange={(event) => setUnitForm((current) => ({ ...current, durationMinutes: event.target.value }))} placeholder="Duration minutes" className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none focus:border-indigo-500/40 dark:border-white/10 dark:bg-white/[0.03]" />
                     </div>
                   </>

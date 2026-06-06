@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import { Ban, Copy, ExternalLink, Loader2, RefreshCw, ShieldCheck, Trash2, Users, Video, X, Zap } from "lucide-react";
+import { useLanguage } from "@/components/providers/LanguageProvider";
 import { persistVirtualMeetOauthContext, type OAuthRequestSource } from "@/features/virtual-meet/oauthStorage";
 
 type UrlFn = (path: string) => string;
@@ -172,6 +173,21 @@ function isFuture(iso: string) {
   return !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
 }
 
+function formatSessionDateTime(value: string | null, locale: "en" | "ar") {
+  if (!value) return "No date";
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return new Intl.DateTimeFormat(locale === "ar" ? "ar" : "en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
 function getStatus(error: unknown) {
   return axios.isAxiosError(error) ? error.response?.status : undefined;
 }
@@ -196,10 +212,6 @@ function getProviderLabel(provider: string) {
   return provider;
 }
 
-function getAfaqLiveLink(sessionId: number) {
-  return `https://afaaq.com/live?room=${encodeURIComponent(`meet-${sessionId}`)}`;
-}
-
 function getStatusTone(status: string | null) {
   switch ((status ?? "draft").toLowerCase()) {
     case "scheduled":
@@ -217,6 +229,8 @@ function getStatusTone(status: string | null) {
 
 export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToken, liveRouteBase = "/live", oauthRequestSource = "student" }: Props) {
   const router = useRouter();
+  const { language } = useLanguage();
+  const currentLocale = language === "ar" ? "ar" : "en";
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [courses, setCourses] = useState<CourseItem[]>([]);
@@ -533,7 +547,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                 <div key={session.id} className="rounded-2xl border border-cyan-200/70 bg-cyan-500/10 p-4 dark:border-cyan-300/20">
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-200">Upcoming Session</p>
                   <p className="mt-2 text-lg font-black">{session.title}</p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{session.starts_at ?? "No date"} • {getProviderLabel(session.provider)}</p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{formatSessionDateTime(session.starts_at, currentLocale)} • {getProviderLabel(session.provider)}</p>
                 </div>
               ))}
             </div>
@@ -639,7 +653,6 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
             {orderedSessions.map((s) => (
               <div key={s.id} className="rounded-xl border border-slate-200 bg-white/70 p-3 dark:border-white/20 dark:bg-slate-950/35">
                 {(() => {
-                  const afaqLiveLink = getAfaqLiveLink(s.id);
                   return (
                     <>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -648,17 +661,11 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
                       <span>{getProviderLabel(s.provider)}</span>
                       <span className={`rounded-full px-2 py-0.5 font-black uppercase tracking-[0.12em] ${getStatusTone(s.status)}`}>{s.status ?? "draft"}</span>
-                      <span>{s.starts_at ?? "no date"}</span>
+                      <span>{formatSessionDateTime(s.starts_at, currentLocale)}</span>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     <button onClick={() => { setEditingSessionId(s.id); setSessionMode(s.integration_id ? "provider" : "manual"); setSessionForm({ course_id: s.course_id ? String(s.course_id) : "", provider: s.provider === "zoom" ? "zoom" : "google_meet", integration_id: s.integration_id ? String(s.integration_id) : "", title: s.title, description: s.description ?? "", starts_at: toLocalInput(s.starts_at), ends_at: toLocalInput(s.ends_at), join_url: s.join_url ?? "", status: s.status ?? "draft", metadata_json: JSON.stringify(s.metadata ?? {}, null, 2) }); }} className="rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20">Edit</button>
-                    <button 
-                      onClick={() => router.push(`${liveRouteBase}?room=${encodeURIComponent(`meet-${s.id}`)}`)} 
-                      className="rounded-lg bg-cyan-600 px-2 py-1 text-[10px] font-black uppercase text-white flex items-center gap-1 shadow-lg shadow-cyan-900/20"
-                    >
-                      <Zap className="h-3 w-3" /> Join Live (Afaq)
-                    </button>
                     <button onClick={() => void publishSession(s.id)} className="rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-black uppercase text-white">Publish</button>
                     <button onClick={() => void cancelSession(s.id)} className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-black uppercase text-white"><Ban className="h-3 w-3" />Cancel</button>
                     <button onClick={() => void deleteSession(s.id)} className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2 py-1 text-[10px] font-black uppercase text-white"><Trash2 className="h-3 w-3" />Delete</button>
@@ -681,30 +688,6 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                       </>
                     ) : null}
                   </div>
-                </div>
-                <div className="mt-3 rounded-xl bg-cyan-500/10 px-3 py-2 text-xs text-cyan-900 dark:text-cyan-100">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-bold uppercase tracking-[0.16em] text-[10px] text-cyan-700 dark:text-cyan-200">
-                      Afaq Live Link
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      <button
-                        type="button"
-                        onClick={() => requestExternalNavigation(afaqLiveLink, `${s.title || `Session #${s.id}`} Afaq room`, "Afaq Live")}
-                        className="inline-flex items-center gap-1 rounded-lg bg-cyan-600 px-2 py-1 text-[10px] font-black uppercase text-white"
-                      >
-                        <ExternalLink className="h-3 w-3" /> Open Link
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void copyToClipboard(afaqLiveLink, "Afaq live link")}
-                        className="inline-flex items-center gap-1 rounded-lg border border-cyan-300/70 px-2 py-1 text-[10px] font-black uppercase text-cyan-800 dark:border-cyan-300/30 dark:text-cyan-100"
-                      >
-                        <Copy className="h-3 w-3" /> Copy Link
-                      </button>
-                    </div>
-                  </div>
-                  <p className="mt-1 break-all">{afaqLiveLink}</p>
                 </div>
                 {s.join_url ? (
                   <div className="mt-3 rounded-xl bg-slate-100/80 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900/60 dark:text-slate-300">
