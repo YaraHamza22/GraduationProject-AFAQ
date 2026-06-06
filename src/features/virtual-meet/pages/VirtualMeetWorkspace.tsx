@@ -40,6 +40,8 @@ type ExternalLinkPrompt = {
 
 type CourseItem = { id: number | string; title?: string; title_translations?: Record<string, string> };
 
+type EnrolledStudent = { id: number; name: string; email: string };
+
 type Props = {
   roleLabel: string;
   getRequestUrl: UrlFn;
@@ -54,7 +56,7 @@ const providers: Provider[] = ["zoom", "google_meet"];
 
 const integrationInitial = { provider: "google_meet" as Provider, external_account_id: "", access_token: "", refresh_token: "", expires_at: "" };
 const sessionInitial = { course_id: "", provider: "google_meet" as Provider, integration_id: "", title: "", description: "", starts_at: "", ends_at: "", join_url: "", status: "draft", metadata_json: "{}" };
-const attendanceInitial = { session_id: "", joined_at: "", left_at: "", duration_minutes: "" };
+const attendanceInitial = { session_id: "", user_id: "", joined_at: "", left_at: "", duration_minutes: "" };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -247,6 +249,8 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
 
   const [attendanceForm, setAttendanceForm] = useState(attendanceInitial);
+  const [attendanceStudents, setAttendanceStudents] = useState<EnrolledStudent[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -327,20 +331,45 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
 
   useEffect(() => {
     if (!attendanceForm.session_id) {
+      setAttendanceStudents([]);
       return;
     }
 
     const selectedSession = orderedSessions.find((session) => String(session.id) === attendanceForm.session_id);
-    if (!selectedSession) {
-      return;
-    }
+    if (!selectedSession) return;
 
     setAttendanceForm((current) => ({
       ...current,
+      user_id: "",
       joined_at: toLocalInput(selectedSession.starts_at),
       left_at: toLocalInput(selectedSession.ends_at),
       duration_minutes: minutesBetween(selectedSession.starts_at, selectedSession.ends_at),
     }));
+
+    if (!selectedSession.course_id) {
+      setAttendanceStudents([]);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingStudents(true);
+    const token = getToken();
+    axios
+      .get(getRequestUrl(`/virtual-sessions/${selectedSession.id}/students`), {
+        headers: token ? { Accept: "application/json", Authorization: `Bearer ${token}` } : { Accept: "application/json" },
+      })
+      .then((res) => {
+        if (!cancelled) setAttendanceStudents(listFromPayload<EnrolledStudent>(res.data));
+      })
+      .catch(() => {
+        if (!cancelled) setAttendanceStudents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingStudents(false);
+      });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attendanceForm.session_id, orderedSessions]);
 
   const createIntegration = () => run(async () => {
@@ -471,16 +500,17 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const saveAttendance = () => run(async () => {
     const sessionId = toNumberOrNull(attendanceForm.session_id);
     if (sessionId === null) throw new Error("Choose a session for attendance.");
-    const currentUserId = getCurrentSessionUserId(getToken());
-    if (currentUserId == null) throw new Error("Current user ID is missing.");
-    const payload: Record<string, unknown> = {};
+    const studentId = toNumberOrNull(attendanceForm.user_id);
+    if (studentId === null) throw new Error("Choose a student for attendance.");
+    const payload: Record<string, unknown> = { user_id: studentId };
     const joined = toIsoOrNull(attendanceForm.joined_at); const left = toIsoOrNull(attendanceForm.left_at); const duration = toNumberOrNull(attendanceForm.duration_minutes);
-    payload.user_id = currentUserId;
     if (joined) payload.joined_at = joined;
     if (left) payload.left_at = left;
     if (duration !== null) payload.duration_minutes = duration;
     await axios.post(getRequestUrl(`/virtual-sessions/${sessionId}/attendance`), payload, { headers: headers() });
-    setAttendanceForm(attendanceInitial); setMsg("Attendance stored.");
+    setAttendanceForm(attendanceInitial);
+    setAttendanceStudents([]);
+    setMsg("Attendance stored.");
   });
 
   const requestExternalNavigation = (href: string, label: string, provider: string) => {
@@ -706,9 +736,21 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
         </section>
 
         <section className="rounded-3xl border border-white/70 bg-white/85 p-5 dark:border-cyan-300/20 dark:bg-slate-900/85">
-          <h2 className="mb-3 inline-flex items-center gap-2 text-lg font-black"><Users className="h-4 w-4 text-emerald-500" />4) Attendance</h2>
-          <div className="grid gap-2 md:grid-cols-5">
-            <select value={attendanceForm.session_id} onChange={(e) => setAttendanceForm((p) => ({ ...p, session_id: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40 md:col-span-2"><option value="">Select session</option>{orderedSessions.map((s) => <option key={s.id} value={String(s.id)}>#{s.id} {s.title}</option>)}</select>
+          <div className="mb-3 flex items-center gap-3">
+            <h2 className="inline-flex items-center gap-2 text-lg font-black"><Users className="h-4 w-4 text-emerald-500" />4) Attendance</h2>
+            {loadingStudents ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" /> : null}
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            <select value={attendanceForm.session_id} onChange={(e) => setAttendanceForm((p) => ({ ...p, session_id: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">
+              <option value="">Select session</option>
+              {orderedSessions.map((s) => <option key={s.id} value={String(s.id)}>#{s.id} {s.title}</option>)}
+            </select>
+            <select value={attendanceForm.user_id} onChange={(e) => setAttendanceForm((p) => ({ ...p, user_id: e.target.value }))} disabled={!attendanceForm.session_id || loadingStudents} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40 disabled:opacity-50">
+              <option value="">{loadingStudents ? "Loading students…" : attendanceStudents.length ? "Select student" : "No enrolled students"}</option>
+              {attendanceStudents.map((s) => <option key={s.id} value={String(s.id)}>{s.name} ({s.email})</option>)}
+            </select>
+          </div>
+          <div className="mt-2 grid gap-2 md:grid-cols-3">
             <input type="datetime-local" value={attendanceForm.joined_at} onChange={(e) => setAttendanceForm((p) => ({ ...p, joined_at: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
             <input type="datetime-local" value={attendanceForm.left_at} onChange={(e) => setAttendanceForm((p) => ({ ...p, left_at: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
             <input value={attendanceForm.duration_minutes} onChange={(e) => setAttendanceForm((p) => ({ ...p, duration_minutes: e.target.value }))} placeholder="duration min" className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
