@@ -3,13 +3,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { Ban, Copy, ExternalLink, Loader2, RefreshCw, ShieldCheck, Trash2, Users, Video, X, Zap } from "lucide-react";
+import { Ban, Copy, ExternalLink, Loader2, RefreshCw, ShieldCheck, Trash2, Users, Video, X } from "lucide-react";
 import { useLanguage } from "@/components/providers/LanguageProvider";
 import { persistVirtualMeetOauthContext, type OAuthRequestSource } from "@/features/virtual-meet/oauthStorage";
 
 type UrlFn = (path: string) => string;
 type TokenFn = () => string | null;
-type Provider = "zoom" | "google_meet";
+type Provider = "afaq_live" | "zoom" | "google_meet";
+type IntegrationProvider = "zoom" | "google_meet";
 
 type Integration = {
   id: number;
@@ -52,35 +53,15 @@ oauthRequestSource?: OAuthRequestSource;
 
 // Types for internal state
 
-const providers: Provider[] = ["zoom", "google_meet"];
+const sessionProviders: Provider[] = ["afaq_live", "zoom", "google_meet"];
+const integrationProviders: IntegrationProvider[] = ["zoom", "google_meet"];
 
-const integrationInitial = { provider: "google_meet" as Provider, external_account_id: "", access_token: "", refresh_token: "", expires_at: "" };
-const sessionInitial = { course_id: "", provider: "google_meet" as Provider, integration_id: "", title: "", description: "", starts_at: "", ends_at: "", join_url: "", status: "draft", metadata_json: "{}" };
+const integrationInitial = { provider: "google_meet" as IntegrationProvider, external_account_id: "", access_token: "", refresh_token: "", expires_at: "" };
+const sessionInitial = { course_id: "", provider: "afaq_live" as Provider, integration_id: "", title: "", description: "", starts_at: "", ends_at: "", join_url: "", status: "draft", metadata_json: "{\"quality\":\"hd\"}" };
 const attendanceInitial = { session_id: "", joined_at: "", left_at: "", duration_minutes: "" };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const parts = token.split(".");
-  if (parts.length < 2) {
-    return null;
-  }
-
-  try {
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const json = atob(padded);
-    const parsed = JSON.parse(json) as unknown;
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 function listFromPayload<T>(payload: unknown): T[] {
@@ -124,52 +105,6 @@ function toNumberOrNull(value: string) {
   return Number.isFinite(n) ? n : null;
 }
 
-function getUserIdFromUnknown(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return null;
-}
-
-function getCurrentSessionUserId(token: string | null) {
-  if (!token) {
-    return null;
-  }
-
-  const payload = decodeJwtPayload(token);
-  if (!payload) {
-    return null;
-  }
-
-  const candidateKeys = ["id", "sub", "user_id", "student_id", "admin_id"];
-  for (const key of candidateKeys) {
-    const resolved = getUserIdFromUnknown(payload[key]);
-    if (resolved !== null) {
-      return resolved;
-    }
-  }
-
-  const nestedUser = isRecord(payload.user) ? payload.user : null;
-  if (nestedUser) {
-    for (const key of candidateKeys) {
-      const resolved = getUserIdFromUnknown(nestedUser[key]);
-      if (resolved !== null) {
-        return resolved;
-      }
-    }
-  }
-
-  return null;
-}
-
 function isFuture(iso: string) {
   const d = new Date(iso);
   return !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
@@ -209,6 +144,7 @@ function courseTitle(course: CourseItem) {
 }
 
 function getProviderLabel(provider: string) {
+  if (provider === "afaq_live") return "Afaq HD";
   if (provider === "zoom") return "Zoom";
   if (provider === "google_meet") return "Google Meet";
   return provider;
@@ -240,7 +176,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const [integrationForm, setIntegrationForm] = useState(integrationInitial);
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<number | null>(null);
 
-  const [oauthProvider, setOauthProvider] = useState<Provider>("zoom");
+  const [oauthProvider, setOauthProvider] = useState<IntegrationProvider>("zoom");
   const [oauthCode, setOauthCode] = useState("");
   const [oauthUrl, setOauthUrl] = useState("");
 
@@ -443,7 +379,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     if (!start) throw new Error("starts_at is required.");
     if (!isFuture(start)) throw new Error("starts_at must be in the future.");
     const integrationId = toNumberOrNull(sessionForm.integration_id);
-    if (sessionMode === "provider" && integrationId === null) throw new Error("Select provider integration.");
+    if (sessionForm.provider !== "afaq_live" && sessionMode === "provider" && integrationId === null) throw new Error("Select provider integration.");
     if (sessionMode === "manual" && !sessionForm.join_url.trim()) throw new Error("join_url is required in manual mode.");
 
     const payload: Record<string, unknown> = { provider: sessionForm.provider, title: sessionForm.title.trim(), metadata: JSON.parse(sessionForm.metadata_json || "{}"), starts_at: start };
@@ -466,7 +402,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     const payload: Record<string, unknown> = { provider: sessionForm.provider, title: sessionForm.title.trim(), metadata: JSON.parse(sessionForm.metadata_json || "{}") };
     const courseId = toNumberOrNull(sessionForm.course_id); const integrationId = toNumberOrNull(sessionForm.integration_id); const start = toIsoOrNull(sessionForm.starts_at); const end = toIsoOrNull(sessionForm.ends_at);
     if (courseId !== null) payload.course_id = courseId;
-    if (integrationId !== null) payload.integration_id = integrationId;
+    if (sessionForm.provider !== "afaq_live" && integrationId !== null) payload.integration_id = integrationId;
     if (start) payload.starts_at = start;
     if (end) payload.ends_at = end;
     if (sessionForm.description.trim()) payload.description = sessionForm.description.trim();
@@ -524,6 +460,10 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const requestExternalNavigation = (href: string, label: string, provider: string) => {
     if (!href.trim()) return;
     setExternalLinkPrompt({ href: href.trim(), label, provider });
+  };
+
+  const openInternalLiveRoom = (sessionId: number) => {
+    router.push(`${liveRouteBase}?sessionId=${encodeURIComponent(String(sessionId))}&room=${encodeURIComponent(`afaq-session-${sessionId}`)}`);
   };
 
   const confirmExternalNavigation = () => {
@@ -596,7 +536,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
           <div className="rounded-3xl border border-white/70 bg-white/85 p-5 dark:border-cyan-300/20 dark:bg-slate-900/85">
             <h2 className="mb-3 text-lg font-black">1) Integrations</h2>
             <div className="grid gap-2 md:grid-cols-2">
-              <select value={integrationForm.provider} onChange={(e) => setIntegrationForm((p) => ({ ...p, provider: e.target.value as Provider }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">{providers.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+              <select value={integrationForm.provider} onChange={(e) => setIntegrationForm((p) => ({ ...p, provider: e.target.value as IntegrationProvider }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">{integrationProviders.map((p) => <option key={p} value={p}>{p}</option>)}</select>
               <input value={integrationForm.external_account_id} onChange={(e) => setIntegrationForm((p) => ({ ...p, external_account_id: e.target.value }))} placeholder="external account (optional)" className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
             </div>
             <div className="mt-3 flex gap-2">
@@ -621,7 +561,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
 
           <div className="rounded-3xl border border-white/70 bg-white/85 p-5 dark:border-cyan-300/20 dark:bg-slate-900/85">
             <h2 className="mb-3 text-lg font-black">2) OAuth</h2>
-            <select value={oauthProvider} onChange={(e) => setOauthProvider(e.target.value as Provider)} className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">{providers.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+            <select value={oauthProvider} onChange={(e) => setOauthProvider(e.target.value as IntegrationProvider)} className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">{integrationProviders.map((p) => <option key={p} value={p}>{p}</option>)}</select>
             <input value={oauthCode} onChange={(e) => setOauthCode(e.target.value)} placeholder="authorization code" className="mt-2 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Start with the guided redirect flow. The manual code box stays here as a fallback.</p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -667,9 +607,15 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
           </div>
           <div className="grid gap-2 md:grid-cols-3">
             <select value={sessionForm.course_id} onChange={(e) => setSessionForm((p) => ({ ...p, course_id: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40"><option value="">No course</option>{courses.map((c) => <option key={String(c.id)} value={String(c.id)}>{courseTitle(c)}</option>)}</select>
-            <select value={sessionForm.provider} onChange={(e) => setSessionForm((p) => ({ ...p, provider: e.target.value as Provider, integration_id: "" }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">{providers.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+            <select value={sessionForm.provider} onChange={(e) => setSessionForm((p) => ({ ...p, provider: e.target.value as Provider, integration_id: "" }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">{sessionProviders.map((p) => <option key={p} value={p}>{p}</option>)}</select>
             {sessionMode === "provider" ? (
+              sessionForm.provider === "afaq_live" ? (
+                <div className="flex items-center rounded-xl border border-cyan-200 bg-cyan-50 px-3 text-xs font-bold text-cyan-700 dark:border-cyan-300/20 dark:bg-cyan-500/10 dark:text-cyan-200">
+                  Afaq HD uses the built-in live room and generates the student link automatically on publish.
+                </div>
+              ) : (
               <select value={sessionForm.integration_id} onChange={(e) => setSessionForm((p) => ({ ...p, integration_id: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40"><option value="">Integration</option>{providerIntegrations.map((i) => <option key={i.id} value={String(i.id)}>#{i.id} {i.provider}</option>)}</select>
+              )
             ) : (
               <input value={sessionForm.join_url} onChange={(e) => setSessionForm((p) => ({ ...p, join_url: e.target.value }))} placeholder="join url" className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
             )}
@@ -703,11 +649,30 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    <button onClick={() => { setEditingSessionId(s.id); setSessionMode(s.integration_id ? "provider" : "manual"); setSessionForm({ course_id: s.course_id ? String(s.course_id) : "", provider: s.provider === "zoom" ? "zoom" : "google_meet", integration_id: s.integration_id ? String(s.integration_id) : "", title: s.title, description: s.description ?? "", starts_at: toLocalInput(s.starts_at), ends_at: toLocalInput(s.ends_at), join_url: s.join_url ?? "", status: s.status ?? "draft", metadata_json: JSON.stringify(s.metadata ?? {}, null, 2) }); }} className="rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20">Edit</button>
+                    <button onClick={() => { setEditingSessionId(s.id); setSessionMode(s.provider === "afaq_live" || s.integration_id ? "provider" : "manual"); setSessionForm({ course_id: s.course_id ? String(s.course_id) : "", provider: s.provider === "zoom" ? "zoom" : s.provider === "afaq_live" ? "afaq_live" : "google_meet", integration_id: s.integration_id ? String(s.integration_id) : "", title: s.title, description: s.description ?? "", starts_at: toLocalInput(s.starts_at), ends_at: toLocalInput(s.ends_at), join_url: s.join_url ?? "", status: s.status ?? "draft", metadata_json: JSON.stringify(s.metadata ?? {}, null, 2) }); }} className="rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20">Edit</button>
                     <button onClick={() => void publishSession(s.id)} className="rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-black uppercase text-white">Publish</button>
                     <button onClick={() => void cancelSession(s.id)} className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-2 py-1 text-[10px] font-black uppercase text-white"><Ban className="h-3 w-3" />Cancel</button>
                     <button onClick={() => void deleteSession(s.id)} className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-2 py-1 text-[10px] font-black uppercase text-white"><Trash2 className="h-3 w-3" />Delete</button>
-                    {s.join_url ? (
+                    {s.provider === "afaq_live" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openInternalLiveRoom(s.id)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-black uppercase text-white"
+                        >
+                          Host Room <Video className="h-3 w-3" />
+                        </button>
+                        {s.join_url ? (
+                          <button
+                            type="button"
+                            onClick={() => void copyToClipboard(s.join_url ?? "", `${getProviderLabel(s.provider)} link`)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black uppercase dark:border-white/20"
+                          >
+                            <Copy className="h-3 w-3" /> Copy Link
+                          </button>
+                        ) : null}
+                      </>
+                    ) : s.join_url ? (
                       <>
                         <button
                           type="button"
@@ -868,7 +833,3 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
     </div>
   );
 }
-
-
-
-

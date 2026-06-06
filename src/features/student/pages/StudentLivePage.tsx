@@ -225,12 +225,21 @@ export default function StudentLivePage() {
             userId: studentId,
           }
         : null;
+    const sessionConfig =
+      studentToken && sessionId !== null
+        ? {
+            sessionId,
+            getRequestUrl: getStudentApiRequestUrl,
+            token: studentToken,
+          }
+        : null;
 
     return (
       <LiveMeeting
         roomId={liveRoomId}
         userName={studentName}
         attendance={attendanceConfig}
+        session={sessionConfig}
         onExit={() => {
           setLiveRoomId("");
           setLiveSessionId(null);
@@ -390,7 +399,7 @@ export default function StudentLivePage() {
                         <span className="rounded-full bg-emerald-500/10 px-2 py-1 font-black uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-200">
                           {(session.status ?? "published").toUpperCase()}
                         </span>
-                        <span>{session.provider === "google_meet" ? "Google Meet" : session.provider === "zoom" ? "Zoom" : session.provider}</span>
+                        <span>{session.provider === "afaq_live" ? "Afaq HD" : session.provider === "google_meet" ? "Google Meet" : session.provider === "zoom" ? "Zoom" : session.provider}</span>
                         <span>
                           {session.starts_at
                             ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(session.starts_at))
@@ -403,6 +412,17 @@ export default function StudentLivePage() {
                       <button
                         type="button"
                         onClick={() => {
+                          if (session.provider === "afaq_live") {
+                            const afaqRoomId = `afaq-session-${session.id}`;
+                            setJoinUrl(session.join_url ?? getAfaqShareLink(afaqRoomId));
+                            setRoomIdInput(afaqRoomId);
+                            setLiveRoomId(afaqRoomId);
+                            setLiveSessionId(session.id);
+                            setError(null);
+                            setMessage(`Joined Afaq live room: ${afaqRoomId}`);
+                            return;
+                          }
+
                           if (!session.join_url?.trim()) {
                             setError("This published session does not have a join link yet.");
                             setMessage(null);

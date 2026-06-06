@@ -41,6 +41,14 @@ export default function AfaqLiveRoomPage({ backHref, backLabel, userName, attend
           userId: attendance.userId,
         }
       : null;
+  const sessionConfig =
+    attendance?.token && sessionId !== null
+      ? {
+          sessionId,
+          getRequestUrl: attendance.getRequestUrl,
+          token: attendance.token,
+        }
+      : null;
 
   if (!roomId.trim()) {
     return (
@@ -66,5 +74,5 @@ export default function AfaqLiveRoomPage({ backHref, backLabel, userName, attend
     );
   }
 
-  return <LiveMeeting roomId={roomId.trim()} userName={userName} attendance={attendanceConfig} onExit={() => window.history.back()} />;
+  return <LiveMeeting roomId={roomId.trim()} userName={userName} attendance={attendanceConfig} session={sessionConfig} onExit={() => window.history.back()} />;
 }
