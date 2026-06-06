@@ -671,6 +671,7 @@ export default function InstructorQuizzesPage() {
   const [gradingQuiz, setGradingQuiz] = useState<Quiz | null>(null);
   const [gradeDraft, setGradeDraft] = useState<GradeDraftRow[]>([]);
   const [isGradeModalOpen, setIsGradeModalOpen] = useState(false);
+  const [loadingAttemptDetail, setLoadingAttemptDetail] = useState(false);
 
   const buildAuthHeaders = useCallback(() => {
     const token = getStudentToken();
@@ -1153,12 +1154,12 @@ export default function InstructorQuizzesPage() {
     setGradeDraft([]);
   }, []);
 
-  const openGradeModal = useCallback(
-    (quiz: Quiz, attempt: QuizAttemptResult) => {
+  const buildGradeRows = useCallback(
+    (quiz: Quiz, answers: QuizAttemptAnswer[]) => {
       const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
-      const rows = questions.map((question) => {
+      return questions.map((question) => {
         const questionId = getQuestionId(question);
-        const answer = attempt.answers.find((item) => item.question_id === questionId);
+        const answer = answers.find((item) => item.question_id === questionId);
         const selectedOption =
           answer?.selected_option_id != null
             ? (question.options ?? []).find((option) => toNumber(option.id) === answer.selected_option_id)
@@ -1178,13 +1179,35 @@ export default function InstructorQuizzesPage() {
           isCorrect: answer?.is_correct ?? false,
         } satisfies GradeDraftRow;
       });
-
-      setGradingQuiz(quiz);
-      setSelectedAttempt(attempt);
-      setGradeDraft(rows);
-      setIsGradeModalOpen(true);
     },
     [currentLocale]
+  );
+
+  const openGradeModal = useCallback(
+    async (quiz: Quiz, attempt: QuizAttemptResult) => {
+      setGradingQuiz(quiz);
+      setSelectedAttempt(attempt);
+      setGradeDraft([]);
+      setIsGradeModalOpen(true);
+      setLoadingAttemptDetail(true);
+      try {
+        const response = await axios.get(getStudentApiRequestUrl(`/attempts/${attempt.id}`), {
+          headers: buildAuthHeaders(),
+        });
+        // Response shape: { status, data: { success, data: { id, answers: [...] } } }
+        const d1 = isRecord(response.data) ? response.data : {};
+        const d2 = isRecord(d1.data) ? d1.data : d1;
+        const attemptObj = isRecord(d2.data) ? d2.data : d2;
+        const answers = normalizeAttemptAnswers(attemptObj);
+        setGradeDraft(buildGradeRows(quiz, answers));
+      } catch {
+        // fallback: build rows without answers (shows "No answer provided")
+        setGradeDraft(buildGradeRows(quiz, []));
+      } finally {
+        setLoadingAttemptDetail(false);
+      }
+    },
+    [buildAuthHeaders, buildGradeRows]
   );
 
   const updateGradeDraft = useCallback((questionId: number, patch: Partial<GradeDraftRow>) => {
@@ -2094,7 +2117,7 @@ export default function InstructorQuizzesPage() {
                                         <div className={`flex flex-wrap gap-2 ${isRTL ? "justify-end" : ""}`}>
                                           <button
                                             type="button"
-                                            onClick={() => openGradeModal(quiz, attempt)}
+                                            onClick={() => void openGradeModal(quiz, attempt)}
                                             className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#0ea5e9_0%,#2563eb_100%)] px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-white shadow-[0_14px_34px_rgba(37,99,235,0.24)] transition hover:translate-y-[-1px]"
                                           >
                                             <Eye className="h-4 w-4" />
@@ -2725,7 +2748,7 @@ export default function InstructorQuizzesPage() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/45">Attempt Status</p>
                     <p className="mt-2 text-lg font-black uppercase">{selectedAttempt.status}</p>
-                    <p className="mt-1 text-sm opacity-60">Submitted at {selectedAttempt.submitted_at || "--"}</p>
+                    <p className="mt-1 text-sm opacity-60">Submitted at {formatDateTime(selectedAttempt.submitted_at, currentLocale)}</p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.03]">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-white/45">Current Score</p>
@@ -2735,7 +2758,13 @@ export default function InstructorQuizzesPage() {
                 </div>
 
                 <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-                  {gradeDraft.map((row, index) => (
+                  {loadingAttemptDetail ? (
+                    <div className="flex items-center justify-center gap-3 py-12 text-sm font-semibold text-slate-400">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      Loading student answers…
+                    </div>
+                  ) : null}
+                  {!loadingAttemptDetail && gradeDraft.map((row, index) => (
                     <div key={row.questionId} className="rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5 dark:border-white/10 dark:bg-white/[0.03]">
                       <div className="mb-3 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em]">
                         <span className="rounded-full bg-sky-500/10 px-2.5 py-1 text-sky-500 dark:text-sky-300">Question {index + 1}</span>
