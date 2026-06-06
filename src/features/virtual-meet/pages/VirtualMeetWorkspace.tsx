@@ -56,7 +56,7 @@ const providers: Provider[] = ["zoom", "google_meet"];
 
 const integrationInitial = { provider: "google_meet" as Provider, external_account_id: "", access_token: "", refresh_token: "", expires_at: "" };
 const sessionInitial = { course_id: "", provider: "google_meet" as Provider, integration_id: "", title: "", description: "", starts_at: "", ends_at: "", join_url: "", status: "draft", metadata_json: "{}" };
-const attendanceInitial = { session_id: "", user_id: "", joined_at: "", left_at: "", duration_minutes: "" };
+const attendanceInitial = { session_id: "", joined_at: "", left_at: "", duration_minutes: "" };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -250,6 +250,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
 
   const [attendanceForm, setAttendanceForm] = useState(attendanceInitial);
   const [attendanceStudents, setAttendanceStudents] = useState<EnrolledStudent[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<number>>(new Set());
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -332,6 +333,7 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   useEffect(() => {
     if (!attendanceForm.session_id) {
       setAttendanceStudents([]);
+      setSelectedStudentIds(new Set());
       return;
     }
 
@@ -340,11 +342,11 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
 
     setAttendanceForm((current) => ({
       ...current,
-      user_id: "",
       joined_at: toLocalInput(selectedSession.starts_at),
       left_at: toLocalInput(selectedSession.ends_at),
       duration_minutes: minutesBetween(selectedSession.starts_at, selectedSession.ends_at),
     }));
+    setSelectedStudentIds(new Set());
 
     if (!selectedSession.course_id) {
       setAttendanceStudents([]);
@@ -500,17 +502,23 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
   const saveAttendance = () => run(async () => {
     const sessionId = toNumberOrNull(attendanceForm.session_id);
     if (sessionId === null) throw new Error("Choose a session for attendance.");
-    const studentId = toNumberOrNull(attendanceForm.user_id);
-    if (studentId === null) throw new Error("Choose a student for attendance.");
-    const payload: Record<string, unknown> = { user_id: studentId };
-    const joined = toIsoOrNull(attendanceForm.joined_at); const left = toIsoOrNull(attendanceForm.left_at); const duration = toNumberOrNull(attendanceForm.duration_minutes);
-    if (joined) payload.joined_at = joined;
-    if (left) payload.left_at = left;
-    if (duration !== null) payload.duration_minutes = duration;
-    await axios.post(getRequestUrl(`/virtual-sessions/${sessionId}/attendance`), payload, { headers: headers() });
+    if (selectedStudentIds.size === 0) throw new Error("Select at least one student for attendance.");
+    const joined = toIsoOrNull(attendanceForm.joined_at);
+    const left = toIsoOrNull(attendanceForm.left_at);
+    const duration = toNumberOrNull(attendanceForm.duration_minutes);
+    const basePayload: Record<string, unknown> = {};
+    if (joined) basePayload.joined_at = joined;
+    if (left) basePayload.left_at = left;
+    if (duration !== null) basePayload.duration_minutes = duration;
+    await Promise.all(
+      Array.from(selectedStudentIds).map((studentId) =>
+        axios.post(getRequestUrl(`/virtual-sessions/${sessionId}/attendance`), { ...basePayload, user_id: studentId }, { headers: headers() })
+      )
+    );
     setAttendanceForm(attendanceInitial);
     setAttendanceStudents([]);
-    setMsg("Attendance stored.");
+    setSelectedStudentIds(new Set());
+    setMsg(`Attendance stored for ${selectedStudentIds.size} student${selectedStudentIds.size > 1 ? "s" : ""}.`);
   });
 
   const requestExternalNavigation = (href: string, label: string, provider: string) => {
@@ -740,16 +748,60 @@ export default function VirtualMeetWorkspace({ roleLabel, getRequestUrl, getToke
             <h2 className="inline-flex items-center gap-2 text-lg font-black"><Users className="h-4 w-4 text-emerald-500" />4) Attendance</h2>
             {loadingStudents ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" /> : null}
           </div>
-          <div className="grid gap-2 md:grid-cols-2">
-            <select value={attendanceForm.session_id} onChange={(e) => setAttendanceForm((p) => ({ ...p, session_id: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">
-              <option value="">Select session</option>
-              {orderedSessions.map((s) => <option key={s.id} value={String(s.id)}>#{s.id} {s.title}</option>)}
-            </select>
-            <select value={attendanceForm.user_id} onChange={(e) => setAttendanceForm((p) => ({ ...p, user_id: e.target.value }))} disabled={!attendanceForm.session_id || loadingStudents} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40 disabled:opacity-50">
-              <option value="">{loadingStudents ? "Loading students…" : attendanceStudents.length ? "Select student" : "No enrolled students"}</option>
-              {attendanceStudents.map((s) => <option key={s.id} value={String(s.id)}>{s.name} ({s.email})</option>)}
-            </select>
-          </div>
+          <select value={attendanceForm.session_id} onChange={(e) => setAttendanceForm((p) => ({ ...p, session_id: e.target.value }))} className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40">
+            <option value="">Select session</option>
+            {orderedSessions.map((s) => <option key={s.id} value={String(s.id)}>#{s.id} {s.title}</option>)}
+          </select>
+          {attendanceForm.session_id && (
+            <div className="mt-2 rounded-xl border border-slate-200 dark:border-white/20">
+              <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2 dark:border-white/10">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  {loadingStudents ? "Loading students…" : attendanceStudents.length === 0 ? "No enrolled students" : `Students (${selectedStudentIds.size}/${attendanceStudents.length} selected)`}
+                </span>
+                {attendanceStudents.length > 0 && !loadingStudents && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedStudentIds.size === attendanceStudents.length) {
+                        setSelectedStudentIds(new Set());
+                      } else {
+                        setSelectedStudentIds(new Set(attendanceStudents.map((s) => s.id)));
+                      }
+                    }}
+                    className="text-xs font-black text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                  >
+                    {selectedStudentIds.size === attendanceStudents.length ? "Deselect all" : "Select all"}
+                  </button>
+                )}
+              </div>
+              <div className="max-h-40 overflow-y-auto">
+                {loadingStudents ? (
+                  <div className="flex items-center gap-2 px-3 py-3 text-sm text-slate-400"><Loader2 className="h-4 w-4 animate-spin" />Loading…</div>
+                ) : attendanceStudents.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-slate-400">No enrolled students found.</p>
+                ) : (
+                  attendanceStudents.map((s) => (
+                    <label key={s.id} className="flex cursor-pointer items-center gap-3 px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-emerald-600"
+                        checked={selectedStudentIds.has(s.id)}
+                        onChange={(e) => {
+                          setSelectedStudentIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(s.id); else next.delete(s.id);
+                            return next;
+                          });
+                        }}
+                      />
+                      <span className="text-sm font-semibold">{s.name}</span>
+                      <span className="text-xs text-slate-400">{s.email}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
           <div className="mt-2 grid gap-2 md:grid-cols-3">
             <input type="datetime-local" value={attendanceForm.joined_at} onChange={(e) => setAttendanceForm((p) => ({ ...p, joined_at: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
             <input type="datetime-local" value={attendanceForm.left_at} onChange={(e) => setAttendanceForm((p) => ({ ...p, left_at: e.target.value }))} className="h-10 rounded-xl border border-slate-200 px-3 text-sm dark:border-white/20 dark:bg-slate-950/40" />
