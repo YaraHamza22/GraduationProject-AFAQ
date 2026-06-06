@@ -8,11 +8,9 @@ import {
   Award,
   BookOpen,
   ChevronDown,
-  ChevronRight,
   FileText,
   GraduationCap,
   LayoutDashboard,
-  Library,
   Loader2,
   LogOut,
   MessageSquare,
@@ -77,25 +75,6 @@ const navItems = [
   { id: "profile", icon: UserCircle, href: "/student/profile", label: "nav.profile" },
 ];
 
-type Lesson = {
-  id: number;
-  title: string;
-  lesson_order: number;
-};
-
-type Unit = {
-  id: number;
-  title: string;
-  lessons?: Lesson[];
-  lessons_count?: number;
-};
-
-type Course = {
-  id: number;
-  title: string;
-  slug: string;
-};
-
 export default function StudentNavbar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -104,19 +83,12 @@ export default function StudentNavbar() {
   const [mounted, setMounted] = React.useState(false);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
 
-  // My Learning State
-  const [courses, setCourses] = React.useState<Course[]>([]);
-  const [unitsByCourse, setUnitsByCourse] = React.useState<Record<number, Unit[]>>({});
-  const [lessonsByUnit, setLessonsByUnit] = React.useState<Record<number, Lesson[]>>({});
-  const [expandedCourses, setExpandedCourses] = React.useState<Set<number>>(new Set());
-  const [expandedUnits, setExpandedUnits] = React.useState<Set<number>>(new Set());
   const [isCommunicationOpen, setIsCommunicationOpen] = React.useState(
     pathname.startsWith("/student/chat") || pathname.startsWith("/student/forum")
   );
 
   React.useEffect(() => {
     setMounted(true);
-    fetchEnrolledCourses();
   }, []);
 
   React.useEffect(() => {
@@ -124,64 +96,6 @@ export default function StudentNavbar() {
       setIsCommunicationOpen(true);
     }
   }, [pathname]);
-
-  const fetchEnrolledCourses = async () => {
-    try {
-      const token = getStudentToken();
-      const response = await axios.get(getStudentApiRequestUrl("/my-learning"), {
-        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-      });
-      const data = response.data.data;
-      setCourses(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Failed to fetch courses:", error);
-    }
-  };
-
-  const toggleCourse = async (course: Course) => {
-    const courseId = course.id;
-    const courseSlug = course.slug;
-    const next = new Set(expandedCourses);
-    if (next.has(courseId)) {
-      next.delete(courseId);
-    } else {
-      next.add(courseId);
-      if (!unitsByCourse[courseId]) {
-        try {
-          const token = getStudentToken();
-          const response = await axios.get(getStudentApiRequestUrl(`/my-learning/${courseSlug}/units`), {
-            headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-          });
-          setUnitsByCourse(prev => ({ ...prev, [courseId]: response.data.data }));
-        } catch (error) {
-          console.error("Failed to fetch units:", error);
-        }
-      }
-    }
-    setExpandedCourses(next);
-  };
-
-  const toggleUnit = async (course: Course, unitId: number) => {
-    const courseSlug = course.slug;
-    const next = new Set(expandedUnits);
-    if (next.has(unitId)) {
-      next.delete(unitId);
-    } else {
-      next.add(unitId);
-      if (!lessonsByUnit[unitId]) {
-        try {
-          const token = getStudentToken();
-          const response = await axios.get(getStudentApiRequestUrl(`/my-learning/${courseSlug}/units/${unitId}/lessons`), {
-            headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
-          });
-          setLessonsByUnit(prev => ({ ...prev, [unitId]: response.data.data }));
-        } catch (error) {
-          console.error("Failed to fetch lessons:", error);
-        }
-      }
-    }
-    setExpandedUnits(next);
-  };
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -318,7 +232,7 @@ export default function StudentNavbar() {
           </AnimatePresence>
         </div>
 
-        {/* My Learning Section */}
+        {/*
         <div className="pt-4 mt-4 border-t border-slate-200 dark:border-white/5">
           <div className={`px-4 mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-white/20 flex items-center gap-2 ${isRTL ? "flex-row-reverse" : ""}`}>
             <Library className="w-3.5 h-3.5" />
@@ -402,6 +316,7 @@ export default function StudentNavbar() {
             })}
           </div>
         </div>
+        */}
       </div>
 
       <div className="p-2 sm:p-3 lg:p-4 space-y-2 border-t border-slate-200 dark:border-white/5">

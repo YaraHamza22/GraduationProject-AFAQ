@@ -540,6 +540,26 @@ function isAbsoluteUrl(value: string): boolean {
   }
 }
 
+function getNextOfflinePackageVersion(currentVersion: string | undefined) {
+  const fallback = "v1.0.0";
+  const version = (currentVersion || "").trim();
+  if (!version) return fallback;
+
+  const match = version.match(/^([^\d]*)(\d+)(?:\.(\d+))?(?:\.(\d+))?(.*)$/i);
+  if (!match) return version;
+
+  const [, prefix = "", majorRaw, minorRaw, patchRaw, suffix = ""] = match;
+  const major = Number(majorRaw);
+  const minor = Number(minorRaw ?? "0");
+  const patch = Number(patchRaw ?? "0");
+
+  if (!Number.isFinite(major) || !Number.isFinite(minor) || !Number.isFinite(patch)) {
+    return version;
+  }
+
+  return `${prefix}${major}.${minor}.${patch + 1}${suffix}`;
+}
+
 function buildOfflinePackageMap(packages: OfflinePackageResponse[]) {
   const next: Record<string, OfflinePackageResponse> = {};
 
@@ -1001,7 +1021,9 @@ export default function CoursesPage() {
     ]);
     setOfflineForm({
       course_id: String(course.id),
-      version: existingPackage?.version || "v1.0.0",
+      version: existingPackage
+        ? getNextOfflinePackageVersion(existingPackage.version)
+        : "v1.0.0",
       file_url: existingPackage?.file_url || "",
       is_active: existingPackage?.is_active ?? true,
       manifestText: stringifyManifest(existingPackage?.manifest ?? manifest),
@@ -1024,7 +1046,13 @@ export default function CoursesPage() {
       file_url: undefined,
     }));
 
-    if (!file) return;
+    if (!file) {
+      setOfflineForm((prev) => ({
+        ...prev,
+        file_url: publishedOfflinePackage?.file_url || "",
+      }));
+      return;
+    }
 
     const fileName = file.name.toLowerCase();
     const isAllowedPackage =
@@ -1086,6 +1114,13 @@ export default function CoursesPage() {
 
     if (!courseId) nextErrors.course_id = "Course ID is required.";
     if (!offlineForm.version.trim()) nextErrors.version = "Version is required.";
+    if (
+      publishedOfflinePackage &&
+      String(publishedOfflinePackage.course_id) === String(courseId) &&
+      publishedOfflinePackage.version.trim() === offlineForm.version.trim()
+    ) {
+      nextErrors.version = "This version already exists for the selected course. Increase the version before publishing again.";
+    }
     if (!sanitizedFileUrl && !shouldUseUploadedFile) {
       nextErrors.file_url = "Package file URL or uploaded package file is required.";
       nextErrors.packageFile = "Drop a ZIP file here or paste a downloadable URL.";
@@ -1157,6 +1192,10 @@ export default function CoursesPage() {
           ...prev,
           [String(packageData.course_id ?? courseId)]: packageData,
         }));
+        setOfflineForm((prev) => ({
+          ...prev,
+          file_url: packageData.file_url,
+        }));
       }
 
       setOfflinePackageFile(null);
@@ -1164,9 +1203,21 @@ export default function CoursesPage() {
       await loadData();
       window.setTimeout(() => setSuccessMessage(null), 5000);
     } catch (error) {
-      setOfflineErrors({
-        manifest: getErrorMessage(error, "Failed to publish offline package."),
-      });
+      const message = getErrorMessage(error, "Failed to publish offline package.");
+      const normalizedMessage = message.toLowerCase();
+
+      setOfflineErrors(
+        normalizedMessage.includes("duplicate key value") ||
+          normalizedMessage.includes("already exists") ||
+          normalizedMessage.includes("offline_packages_course_id_version_unique")
+          ? {
+              version:
+                "This course already has an offline package with the same version. Change the version, for example from v1.0.0 to v1.0.1.",
+            }
+          : {
+              manifest: message,
+            }
+      );
     } finally {
       setIsPublishingOffline(false);
     }
@@ -2476,6 +2527,11 @@ function OfflinePackageModal({
                         error={errors.file_url}
                         icon={LinkIcon}
                       />
+                      {packageFile && !form.file_url ? (
+                        <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-white/45">
+                          Real download URL will be filled automatically after the ZIP is uploaded.
+                        </p>
+                      ) : null}
                     </div>
 
                     <PackageDropZone
