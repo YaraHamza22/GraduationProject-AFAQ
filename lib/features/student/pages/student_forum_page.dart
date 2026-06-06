@@ -57,7 +57,40 @@ class _StudentForumPageState extends State<StudentForumPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _hydrateCachedLists();
+    unawaited(_load(showLoader: _threads.isEmpty));
+  }
+
+  void _hydrateCachedLists() {
+    final cachedThreadsPayload = ForumService.getCachedThreadsPayload();
+    final cachedCourseOptionsPayload = ForumService.getCachedCourseOptionsPayload();
+
+    if (cachedThreadsPayload == null && cachedCourseOptionsPayload == null) {
+      return;
+    }
+
+    final cachedThreads = cachedThreadsPayload == null
+        ? _threads
+        : unwrapDataList(cachedThreadsPayload)
+            .map(_ForumThread.fromMap)
+            .toList(growable: false);
+
+    final cachedCourseOptions = cachedCourseOptionsPayload == null
+        ? _courseOptions
+        : unwrapDataList(cachedCourseOptionsPayload)
+            .map(_ForumCourseOption.fromMap)
+            .toList(growable: false);
+
+    setState(() {
+      _threads = cachedThreads;
+      _courseOptions = cachedCourseOptions;
+      _loading = false;
+      _error = null;
+    });
+
+    for (final thread in cachedThreads.take(12)) {
+      unawaited(_warmThreadPosts(thread));
+    }
   }
 
   bool _hasFreshPostsCache(int threadId) {
@@ -140,16 +173,20 @@ class _StudentForumPageState extends State<StudentForumPage> {
     }
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<void> _load({bool showLoader = true}) async {
+    if (showLoader) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      setState(() => _error = null);
+    }
 
     try {
       final results = await Future.wait([
-        _service.getThreads(perPage: 50),
-        _service.getCourseOptions(),
+        _service.getThreads(perPage: 50, forceRefresh: true),
+        _service.getCourseOptions(forceRefresh: true),
       ]);
 
       final threads = unwrapDataList(results[0].data)
@@ -170,7 +207,7 @@ class _StudentForumPageState extends State<StudentForumPage> {
 
       // Warm visible threads in the background. Opening one of these threads is
       // then an O(1) map lookup instead of waiting on the network.
-      for (final thread in threads.take(8)) {
+      for (final thread in threads.take(12)) {
         unawaited(_warmThreadPosts(thread));
       }
     } catch (error) {
@@ -184,8 +221,8 @@ class _StudentForumPageState extends State<StudentForumPage> {
   }
 
   Future<void> _createThread() async {
-    final titleController = TextEditingController();
-    final bodyController = TextEditingController();
+    var titleValue = '';
+    var bodyValue = '';
     int? selectedCourseId =
         _courseOptions.isNotEmpty ? _courseOptions.first.id : null;
 
@@ -199,37 +236,45 @@ class _StudentForumPageState extends State<StudentForumPage> {
                 title: const Text('Create Thread'),
                 content: SizedBox(
                   width: 460,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: titleController,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(labelText: 'Title'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: bodyController,
-                        maxLines: 4,
-                        decoration: const InputDecoration(labelText: 'Body'),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<int>(
-                        initialValue: selectedCourseId,
-                        items: _courseOptions
-                            .map(
-                              (item) => DropdownMenuItem<int>(
-                                value: item.id,
-                                child: Text(item.title),
-                              ),
-                            )
-                            .toList(growable: false),
-                        onChanged: (value) {
-                          setDialogState(() => selectedCourseId = value);
-                        },
-                        decoration: const InputDecoration(labelText: 'Course'),
-                      ),
-                    ],
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextFormField(
+                          initialValue: titleValue,
+                          textInputAction: TextInputAction.next,
+                          onChanged: (value) {
+                            setDialogState(() => titleValue = value);
+                          },
+                          decoration: const InputDecoration(labelText: 'Title'),
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          initialValue: bodyValue,
+                          maxLines: 4,
+                          onChanged: (value) {
+                            setDialogState(() => bodyValue = value);
+                          },
+                          decoration: const InputDecoration(labelText: 'Body'),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<int>(
+                          initialValue: selectedCourseId,
+                          items: _courseOptions
+                              .map(
+                                (item) => DropdownMenuItem<int>(
+                                  value: item.id,
+                                  child: Text(item.title),
+                                ),
+                              )
+                              .toList(growable: false),
+                          onChanged: (value) {
+                            setDialogState(() => selectedCourseId = value);
+                          },
+                          decoration: const InputDecoration(labelText: 'Course'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 actions: [
@@ -239,8 +284,8 @@ class _StudentForumPageState extends State<StudentForumPage> {
                   ),
                   FilledButton(
                     onPressed: () {
-                      if (titleController.text.trim().isEmpty ||
-                          bodyController.text.trim().isEmpty ||
+                      if (titleValue.trim().isEmpty ||
+                          bodyValue.trim().isEmpty ||
                           selectedCourseId == null) {
                         return;
                       }
@@ -258,8 +303,8 @@ class _StudentForumPageState extends State<StudentForumPage> {
       if (created != true || selectedCourseId == null) return;
 
       await _service.createThread(
-        title: titleController.text.trim(),
-        body: bodyController.text.trim(),
+        title: titleValue.trim(),
+        body: bodyValue.trim(),
         courseId: selectedCourseId!,
       );
 
@@ -280,9 +325,6 @@ class _StudentForumPageState extends State<StudentForumPage> {
         message: error.toString(),
         type: AfaqToastType.error,
       );
-    } finally {
-      titleController.dispose();
-      bodyController.dispose();
     }
   }
 
@@ -352,7 +394,8 @@ class _StudentForumPageState extends State<StudentForumPage> {
     if (_openingThreadId != null) return;
     _openingThreadId = thread.id;
 
-    final bodyController = TextEditingController();
+    var replyDraft = '';
+    var composerRevision = 0;
     final cachedPosts = _readCachedPosts(thread.id);
 
     List<_ForumPost> posts = cachedPosts;
@@ -401,7 +444,7 @@ class _StudentForumPageState extends State<StudentForumPage> {
     }
 
     Future<void> sendReply(StateSetter setModalState) async {
-      final text = bodyController.text.trim();
+      final text = replyDraft.trim();
       if (text.isEmpty || sendingReply) return;
 
       final previousPosts = posts;
@@ -416,43 +459,54 @@ class _StudentForumPageState extends State<StudentForumPage> {
         postError = null;
         posts = [...posts, optimisticPost];
         _postsByThreadId[thread.id] = posts;
+        replyDraft = '';
+        composerRevision++;
+        sendingReply = false;
       });
 
-      bodyController.clear();
+      _updateThreadPostCount(thread.id);
 
-      try {
-        await _service.createPost(threadId: thread.id, body: text);
+      unawaited(() async {
+        try {
+          await _service.createPost(threadId: thread.id, body: text);
 
-        if (!mounted) return;
+          if (!mounted || modalSetState == null) return;
 
-        _updateThreadPostCount(thread.id);
+          await refreshPosts(
+            setModalState: setModalState,
+            forceRefresh: true,
+            showFullLoader: false,
+          );
+        } catch (error) {
+          if (!mounted || modalSetState == null) return;
 
-        await refreshPosts(
-          setModalState: setModalState,
-          forceRefresh: true,
-          showFullLoader: false,
-        );
-      } catch (error) {
-        if (!mounted) return;
+          setModalState(() {
+            posts = previousPosts;
+            _postsByThreadId[thread.id] = previousPosts;
+            postError = error.toString();
+          });
 
-        setModalState(() {
-          posts = previousPosts;
-          _postsByThreadId[thread.id] = previousPosts;
-          sendingReply = false;
-        });
+          setState(() {
+            _threads = _threads
+                .map(
+                  (item) => item.id == thread.id
+                      ? item.copyWith(
+                          postsCount: item.postsCount > 0
+                              ? item.postsCount - 1
+                              : 0,
+                        )
+                      : item,
+                )
+                .toList(growable: false);
+          });
 
-        AfaqToast.show(
-          context,
-          message: error.toString(),
-          type: AfaqToastType.error,
-        );
-
-        return;
-      }
-
-      if (modalSetState != null) {
-        setModalState(() => sendingReply = false);
-      }
+          AfaqToast.show(
+            context,
+            message: error.toString(),
+            type: AfaqToastType.error,
+          );
+        }
+      }());
     }
 
     if (!mounted) return;
@@ -608,9 +662,11 @@ class _StudentForumPageState extends State<StudentForumPage> {
                           ],
                           const SizedBox(height: 12),
                           _ReplyComposer(
-                            controller: bodyController,
+                            key: ValueKey('reply-composer-$composerRevision'),
+                            initialValue: replyDraft,
                             sending: sendingReply,
                             locked: thread.isLocked,
+                            onChanged: (value) => replyDraft = value,
                             onSend: () => sendReply(setModalState),
                           ),
                         ],
@@ -626,7 +682,6 @@ class _StudentForumPageState extends State<StudentForumPage> {
     } finally {
       modalSetState = null;
       _openingThreadId = null;
-      bodyController.dispose();
     }
   }
 
@@ -956,15 +1011,18 @@ class _ForumPostBubble extends StatelessWidget {
 
 class _ReplyComposer extends StatelessWidget {
   const _ReplyComposer({
-    required this.controller,
+    super.key,
+    required this.initialValue,
     required this.sending,
     required this.locked,
+    required this.onChanged,
     required this.onSend,
   });
 
-  final TextEditingController controller;
+  final String initialValue;
   final bool sending;
   final bool locked;
+  final ValueChanged<String> onChanged;
   final VoidCallback onSend;
 
   @override
@@ -987,12 +1045,13 @@ class _ReplyComposer extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: TextField(
-            controller: controller,
+          child: TextFormField(
+            initialValue: initialValue,
             minLines: 1,
             maxLines: 4,
             textInputAction: TextInputAction.send,
-            onSubmitted: (_) => sending ? null : onSend(),
+            onChanged: onChanged,
+            onFieldSubmitted: (_) => sending ? null : onSend(),
             decoration: InputDecoration(
               hintText: 'Write a reply',
               filled: true,

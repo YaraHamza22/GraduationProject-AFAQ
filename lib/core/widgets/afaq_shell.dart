@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../app/app.dart';
 import '../../features/auth/data/auth_service.dart';
 import '../../features/auth/pages/login_page.dart';
 import '../theme/afaq_colors.dart';
@@ -52,25 +51,25 @@ class _AfaqShellState extends State<AfaqShell> {
   }
 
   Future<void> _handleAppExit() async {
-    final locale = localeNotifier.value.languageCode;
+    final locale = Localizations.localeOf(context).languageCode;
     final shouldExit = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text(locale == 'ar' ? 'مغادرة التطبيق؟' : 'Leave the app?'),
+        title: Text(locale == 'ar' ? 'Ù…ØºØ§Ø¯Ø±Ø© Ø§Ù„ØªØ·Ø¨ÙŠÙ‚ØŸ' : 'Leave the app?'),
         content: Text(
           locale == 'ar'
-              ? 'هل تريد إغلاق تطبيق Afaq الآن؟'
+              ? 'Ù‡Ù„ ØªØ±ÙŠØ¯ Ø¥ØºÙ„Ø§Ù‚ ØªØ·Ø¨ÙŠÙ‚ Afaq Ø§Ù„Ø¢Ù†ØŸ'
               : 'Do you want to close Afaq now?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: Text(locale == 'ar' ? 'إلغاء' : 'Cancel'),
+            child: Text(locale == 'ar' ? 'Ø¥Ù„ØºØ§Ø¡' : 'Cancel'),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(locale == 'ar' ? 'إغلاق' : 'Exit'),
+            child: Text(locale == 'ar' ? 'Ø¥ØºÙ„Ø§Ù‚' : 'Exit'),
           ),
         ],
       ),
@@ -91,37 +90,69 @@ class _AfaqShellState extends State<AfaqShell> {
     final background = dark
         ? AfaqColors.backgroundDark
         : isAuditor
-        ? AfaqColors.auditorBackgroundLight
-        : AfaqColors.backgroundLight;
+            ? AfaqColors.auditorBackgroundLight
+            : AfaqColors.backgroundLight;
 
-    final bool isMobile = width < 768;
-    final double topInset = isMobile ? 118 : 104;
-    final double bottomInset = isMobile ? 92 : 0;
+    final isMobile = width < 768;
+    final topInset = isMobile ? 118.0 : 104.0;
+    final bottomInset = isMobile ? 92.0 : 0.0;
 
-    return ValueListenableBuilder<Locale>(
-      valueListenable: localeNotifier,
-      builder: (context, currentLocale, _) {
-        final isArabic = currentLocale.languageCode == 'ar';
-
-        return Directionality(
-          textDirection: isArabic ? TextDirection.rtl : TextDirection.ltr,
-          child: PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, _) async {
-              if (didPop) return;
-              await _handleAppExit();
-            },
-            child: Scaffold(
-              backgroundColor: background,
-              body: isMobile
-                  ? Stack(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _handleAppExit();
+      },
+      child: Scaffold(
+        backgroundColor: background,
+        body: isMobile
+            ? Stack(
+                children: [
+                  Positioned.fill(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        top: topInset,
+                        bottom: bottomInset,
+                      ),
+                      child: widget.pages[_activeId] ?? widget.pages.values.first,
+                    ),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: AfaqHeader(role: widget.role),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: AfaqBottomDock(
+                      role: widget.role,
+                      items: widget.items,
+                      activeId: _activeId,
+                      onSelect: (item) => setState(() => _activeId = item.id),
+                      onLogout: _handleLogout,
+                    ),
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  AfaqSidebar(
+                    role: widget.role,
+                    items: widget.items,
+                    activeId: _activeId,
+                    width: sidebarWidth,
+                    onSelect: (item) => setState(() => _activeId = item.id),
+                    onLogout: _handleLogout,
+                  ),
+                  Expanded(
+                    child: Stack(
                       children: [
                         Positioned.fill(
                           child: Padding(
-                            padding: EdgeInsets.only(
-                              top: topInset,
-                              bottom: bottomInset,
-                            ),
+                            padding: EdgeInsets.only(top: topInset),
                             child: widget.pages[_activeId] ?? widget.pages.values.first,
                           ),
                         ),
@@ -131,54 +162,12 @@ class _AfaqShellState extends State<AfaqShell> {
                           top: 0,
                           child: AfaqHeader(role: widget.role),
                         ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: AfaqBottomDock(
-                            role: widget.role,
-                            items: widget.items,
-                            activeId: _activeId,
-                            onSelect: (item) => setState(() => _activeId = item.id),
-                            onLogout: _handleLogout,
-                          ),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        AfaqSidebar(
-                          role: widget.role,
-                          items: widget.items,
-                          activeId: _activeId,
-                          width: sidebarWidth,
-                          onSelect: (item) => setState(() => _activeId = item.id),
-                          onLogout: _handleLogout,
-                        ),
-                        Expanded(
-                          child: Stack(
-                            children: [
-                              Positioned.fill(
-                                child: Padding(
-                                  padding: EdgeInsets.only(top: topInset),
-                                  child: widget.pages[_activeId] ?? widget.pages.values.first,
-                                ),
-                              ),
-                              Positioned(
-                                left: 0,
-                                right: 0,
-                                top: 0,
-                                child: AfaqHeader(role: widget.role),
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                     ),
-            ),
-          ),
-        );
-      },
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

@@ -7,6 +7,10 @@ class ForumService {
   const ForumService({ApiClient? apiClient}) : _apiClient = apiClient;
 
   final ApiClient? _apiClient;
+  static Future<Response<Map<String, dynamic>>>? _inFlightThreads;
+  static Response<Map<String, dynamic>>? _cachedThreads;
+  static Future<Response<Map<String, dynamic>>>? _inFlightCourseOptions;
+  static Response<Map<String, dynamic>>? _cachedCourseOptions;
   static final Map<String, Future<Response<Map<String, dynamic>>>> _inFlightPosts =
       {};
   static final Map<String, Response<Map<String, dynamic>>> _cachedPosts = {};
@@ -28,14 +32,42 @@ class ForumService {
     return response?.data;
   }
 
+  static Map<String, dynamic>? getCachedThreadsPayload() {
+    return _cachedThreads?.data;
+  }
+
+  static Map<String, dynamic>? getCachedCourseOptionsPayload() {
+    return _cachedCourseOptions?.data;
+  }
+
   Future<Response<Map<String, dynamic>>> getThreads({
     int page = 1,
     int perPage = 20,
+    bool forceRefresh = false,
   }) {
-    return _client.get<Map<String, dynamic>>(
-      ApiEndpoints.forumThreads,
-      queryParameters: {'page': page, 'per_page': perPage},
-    );
+    if (!forceRefresh && page == 1 && _cachedThreads != null) {
+      return Future.value(_cachedThreads);
+    }
+
+    if (!forceRefresh && page == 1 && _inFlightThreads != null) {
+      return _inFlightThreads!;
+    }
+
+    final future = _client
+        .get<Map<String, dynamic>>(
+          ApiEndpoints.forumThreads,
+          queryParameters: {'page': page, 'per_page': perPage},
+        )
+        .then((response) {
+          if (page == 1) _cachedThreads = response;
+          return response;
+        })
+        .whenComplete(() {
+          if (page == 1) _inFlightThreads = null;
+        });
+
+    if (page == 1) _inFlightThreads = future;
+    return future;
   }
 
   Future<Response<Map<String, dynamic>>> createThread({
@@ -44,6 +76,8 @@ class ForumService {
     required int courseId,
     String category = 'general',
   }) {
+    _cachedThreads = null;
+    _inFlightThreads = null;
     return _client.post<Map<String, dynamic>>(
       ApiEndpoints.forumThreads,
       data: {
@@ -189,10 +223,30 @@ class ForumService {
   Future<Response<Map<String, dynamic>>> getCourseOptions({
     bool superAdmin = false,
     int perPage = 100,
+    bool forceRefresh = false,
   }) {
-    return _client.get<Map<String, dynamic>>(
-      superAdmin ? ApiEndpoints.superAdminCourses : ApiEndpoints.courses,
-      queryParameters: {'per_page': perPage},
-    );
+    if (!superAdmin && !forceRefresh && _cachedCourseOptions != null) {
+      return Future.value(_cachedCourseOptions);
+    }
+
+    if (!superAdmin && !forceRefresh && _inFlightCourseOptions != null) {
+      return _inFlightCourseOptions!;
+    }
+
+    final future = _client
+        .get<Map<String, dynamic>>(
+          superAdmin ? ApiEndpoints.superAdminCourses : ApiEndpoints.courses,
+          queryParameters: {'per_page': perPage},
+        )
+        .then((response) {
+          if (!superAdmin) _cachedCourseOptions = response;
+          return response;
+        })
+        .whenComplete(() {
+          if (!superAdmin) _inFlightCourseOptions = null;
+        });
+
+    if (!superAdmin) _inFlightCourseOptions = future;
+    return future;
   }
 }

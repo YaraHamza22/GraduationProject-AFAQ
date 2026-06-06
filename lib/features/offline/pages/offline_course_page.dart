@@ -253,50 +253,58 @@ class _OfflineCoursePageState extends State<OfflineCoursePage> {
   }
 
   Future<void> _promptDownloadByToken() async {
-    final controller = TextEditingController(text: _storedToken ?? '');
     final token = await showDialog<String>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Download with token'),
-          content: SizedBox(
-            width: 520,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Paste the offline package token, then the app will call the backend download API and install the package on this device.',
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: controller,
-                  minLines: 2,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: 'Token',
-                    hintText: 'offline-packages/download/{token}',
-                    border: OutlineInputBorder(),
+        var tokenValue = _storedToken ?? '';
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Download with token'),
+              content: SizedBox(
+                width: 520,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Paste the offline package token, then the app will call the backend download API and install the package on this device.',
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        initialValue: tokenValue,
+                        minLines: 2,
+                        maxLines: 4,
+                        onChanged: (value) {
+                          setDialogState(() => tokenValue = value);
+                        },
+                        decoration: const InputDecoration(
+                          labelText: 'Token',
+                          hintText: 'offline-packages/download/{token}',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(tokenValue.trim()),
+                  child: const Text('Download'),
+                ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-              child: const Text('Download'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
-
-    controller.dispose();
 
     if (token == null || token.trim().isEmpty || !mounted) {
       return;

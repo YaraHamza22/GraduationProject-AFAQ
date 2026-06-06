@@ -5,21 +5,31 @@ import 'package:dio/dio.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/api_endpoints.dart';
+import '../../../core/session/session_store.dart';
 
 class CoursesService {
-  const CoursesService({ApiClient? apiClient}) : _apiClient = apiClient;
+  const CoursesService({
+    ApiClient? apiClient,
+    SessionStore? sessionStore,
+  })  : _apiClient = apiClient,
+        _sessionStore = sessionStore;
 
   final ApiClient? _apiClient;
+  final SessionStore? _sessionStore;
 
   ApiClient get _client => _apiClient ?? ApiClient.instance;
+  SessionStore get _store => _sessionStore ?? SessionStore.instance;
 
   Future<Response<Map<String, dynamic>>> getEnrollments({
     int perPage = 100,
   }) {
+    final userId = _store.userId;
+
     return _client.get<Map<String, dynamic>>(
       ApiEndpoints.enrollments,
       queryParameters: {
         'per_page': perPage,
+        if (userId != null && userId > 0) 'learner_id': userId,
       },
     );
   }

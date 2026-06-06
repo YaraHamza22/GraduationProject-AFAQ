@@ -446,8 +446,13 @@ class OfflinePackageService {
     final uri = Uri.tryParse(url);
     if (uri == null) return url;
 
-    final isLocalhost = uri.host == 'localhost' || uri.host == '127.0.0.1';
-    if (!Platform.isAndroid || !isLocalhost) return url;
+    final host = uri.host.toLowerCase();
+    final isLoopbackHost = host == 'localhost' ||
+        host == '0.0.0.0' ||
+        host == '::1' ||
+        host.startsWith('127.');
+
+    if (!Platform.isAndroid || !isLoopbackHost) return url;
 
     return uri.replace(host: '10.0.2.2').toString();
   }
