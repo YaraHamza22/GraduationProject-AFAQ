@@ -391,7 +391,11 @@ export default function StudentLivePage() {
                           {(session.status ?? "published").toUpperCase()}
                         </span>
                         <span>{session.provider === "google_meet" ? "Google Meet" : session.provider === "zoom" ? "Zoom" : session.provider}</span>
-                        <span>{session.starts_at ?? "No date"}</span>
+                        <span>
+                          {session.starts_at
+                            ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(session.starts_at))
+                            : "No date"}
+                        </span>
                       </div>
                       {session.description ? <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{session.description}</p> : null}
                     </div>

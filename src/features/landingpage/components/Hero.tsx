@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, Variants } from "framer-motion";
-import { ArrowRight, Play, Sparkles, TrendingUp, Users } from "lucide-react";
+import { ArrowRight, Play, Sparkles, TrendingUp, Users, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useLanguage } from "@/components/providers/LanguageProvider";
@@ -31,8 +31,17 @@ const staggerContainer: Variants = {
 
 export function Hero() {
   const [showScene, setShowScene] = useState(false);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const { language, isRTL } = useLanguage();
   const copy = landingContent[language].hero;
+
+  useEffect(() => {
+    if (!showVideoModal) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setShowVideoModal(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showVideoModal]);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,7 +131,10 @@ export function Hero() {
               {copy.primaryCta}
               <ArrowRight className={`h-5 w-5 transition-transform ${isRTL ? "rotate-180 group-hover:-translate-x-1" : "group-hover:translate-x-1"}`} />
             </Link>
-            <button className={`group inline-flex w-full items-center justify-center gap-3 rounded-full border border-white/8 bg-white/3 px-6 py-4 font-medium text-white backdrop-blur-md transition-all hover:bg-white/8 active:scale-95 sm:w-auto sm:px-8 ${isRTL ? "flex-row-reverse" : ""}`}>
+            <button
+              onClick={() => setShowVideoModal(true)}
+              className={`group inline-flex w-full items-center justify-center gap-3 rounded-full border border-white/8 bg-white/3 px-6 py-4 font-medium text-white backdrop-blur-md transition-all hover:bg-white/8 active:scale-95 sm:w-auto sm:px-8 ${isRTL ? "flex-row-reverse" : ""}`}
+            >
               <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 transition-colors group-hover:bg-white/20 ${isRTL ? "mr-0.5" : "ml-0.5"}`}>
                 <Play className="h-4 w-4 fill-white" />
               </span>
@@ -184,6 +196,35 @@ export function Hero() {
 
       {/* Bottom fade for smooth section transition */}
       <div className="absolute bottom-0 left-0 right-0 h-40 bg-linear-to-t from-[#020617] to-transparent pointer-events-none z-10" />
+
+      {/* Video Modal — only mounts video element when open (true lazy load) */}
+      {showVideoModal && (
+        <div
+          className="fixed inset-0 z-999 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowVideoModal(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowVideoModal(false)}
+              className="absolute -top-10 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <video
+              ref={videoRef}
+              src="/video/video.mov"
+              preload="none"
+              controls
+              autoPlay
+              className="w-full rounded-2xl shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
     </section>
   );
 }
