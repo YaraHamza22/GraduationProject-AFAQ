@@ -171,6 +171,13 @@ type OfflinePackageForm = {
   manifestText: string;
 };
 
+type CoursesPageCache = {
+  courses: Course[];
+  categories: Category[];
+  offlinePackages: OfflinePackageResponse[];
+  savedAt: number;
+};
+
 type FieldName =
   | keyof FormState
   | "title"
@@ -186,6 +193,7 @@ const API_PATH = "/super-admin/courses";
 const CATEGORIES_API_PATH = "/super-admin/course-categories";
 const INSTRUCTORS_API_PATH = "/super-admin/instructors";
 const OFFLINE_PACKAGES_API_PATH = "/offline-packages";
+const COURSES_PAGE_CACHE_KEY_PREFIX = "admin-courses-page-cache-v1";
 
 const initialForm: FormState = {
   course_category_id: "",
@@ -585,14 +593,58 @@ function buildOfflinePackageMap(packages: OfflinePackageResponse[]) {
   return next;
 }
 
+function getCoursesPageCacheKey(locale: "en" | "ar") {
+  return `${COURSES_PAGE_CACHE_KEY_PREFIX}:${locale}`;
+}
+
+function readCoursesPageCache(locale: "en" | "ar"): CoursesPageCache | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(getCoursesPageCacheKey(locale));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Partial<CoursesPageCache>;
+    if (!Array.isArray(parsed.courses) || !Array.isArray(parsed.categories) || !Array.isArray(parsed.offlinePackages)) {
+      return null;
+    }
+
+    return {
+      courses: parsed.courses as Course[],
+      categories: parsed.categories as Category[],
+      offlinePackages: parsed.offlinePackages as OfflinePackageResponse[],
+      savedAt: typeof parsed.savedAt === "number" ? parsed.savedAt : Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCoursesPageCache(locale: "en" | "ar", payload: Omit<CoursesPageCache, "savedAt">) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      getCoursesPageCacheKey(locale),
+      JSON.stringify({
+        ...payload,
+        savedAt: Date.now(),
+      } satisfies CoursesPageCache)
+    );
+  } catch {
+    // Ignore storage quota / serialization issues.
+  }
+}
+
 export default function CoursesPage() {
   const { isRTL, language } = useLanguage();
   const currentLocale = language === "ar" ? "ar" : "en";
   const router = useRouter();
+  const cachedPageData = readCoursesPageCache(currentLocale);
 
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [courses, setCourses] = useState<Course[]>(() => cachedPageData?.courses ?? []);
+  const [categories, setCategories] = useState<Category[]>(() => cachedPageData?.categories ?? []);
+  const [isLoading, setIsLoading] = useState(() => cachedPageData === null);
   const [listError, setListError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -641,7 +693,7 @@ export default function CoursesPage() {
     useState<OfflinePackageResponse | null>(null);
   const [offlinePackageByCourseId, setOfflinePackageByCourseId] = useState<
     Record<string, OfflinePackageResponse>
-  >({});
+  >(() => buildOfflinePackageMap(cachedPageData?.offlinePackages ?? []));
 
   const getHeaders = useCallback((locale?: string) => {
     const token = getAdminToken();
@@ -652,8 +704,10 @@ export default function CoursesPage() {
     };
   }, []);
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
+  const loadData = useCallback(async (showSpinner = true) => {
+    if (showSpinner) {
+      setIsLoading(true);
+    }
     setListError(null);
 
     try {
@@ -672,15 +726,20 @@ export default function CoursesPage() {
         }),
       ]);
 
-      setCourses(extractArrayPayload<Course>(coursesRes.data));
-      setCategories(extractArrayPayload<Category>(categoriesRes.data));
-      setOfflinePackageByCourseId(
-        buildOfflinePackageMap(
-          extractArrayPayload<unknown>(offlinePackagesRes.data)
-            .map((item) => normalizeOfflinePackageResponse(item))
-            .filter((item): item is OfflinePackageResponse => item !== null)
-        )
-      );
+      const nextCourses = extractArrayPayload<Course>(coursesRes.data);
+      const nextCategories = extractArrayPayload<Category>(categoriesRes.data);
+      const nextOfflinePackages = extractArrayPayload<unknown>(offlinePackagesRes.data)
+        .map((item) => normalizeOfflinePackageResponse(item))
+        .filter((item): item is OfflinePackageResponse => item !== null);
+
+      setCourses(nextCourses);
+      setCategories(nextCategories);
+      setOfflinePackageByCourseId(buildOfflinePackageMap(nextOfflinePackages));
+      writeCoursesPageCache(currentLocale, {
+        courses: nextCourses,
+        categories: nextCategories,
+        offlinePackages: nextOfflinePackages,
+      });
     } catch (error) {
       setListError(getErrorMessage(error, "Failed to load courses."));
     } finally {
@@ -689,8 +748,18 @@ export default function CoursesPage() {
   }, [currentLocale, getHeaders]);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    const cached = readCoursesPageCache(currentLocale);
+    if (cached) {
+      setCourses(cached.courses);
+      setCategories(cached.categories);
+      setOfflinePackageByCourseId(buildOfflinePackageMap(cached.offlinePackages));
+      setIsLoading(false);
+      void loadData(false);
+      return;
+    }
+
+    void loadData(true);
+  }, [currentLocale, loadData]);
 
   const filteredCourses = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();

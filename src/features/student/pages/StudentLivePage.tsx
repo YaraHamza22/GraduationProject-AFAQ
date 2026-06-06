@@ -132,7 +132,7 @@ export default function StudentLivePage() {
     const loadPublishedSessions = async () => {
       setLoadingSessions(true);
       try {
-        const res = await getStudentApiCached("/virtual-sessions", {
+        const res = await getStudentApiCached("/student/virtual-sessions", {
           headers: studentToken ? { Accept: "application/json", Authorization: `Bearer ${studentToken}` } : { Accept: "application/json" },
         });
         if (!cancelled) {
