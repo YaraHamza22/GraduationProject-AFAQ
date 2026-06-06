@@ -30,6 +30,7 @@ class ApiEndpoints {
   static const myCourses = '/my-courses';
   static const externalIntegrations = '/external-integrations';
   static const virtualSessions = '/virtual-sessions';
+  static const studentVirtualSessions = '/student/virtual-sessions';
   static const students = '/students';
   static const superAdminStudents = '/super-admin/students';
 
@@ -182,6 +183,10 @@ class ApiEndpoints {
 
   static String virtualSessionAttendance(int sessionId) {
     return '/virtual-sessions/$sessionId/attendance';
+  }
+
+  static String virtualSessionStudents(int sessionId) {
+    return '/virtual-sessions/$sessionId/students';
   }
 
   static String offlinePackage(int packageId) {

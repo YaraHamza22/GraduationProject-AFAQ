@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../app/app.dart';
-import '../../../core/session/session_store.dart';
 import '../../../core/websocket/realtime_client.dart';
 import '../../../core/toast/afaq_toast.dart';
 import '../data/instructor_virtual_meet_service.dart';
@@ -58,6 +57,9 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
   int? _editingSessionId;
 
   int? _attendanceSessionId;
+  Set<int> _selectedStudentIds = {};
+  List<_MeetStudent> _attendanceStudents = const [];
+  bool _loadingStudents = false;
   final _attendanceJoinedAtController = TextEditingController();
   final _attendanceLeftAtController = TextEditingController();
   final _attendanceDurationController = TextEditingController();
@@ -216,10 +218,12 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
     return minutes > 0 ? '$minutes' : '';
   }
 
-  void _applyAttendanceSession(int? sessionId) {
+  Future<void> _applyAttendanceSession(int? sessionId) async {
     final session = _sessionById(sessionId);
     setState(() {
       _attendanceSessionId = sessionId;
+      _selectedStudentIds = {};
+      _attendanceStudents = const [];
       _attendanceJoinedAtController.text =
           session == null ? '' : _toLocalInput(session.startsAt);
       _attendanceLeftAtController.text =
@@ -227,6 +231,34 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
       _attendanceDurationController.text =
           session == null ? '' : _durationMinutesFromSession(session);
     });
+    if (session == null || session.courseId == 0) return;
+    setState(() => _loadingStudents = true);
+    try {
+      final response = await _service.getSessionStudents(session.id);
+      if (!mounted) return;
+      final raw = response.data;
+      List<dynamic> list = const [];
+      if (raw != null) {
+        if (raw['data'] is List) {
+          list = raw['data'] as List<dynamic>;
+        } else if (raw['items'] is List) {
+          list = raw['items'] as List<dynamic>;
+        } else if (raw is List) {
+          list = raw as List<dynamic>;
+        }
+      }
+      final students = list
+          .whereType<Map<String, dynamic>>()
+          .map(_MeetStudent.fromMap)
+          .where((s) => s.id != 0)
+          .toList(growable: false);
+      if (!mounted) return;
+      setState(() => _attendanceStudents = students);
+    } catch (_) {
+      if (mounted) setState(() => _attendanceStudents = const []);
+    } finally {
+      if (mounted) setState(() => _loadingStudents = false);
+    }
   }
 
   Future<void> _pickDateTime(TextEditingController controller) async {
@@ -521,24 +553,29 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
       setState(() => _error = 'Choose a session for attendance.');
       return;
     }
-    final userId = SessionStore.instance.userId;
-    if (userId == null || userId <= 0) {
-      setState(() => _error = 'Your session is missing the instructor user id. Please log in again.');
+    if (_selectedStudentIds.isEmpty) {
+      setState(() => _error = 'Select at least one student for attendance.');
       return;
     }
     await _runBusy(() async {
-      final body = <String, dynamic>{'user_id': userId};
       final joinedAt = _toIsoOrNull(_attendanceJoinedAtController.text);
       final leftAt = _toIsoOrNull(_attendanceLeftAtController.text);
       final duration = int.tryParse(_attendanceDurationController.text.trim());
-      if (joinedAt != null) body['joined_at'] = joinedAt;
-      if (leftAt != null) body['left_at'] = leftAt;
-      if (duration != null) body['duration_minutes'] = duration;
-      await _service.saveAttendance(sessionId: sessionId, body: body);
-      _applyAttendanceSession(sessionId);
+      final baseBody = <String, dynamic>{};
+      if (joinedAt != null) baseBody['joined_at'] = joinedAt;
+      if (leftAt != null) baseBody['left_at'] = leftAt;
+      if (duration != null) baseBody['duration_minutes'] = duration;
+      final count = _selectedStudentIds.length;
+      await Future.wait(
+        _selectedStudentIds.map((studentId) => _service.saveAttendance(
+          sessionId: sessionId,
+          body: {...baseBody, 'user_id': studentId},
+        )),
+      );
+      await _applyAttendanceSession(sessionId);
       if (!mounted) return;
-      setState(() => _ok = 'Attendance stored.');
-      _showToast('Attendance stored.', AfaqToastType.success);
+      setState(() => _ok = 'Attendance stored for $count student${count > 1 ? 's' : ''}.');
+      _showToast('Attendance stored for $count student${count > 1 ? 's' : ''}.', AfaqToastType.success);
     });
   }
 
@@ -1623,32 +1660,149 @@ class _InstructorVirtualMeetPageState extends State<InstructorVirtualMeetPage> {
   }
 
   Widget _buildAttendanceCard() {
+    final allSelected = _attendanceStudents.isNotEmpty &&
+        _selectedStudentIds.length == _attendanceStudents.length;
+
     return _buildStudioCard(
       title: 'Attendance',
       step: '4',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          SizedBox(
+            width: 320,
+            child: _buildDropdown<int?>(
+              value: _attendanceSessionId,
+              items: [
+                const DropdownMenuItem<int?>(value: null, child: Text('Select session')),
+                ..._sessions.map(
+                  (item) => DropdownMenuItem<int?>(
+                    value: item.id,
+                    child: Text('#${item.id} ${item.title}'),
+                  ),
+                ),
+              ],
+              onChanged: (id) => _applyAttendanceSession(id),
+            ),
+          ),
+          if (_attendanceSessionId != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .75),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _loadingStudents
+                              ? 'Loading students…'
+                              : _attendanceStudents.isEmpty
+                                  ? 'No enrolled students'
+                                  : 'Students (${_selectedStudentIds.length}/${_attendanceStudents.length} selected)',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                        if (_attendanceStudents.isNotEmpty && !_loadingStudents)
+                          TextButton(
+                            onPressed: () => setState(() {
+                              if (allSelected) {
+                                _selectedStudentIds = {};
+                              } else {
+                                _selectedStudentIds = _attendanceStudents.map((s) => s.id).toSet();
+                              }
+                            }),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF059669),
+                              padding: EdgeInsets.zero,
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: Text(
+                              allSelected ? 'Deselect all' : 'Select all',
+                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  if (_loadingStudents)
+                    const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_attendanceStudents.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: Text(
+                        'No enrolled students found.',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: _attendanceStudents.map((s) {
+                            final checked = _selectedStudentIds.contains(s.id);
+                            return InkWell(
+                              onTap: () => setState(() {
+                                final next = Set<int>.from(_selectedStudentIds);
+                                if (checked) next.remove(s.id); else next.add(s.id);
+                                _selectedStudentIds = next;
+                              }),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: checked,
+                                      activeColor: const Color(0xFF059669),
+                                      onChanged: (v) => setState(() {
+                                        final next = Set<int>.from(_selectedStudentIds);
+                                        if (v == true) next.add(s.id); else next.remove(s.id);
+                                        _selectedStudentIds = next;
+                                      }),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(s.name, style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                                          Text(s.email, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }).toList(growable: false),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
           Wrap(
             spacing: 12,
             runSpacing: 12,
             children: [
-              SizedBox(
-                width: 320,
-                child: _buildDropdown<int?>(
-                  value: _attendanceSessionId,
-                  items: [
-                    const DropdownMenuItem<int?>(value: null, child: Text('Select session')),
-                    ..._sessions.map(
-                      (item) => DropdownMenuItem<int?>(
-                        value: item.id,
-                        child: Text('#${item.id} ${item.title}'),
-                      ),
-                    ),
-                  ],
-                  onChanged: _applyAttendanceSession,
-                ),
-              ),
               SizedBox(
                 width: 240,
                 child: _buildField(
@@ -1983,6 +2137,22 @@ class _MeetSession {
       status: instructorString(map['status'], fallback: 'draft'),
       joinUrl: instructorString(map['join_url']),
       metadata: instructorMap(map['metadata']) ?? <String, dynamic>{},
+    );
+  }
+}
+
+class _MeetStudent {
+  const _MeetStudent({required this.id, required this.name, required this.email});
+
+  final int id;
+  final String name;
+  final String email;
+
+  factory _MeetStudent.fromMap(Map<String, dynamic> map) {
+    return _MeetStudent(
+      id: instructorInt(map['id']),
+      name: instructorString(map['name'], fallback: 'Student'),
+      email: instructorString(map['email']),
     );
   }
 }

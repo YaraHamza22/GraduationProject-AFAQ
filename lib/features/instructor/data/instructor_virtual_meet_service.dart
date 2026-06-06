@@ -111,4 +111,10 @@ class InstructorVirtualMeetService {
       data: body,
     );
   }
+
+  Future<Response<Map<String, dynamic>>> getSessionStudents(int sessionId) {
+    return _client.get<Map<String, dynamic>>(
+      ApiEndpoints.virtualSessionStudents(sessionId),
+    );
+  }
 }

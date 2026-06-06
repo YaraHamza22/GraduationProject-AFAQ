@@ -55,7 +55,7 @@ class _RoleVirtualMeetJoinPageState extends State<RoleVirtualMeetJoinPage> {
     });
 
     try {
-      final response = await _service.getSessions();
+      final response = await _service.getSessions(isStudent: widget.role == VirtualMeetJoinRole.student);
       final payload = response.data ?? const <String, dynamic>{};
       final sessions = _unwrapList(payload)
           .map(_JoinSession.fromMap)

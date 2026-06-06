@@ -11,7 +11,9 @@ class VirtualMeetJoinService {
 
   ApiClient get _client => _apiClient ?? ApiClient.instance;
 
-  Future<Response<Map<String, dynamic>>> getSessions() {
-    return _client.get<Map<String, dynamic>>(ApiEndpoints.virtualSessions);
+  Future<Response<Map<String, dynamic>>> getSessions({bool isStudent = false}) {
+    return _client.get<Map<String, dynamic>>(
+      isStudent ? ApiEndpoints.studentVirtualSessions : ApiEndpoints.virtualSessions,
+    );
   }
 }
