@@ -20,6 +20,7 @@ import { createLiveSocket, type LiveSocket } from "@/lib/realtime/liveSocket";
 
 interface RemotePeer {
   id: string;
+  userId?: number;
   name: string;
   stream: MediaStream | null;
   audioEnabled: boolean;
@@ -135,15 +136,26 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
   const camStateRef = useRef(true);
   const joinContextRef = useRef<JoinContext | null>(null);
   const isUnmountingRef = useRef(false);
+  const pendingCandidatesMap = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
   const upsertRemotePeer = useCallback((peer: Omit<RemotePeer, "stream"> & { stream?: MediaStream | null }) => {
     setRemotePeers((prev) => {
-      const existing = prev.find((item) => item.id === peer.id);
+      // Deduplicate by userId — remove any stale entry for same user with a different peer ID
+      let base = prev;
+      if (peer.userId) {
+        const stale = prev.find((item) => item.userId === peer.userId && item.id !== peer.id);
+        if (stale) {
+          base = prev.filter((item) => item.id !== stale.id);
+        }
+      }
+
+      const existing = base.find((item) => item.id === peer.id);
       if (existing) {
-        return prev.map((item) =>
+        return base.map((item) =>
           item.id === peer.id
             ? {
                 ...item,
+                userId: peer.userId ?? item.userId,
                 name: peer.name,
                 audioEnabled: peer.audioEnabled,
                 videoEnabled: peer.videoEnabled,
@@ -154,9 +166,10 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
       }
 
       return [
-        ...prev,
+        ...base,
         {
           id: peer.id,
+          userId: peer.userId,
           name: peer.name,
           audioEnabled: peer.audioEnabled,
           videoEnabled: peer.videoEnabled,
@@ -217,12 +230,26 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
     }
   }, [attendance]);
 
+  const flushPendingCandidates = useCallback(async (remotePeerId: string, pc: RTCPeerConnection) => {
+    const queue = pendingCandidatesMap.current.get(remotePeerId) ?? [];
+    if (!queue.length) return;
+    pendingCandidatesMap.current.delete(remotePeerId);
+    for (const candidate of queue) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch {
+        // stale candidate, ignore
+      }
+    }
+  }, []);
+
   const closePeerConnection = useCallback((remotePeerId: string) => {
     const pc = pcMap.current.get(remotePeerId);
     if (pc) {
       pc.close();
       pcMap.current.delete(remotePeerId);
     }
+    pendingCandidatesMap.current.delete(remotePeerId);
   }, []);
 
   const removeRemotePeer = useCallback((remotePeerId: string) => {
@@ -394,6 +421,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
         case "join": {
           upsertRemotePeer({
             id: remotePeerId,
+            userId: signal.sender_user_id,
             name: String(payload.name ?? remotePeerName),
             audioEnabled: payload.audioEnabled !== false,
             videoEnabled: payload.videoEnabled !== false,
@@ -419,6 +447,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
 
           const pc = createPeerConnection(remotePeerId, remotePeerName);
           await pc.setRemoteDescription(new RTCSessionDescription(description as unknown as RTCSessionDescriptionInit));
+          await flushPendingCandidates(remotePeerId, pc);
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await sendSignal("answer", { description: answer }, remotePeerId);
@@ -433,13 +462,22 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
           }
 
           await pc.setRemoteDescription(new RTCSessionDescription(description as unknown as RTCSessionDescriptionInit));
+          await flushPendingCandidates(remotePeerId, pc);
           break;
         }
 
         case "ice-candidate": {
           const candidate = asRecord(payload.candidate);
+          if (!candidate) {
+            return;
+          }
+
           const pc = pcMap.current.get(remotePeerId);
-          if (!pc || !candidate) {
+          if (!pc || !pc.remoteDescription) {
+            // Buffer until setRemoteDescription has been called
+            const queue = pendingCandidatesMap.current.get(remotePeerId) ?? [];
+            queue.push(candidate as unknown as RTCIceCandidateInit);
+            pendingCandidatesMap.current.set(remotePeerId, queue);
             return;
           }
 
@@ -486,7 +524,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
         setConnectionError(normalizeError(error, "A live peer signal could not be processed."));
       }
     }
-  }, [createAndSendOffer, createPeerConnection, peerId, removeRemotePeer, sendSignal, upsertRemotePeer, userName]);
+  }, [createAndSendOffer, createPeerConnection, flushPendingCandidates, peerId, removeRemotePeer, sendSignal, upsertRemotePeer, userName]);
 
   useEffect(() => {
     isUnmountingRef.current = false;
@@ -896,7 +934,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
   return (
     <div className="fixed inset-0 z-50 flex bg-slate-950 text-white font-sans overflow-hidden">
       <div className="flex-1 flex flex-col relative">
-        <div className="flex items-center justify-between p-4 bg-gradient-to-b from-black/60 to-transparent z-10">
+        <div className="flex items-center justify-between p-4 bg-linear-to-b from-black/60 to-transparent z-10">
           <div className="flex items-center gap-4">
             <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-900/40">
               <Shield className="w-6 h-6 text-white" />
@@ -932,7 +970,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
                     : "grid-cols-2 lg:grid-cols-3"
             }`}
           >
-            <div className="relative group rounded-[32px] overflow-hidden bg-slate-900 border border-white/10 aspect-video shadow-2xl ring-1 ring-white/5">
+            <div className="relative group rounded-4xl overflow-hidden bg-slate-900 border border-white/10 aspect-video shadow-2xl ring-1 ring-white/5">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -941,7 +979,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
                 className={`w-full h-full object-cover transition-all duration-700 ${isCamOn ? "opacity-100 scale-100" : "opacity-0 scale-110"}`}
               />
               {(!isCamOn || !localStream || mediaError || connectionError) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_center,_#1e293b_0%,_#0f172a_100%)]">
+                <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_center,#1e293b_0%,#0f172a_100%)]">
                   <div className="flex max-w-md flex-col items-center gap-4 px-6 text-center">
                     <div className="flex h-24 w-24 items-center justify-center rounded-full bg-indigo-600 border-4 border-indigo-400/20 shadow-2xl shadow-indigo-500/20">
                       <span className="text-4xl font-black text-white">{userName.charAt(0).toUpperCase()}</span>
@@ -961,7 +999,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
             </div>
 
             {remotePeers.map((peer) => (
-              <div key={peer.id} className="relative group rounded-[32px] overflow-hidden bg-slate-900 border border-white/10 aspect-video shadow-2xl ring-1 ring-white/5">
+              <div key={peer.id} className="relative group rounded-4xl overflow-hidden bg-slate-900 border border-white/10 aspect-video shadow-2xl ring-1 ring-white/5">
                 <RemoteVideo stream={peer.stream} />
                 <div className="absolute bottom-6 left-6 flex items-center gap-2 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/10 shadow-xl">
                   <span className="text-sm font-bold text-white">{peer.name}</span>
@@ -974,7 +1012,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
         </div>
 
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
-          <div className="flex items-center gap-4 bg-slate-900/90 backdrop-blur-3xl p-3 px-6 rounded-[32px] border border-white/10 shadow-2xl shadow-black/50">
+          <div className="flex items-center gap-4 bg-slate-900/90 backdrop-blur-3xl p-3 px-6 rounded-4xl border border-white/10 shadow-2xl shadow-black/50">
             <button
               onClick={() => void toggleMic()}
               title={isMicOn ? "Mute" : "Unmute"}
@@ -1072,14 +1110,15 @@ function RemoteVideo({ stream }: { stream: MediaStream | null }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-    }
+    const video = videoRef.current;
+    if (!video || !stream) return;
+    video.srcObject = stream;
+    void video.play().catch(() => undefined);
   }, [stream]);
 
   if (!stream) {
     return (
-      <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_center,_#1e293b_0%,_#0f172a_100%)]">
+      <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_center,#1e293b_0%,#0f172a_100%)]">
         <Info className="w-12 h-12 text-slate-600 animate-pulse" />
       </div>
     );
