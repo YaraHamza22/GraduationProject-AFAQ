@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarClock, Copy, ExternalLink, Link2, Loader2, ShieldCheck, Video, X, Zap } from "lucide-react";
-import LiveMeeting from "@/features/virtual-meet/components/LiveMeeting";
-import { getStudentApiCached, getStudentApiRequestUrl } from "@/features/student/studentApi";
-import { getStoredStudentId, getStoredStudentUser, getStudentToken } from "@/features/student/studentSession";
+import { getStudentApiCached } from "@/features/student/studentApi";
+import { getStudentToken } from "@/features/student/studentSession";
 
 type ExternalPrompt = {
   href: string;
@@ -83,14 +82,8 @@ function getAfaqShareLink(roomId: string) {
   return `https://afaaq.com/live?room=${encodeURIComponent(safeRoomId)}`;
 }
 
-function getSessionIdFromRoomId(roomId: string) {
-  const match = roomId.match(/(\d+)\s*$/);
-  if (!match) return null;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 export default function StudentLivePage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const queryRoom =
     searchParams.get("room") ||
@@ -99,63 +92,55 @@ export default function StudentLivePage() {
     searchParams.get("sessionId") ||
     "";
   const queryExternalUrl = searchParams.get("url") || "";
-  const [joinUrl, setJoinUrl] = useState(queryExternalUrl.trim() || (queryRoom.trim() ? getAfaqShareLink(queryRoom.trim()) : ""));
-  const [roomIdInput, setRoomIdInput] = useState(queryRoom.trim() || "afaaq-live");
+
+  const [joinUrl, setJoinUrl] = useState(queryExternalUrl.trim() || "");
+  const [roomIdInput, setRoomIdInput] = useState("afaaq-live");
   const [externalPrompt, setExternalPrompt] = useState<ExternalPrompt | null>(null);
-  const [liveRoomId, setLiveRoomId] = useState(queryRoom.trim());
-  const [liveSessionId, setLiveSessionId] = useState<number | null>(() => {
-    const directSessionId = queryRoom.trim() ? getSessionIdFromRoomId(queryRoom.trim()) : null;
-    return directSessionId;
-  });
-  const [message, setMessage] = useState<string | null>(queryRoom.trim() ? `Joined Afaq live room: ${queryRoom.trim()}` : null);
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [publishedSessions, setPublishedSessions] = useState<SessionItem[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
+  const [redirecting, setRedirecting] = useState(!!queryRoom.trim());
 
-  const studentName = useMemo(() => {
-    const storedUser = getStoredStudentUser();
-    return typeof storedUser?.name === "string" && storedUser.name.trim() ? storedUser.name.trim() : "Student";
-  }, []);
-  const studentId = useMemo(() => getStoredStudentId(), []);
   const studentToken = useMemo(() => getStudentToken(), []);
 
   const afaqShareLink = useMemo(() => getAfaqShareLink(roomIdInput), [roomIdInput]);
   const visibleSessions = useMemo(
-    () =>
-      [...publishedSessions].sort((a, b) => new Date(a.starts_at ?? 0).getTime() - new Date(b.starts_at ?? 0).getTime()),
+    () => [...publishedSessions].sort((a, b) => new Date(a.starts_at ?? 0).getTime() - new Date(b.starts_at ?? 0).getTime()),
     [publishedSessions]
   );
 
+  // If ?room= is in the URL (shared link), go straight to the video call page
   useEffect(() => {
+    const room = queryRoom.trim();
+    if (room) {
+      router.replace(`/student/live/room?room=${encodeURIComponent(room)}`);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (redirecting) return;
     let cancelled = false;
 
-    const loadPublishedSessions = async () => {
+    const load = async () => {
       setLoadingSessions(true);
       try {
         const res = await getStudentApiCached("/student/virtual-sessions", {
-          headers: studentToken ? { Accept: "application/json", Authorization: `Bearer ${studentToken}` } : { Accept: "application/json" },
+          headers: studentToken
+            ? { Accept: "application/json", Authorization: `Bearer ${studentToken}` }
+            : { Accept: "application/json" },
         });
-        if (!cancelled) {
-          setPublishedSessions(listFromPayload<SessionItem>(res.data));
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          console.error("Could not load published sessions.", loadError);
-          setPublishedSessions([]);
-        }
+        if (!cancelled) setPublishedSessions(listFromPayload<SessionItem>(res.data));
+      } catch {
+        if (!cancelled) setPublishedSessions([]);
       } finally {
-        if (!cancelled) {
-          setLoadingSessions(false);
-        }
+        if (!cancelled) setLoadingSessions(false);
       }
     };
 
-    void loadPublishedSessions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [studentToken]);
+    void load();
+    return () => { cancelled = true; };
+  }, [studentToken, redirecting]);
 
   const copyToClipboard = async (value: string, label: string) => {
     try {
@@ -185,11 +170,7 @@ export default function StudentLivePage() {
 
     if (isAfaqUrl(parsed)) {
       const roomId = extractAfaqRoomId(parsed);
-      setRoomIdInput(roomId);
-      setLiveRoomId(roomId);
-      setLiveSessionId(getSessionIdFromRoomId(roomId));
-      setError(null);
-      setMessage(`Joined Afaq live room: ${roomId}`);
+      router.push(`/student/live/room?room=${encodeURIComponent(roomId)}`);
       return;
     }
 
@@ -199,12 +180,7 @@ export default function StudentLivePage() {
 
   const joinAfaqRoom = () => {
     const roomId = roomIdInput.trim() || "afaaq-live";
-    setRoomIdInput(roomId);
-    setJoinUrl(getAfaqShareLink(roomId));
-    setLiveRoomId(roomId);
-    setLiveSessionId(getSessionIdFromRoomId(roomId));
-    setError(null);
-    setMessage(`Joined Afaq live room: ${roomId}`);
+    router.push(`/student/live/room?room=${encodeURIComponent(roomId)}`);
   };
 
   const confirmExternalJoin = () => {
@@ -215,44 +191,18 @@ export default function StudentLivePage() {
     setExternalPrompt(null);
   };
 
-  if (liveRoomId) {
-    const sessionId = liveSessionId ?? getSessionIdFromRoomId(liveRoomId);
-    const attendanceConfig =
-      studentToken && studentId != null && sessionId !== null
-        ? {
-            endpointUrl: getStudentApiRequestUrl(`/virtual-sessions/${sessionId}/attendance`),
-            token: studentToken,
-            userId: studentId,
-          }
-        : null;
-    const sessionConfig =
-      studentToken && sessionId !== null
-        ? {
-            sessionId,
-            getRequestUrl: getStudentApiRequestUrl,
-            token: studentToken,
-          }
-        : null;
-
+  if (redirecting) {
     return (
-      <LiveMeeting
-        roomId={liveRoomId}
-        userName={studentName}
-        attendance={attendanceConfig}
-        session={sessionConfig}
-        onExit={() => {
-          setLiveRoomId("");
-          setLiveSessionId(null);
-          setMessage("You left the Afaq live room.");
-        }}
-      />
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#cffafe_0%,#eff6ff_42%,#f8fafc_100%)] dark:bg-[radial-gradient(circle_at_top,#082f49_0%,#0f172a_40%,#020617_100%)]">
+        <Loader2 className="h-8 w-8 animate-spin text-cyan-600 dark:text-cyan-300" />
+      </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#cffafe_0%,_#eff6ff_42%,_#f8fafc_100%)] px-4 py-8 dark:bg-[radial-gradient(circle_at_top,_#082f49_0%,_#0f172a_40%,_#020617_100%)] sm:px-6 lg:px-10">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#cffafe_0%,#eff6ff_42%,#f8fafc_100%)] px-4 py-8 dark:bg-[radial-gradient(circle_at_top,#082f49_0%,#0f172a_40%,#020617_100%)] sm:px-6 lg:px-10">
       <div className="mx-auto max-w-5xl space-y-6 text-slate-900 dark:text-white">
-        <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80 md:p-8">
+        <section className="rounded-4xl border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80 md:p-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="inline-flex items-center gap-2 rounded-full bg-cyan-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-200">
@@ -275,7 +225,7 @@ export default function StudentLivePage() {
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
-          <div className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
+          <div className="rounded-4xl border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-indigo-600/10 p-3 text-indigo-600 dark:text-indigo-300">
                 <Link2 className="h-5 w-5" />
@@ -289,7 +239,7 @@ export default function StudentLivePage() {
             <div className="mt-5 space-y-3">
               <input
                 value={joinUrl}
-                onChange={(event) => setJoinUrl(event.target.value)}
+                onChange={(e) => setJoinUrl(e.target.value)}
                 placeholder="Paste Zoom, Google Meet, or https://afaaq.com/live link"
                 className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium outline-none transition focus:border-indigo-500 dark:border-white/15 dark:bg-slate-950/40"
               />
@@ -314,7 +264,7 @@ export default function StudentLivePage() {
             </div>
           </div>
 
-          <div className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
+          <div className="rounded-4xl border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-cyan-500/10 p-3 text-cyan-700 dark:text-cyan-200">
                 <Zap className="h-5 w-5" />
@@ -328,7 +278,7 @@ export default function StudentLivePage() {
             <div className="mt-5 space-y-3">
               <input
                 value={roomIdInput}
-                onChange={(event) => setRoomIdInput(event.target.value)}
+                onChange={(e) => setRoomIdInput(e.target.value)}
                 placeholder="Room ID"
                 className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium outline-none transition focus:border-cyan-500 dark:border-white/15 dark:bg-slate-950/40"
               />
@@ -358,7 +308,7 @@ export default function StudentLivePage() {
           </div>
         </section>
 
-        <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
+        <section className="rounded-4xl border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
           <div className="flex items-start gap-3">
             <div className="rounded-2xl bg-emerald-500/10 p-3 text-emerald-700 dark:text-emerald-200">
               <ShieldCheck className="h-5 w-5" />
@@ -366,13 +316,13 @@ export default function StudentLivePage() {
             <div>
               <h2 className="text-xl font-black">How It Works</h2>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                Zoom and Google Meet links stay external and require confirmation before leaving Afaq. Any `afaaq.com/live` room opens directly in the built-in HD live meeting screen.
+                Zoom and Google Meet links stay external and require confirmation before leaving Afaq. Any afaaq.com/live room opens directly in the built-in HD live meeting screen.
               </p>
             </div>
           </div>
         </section>
 
-        <section className="rounded-[32px] border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
+        <section className="rounded-4xl border border-white/70 bg-white/85 p-6 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-start gap-3">
               <div className="rounded-2xl bg-emerald-500/10 p-3 text-emerald-700 dark:text-emerald-200">
@@ -381,7 +331,7 @@ export default function StudentLivePage() {
               <div>
                 <h2 className="text-xl font-black">Published Sessions</h2>
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                  These are the sessions students should see after the instructor publishes them.
+                  Live sessions published by your instructors appear here.
                 </p>
               </div>
             </div>
@@ -399,36 +349,44 @@ export default function StudentLivePage() {
                         <span className="rounded-full bg-emerald-500/10 px-2 py-1 font-black uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-200">
                           {(session.status ?? "published").toUpperCase()}
                         </span>
-                        <span>{session.provider === "afaq_live" ? "Afaq HD" : session.provider === "google_meet" ? "Google Meet" : session.provider === "zoom" ? "Zoom" : session.provider}</span>
+                        <span>
+                          {session.provider === "afaq_live"
+                            ? "Afaq HD"
+                            : session.provider === "google_meet"
+                            ? "Google Meet"
+                            : session.provider === "zoom"
+                            ? "Zoom"
+                            : session.provider}
+                        </span>
                         <span>
                           {session.starts_at
-                            ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(session.starts_at))
+                            ? new Intl.DateTimeFormat("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                                hour: "numeric",
+                                minute: "2-digit",
+                              }).format(new Date(session.starts_at))
                             : "No date"}
                         </span>
                       </div>
-                      {session.description ? <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{session.description}</p> : null}
+                      {session.description ? (
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{session.description}</p>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           if (session.provider === "afaq_live") {
-                            const afaqRoomId = `afaq-session-${session.id}`;
-                            setJoinUrl(session.join_url ?? getAfaqShareLink(afaqRoomId));
-                            setRoomIdInput(afaqRoomId);
-                            setLiveRoomId(afaqRoomId);
-                            setLiveSessionId(session.id);
-                            setError(null);
-                            setMessage(`Joined Afaq live room: ${afaqRoomId}`);
+                            router.push(`/student/live/room?room=${encodeURIComponent(`afaq-session-${session.id}`)}`);
                             return;
                           }
-
                           if (!session.join_url?.trim()) {
-                            setError("This published session does not have a join link yet.");
+                            setError("This session does not have a join link yet.");
                             setMessage(null);
                             return;
                           }
-                          setJoinUrl(session.join_url);
                           const parsed = tryParseUrl(session.join_url);
                           if (parsed && getProviderFromUrl(parsed)) {
                             setExternalPrompt({ href: parsed.toString(), provider: getProviderFromUrl(parsed)! });
@@ -437,17 +395,12 @@ export default function StudentLivePage() {
                             return;
                           }
                           if (parsed && isAfaqUrl(parsed)) {
-                            const roomId = extractAfaqRoomId(parsed);
-                            setRoomIdInput(roomId);
-                            setLiveRoomId(roomId);
-                            setLiveSessionId(session.id);
-                            setError(null);
-                            setMessage(`Joined Afaq live room: ${roomId}`);
+                            router.push(`/student/live/room?room=${encodeURIComponent(extractAfaqRoomId(parsed))}`);
                           }
                         }}
                         className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white"
                       >
-                        <ExternalLink className="h-3.5 w-3.5" />
+                        <Video className="h-3.5 w-3.5" />
                         Join Session
                       </button>
                       {session.join_url ? (
@@ -497,7 +450,7 @@ export default function StudentLivePage() {
             </div>
 
             <div className="mt-4 rounded-2xl bg-slate-100/80 p-4 text-xs text-slate-600 dark:bg-slate-950/60 dark:text-slate-300">
-              <p className="font-bold uppercase tracking-[0.16em] text-[10px] text-slate-500 dark:text-slate-400">Destination URL</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Destination URL</p>
               <p className="mt-2 break-all">{externalPrompt.href}</p>
             </div>
 
