@@ -2,14 +2,19 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AlertCircle,
   Camera,
   CameraOff,
+  Check,
+  ClipboardList,
   Info,
+  Loader2,
   MessageSquare,
   Mic,
   MicOff,
   MonitorUp,
   PhoneOff,
+  RefreshCw,
   ScreenShareOff,
   Send,
   Shield,
@@ -51,6 +56,7 @@ interface LiveMeetingProps {
     userId: number | string;
   } | null;
   session?: SessionConfig | null;
+  isInstructor?: boolean;
 }
 
 type PresenceMessage =
@@ -87,6 +93,18 @@ type LiveSignal = {
   sent_at: string;
 };
 
+type EnrolledStudent = { id: number; name: string; email: string };
+
+type AttendanceRecord = {
+  id: number;
+  user_id: number;
+  name: string;
+  email: string;
+  joined_at: string | null;
+  left_at: string | null;
+  duration_minutes: number;
+};
+
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   {
     urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"],
@@ -101,7 +119,6 @@ function normalizeError(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
-
   return fallback;
 }
 
@@ -109,13 +126,47 @@ function shouldInitiateOffer(selfPeerId: string, remotePeerId: string) {
   return selfPeerId.localeCompare(remotePeerId) < 0;
 }
 
-export default function LiveMeeting({ roomId, userName, onExit, attendance = null, session = null }: LiveMeetingProps) {
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const shifted = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return shifted.toISOString().slice(0, 16);
+}
+
+function minutesBetween(startIso: string | null, endIso: string | null): string {
+  if (!startIso || !endIso) return "";
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "";
+  return String(Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000)));
+}
+
+function listFromData<T>(payload: unknown): T[] {
+  if (!payload || typeof payload !== "object") return [];
+  const p = payload as Record<string, unknown>;
+  if (Array.isArray(p.data)) return p.data as T[];
+  if (p.data && typeof p.data === "object" && Array.isArray((p.data as Record<string, unknown>).data)) {
+    return (p.data as Record<string, unknown>).data as T[];
+  }
+  return [];
+}
+
+function itemFromData<T>(payload: unknown): T | null {
+  if (!payload || typeof payload !== "object") return null;
+  const p = payload as Record<string, unknown>;
+  if (p.data && typeof p.data === "object" && !Array.isArray(p.data)) return p.data as T;
+  return null;
+}
+
+export default function LiveMeeting({ roomId, userName, onExit, attendance = null, session = null, isInstructor = false }: LiveMeetingProps) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remotePeers, setRemotePeers] = useState<RemotePeer[]>([]);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCamOn, setIsCamOn] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isAttendanceOpen, setIsAttendanceOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [peerId] = useState(() => `peer-${crypto.randomUUID().slice(0, 10)}`);
@@ -123,6 +174,18 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isMediaPending, setIsMediaPending] = useState(true);
   const [displayRoomId, setDisplayRoomId] = useState(roomId);
+
+  // Attendance panel state
+  const [attendanceEnrolled, setAttendanceEnrolled] = useState<EnrolledStudent[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [attendanceSelectedIds, setAttendanceSelectedIds] = useState<Set<number>>(new Set());
+  const [attendanceJoinedAt, setAttendanceJoinedAt] = useState("");
+  const [attendanceLeftAt, setAttendanceLeftAt] = useState("");
+  const [attendanceDuration, setAttendanceDuration] = useState("");
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [attendanceBusy, setAttendanceBusy] = useState(false);
+  const [attendanceMsg, setAttendanceMsg] = useState<string | null>(null);
+  const [attendanceErr, setAttendanceErr] = useState<string | null>(null);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -142,7 +205,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
     setRemotePeers((prev) => {
       // Deduplicate by userId — remove any stale entry for same user with a different peer ID
       let base = prev;
-      if (peer.userId) {
+      if (peer.userId != null) {
         const stale = prev.find((item) => item.userId === peer.userId && item.id !== peer.id);
         if (stale) {
           base = prev.filter((item) => item.id !== stale.id);
@@ -196,6 +259,109 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
     attendanceSubmittedRef.current = false;
     setDisplayRoomId(roomId);
   }, [roomId]);
+
+  // Load attendance data when panel opens
+  useEffect(() => {
+    if (!isAttendanceOpen || !isInstructor || !session?.sessionId || !session.token) return;
+
+    let cancelled = false;
+    setLoadingAttendance(true);
+    setAttendanceMsg(null);
+    setAttendanceErr(null);
+
+    const token = session.token;
+    const sid = session.sessionId;
+
+    Promise.all([
+      fetch(session.getRequestUrl(`/virtual-sessions/${sid}/students`), {
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      }).then((r) => r.json()).catch(() => null),
+      fetch(session.getRequestUrl(`/virtual-sessions/${sid}/attendance`), {
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      }).then((r) => r.json()).catch(() => null),
+      fetch(session.getRequestUrl(`/virtual-sessions/${sid}`), {
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      }).then((r) => r.json()).catch(() => null),
+    ]).then(([enrolledPayload, recordsPayload, sessionPayload]) => {
+      if (cancelled) return;
+      setAttendanceEnrolled(listFromData<EnrolledStudent>(enrolledPayload));
+      setAttendanceRecords(listFromData<AttendanceRecord>(recordsPayload));
+      const sess = itemFromData<{ starts_at?: string | null; ends_at?: string | null }>(sessionPayload);
+      if (sess) {
+        setAttendanceJoinedAt(toLocalInput(sess.starts_at));
+        setAttendanceLeftAt(toLocalInput(sess.ends_at));
+        setAttendanceDuration(minutesBetween(sess.starts_at ?? null, sess.ends_at ?? null));
+      }
+    }).catch(() => {
+      if (!cancelled) setAttendanceErr("Failed to load attendance data.");
+    }).finally(() => {
+      if (!cancelled) setLoadingAttendance(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [isAttendanceOpen, isInstructor, session?.sessionId, session?.token]);
+
+  const refreshAttendanceRecords = useCallback(async () => {
+    if (!session?.sessionId || !session.token) return;
+    try {
+      const res = await fetch(session.getRequestUrl(`/virtual-sessions/${session.sessionId}/attendance`), {
+        headers: { Accept: "application/json", Authorization: `Bearer ${session.token}` },
+      });
+      const data = await res.json().catch(() => null);
+      setAttendanceRecords(listFromData<AttendanceRecord>(data));
+    } catch {
+      // ignore
+    }
+  }, [session?.sessionId, session?.token]);
+
+  const saveAttendance = useCallback(async () => {
+    if (!session?.sessionId || !session.token) return;
+    if (attendanceSelectedIds.size === 0) {
+      setAttendanceErr("Select at least one student.");
+      return;
+    }
+    setAttendanceBusy(true);
+    setAttendanceErr(null);
+    setAttendanceMsg(null);
+    try {
+      const joinedIso = attendanceJoinedAt ? new Date(attendanceJoinedAt).toISOString() : null;
+      const leftIso = attendanceLeftAt ? new Date(attendanceLeftAt).toISOString() : null;
+      const dur = attendanceDuration.trim() ? parseInt(attendanceDuration, 10) : null;
+
+      await Promise.all(
+        Array.from(attendanceSelectedIds).map((studentId) =>
+          fetch(session.getRequestUrl(`/virtual-sessions/${session.sessionId}/attendance`), {
+            method: "POST",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.token}`,
+            },
+            body: JSON.stringify({
+              user_id: studentId,
+              ...(joinedIso ? { joined_at: joinedIso } : {}),
+              ...(leftIso ? { left_at: leftIso } : {}),
+              ...(dur !== null ? { duration_minutes: dur } : {}),
+            }),
+          }).then(async (r) => {
+            if (!r.ok) {
+              const body = await r.json().catch(() => null) as { message?: string } | null;
+              throw new Error(body?.message ?? `HTTP ${r.status}`);
+            }
+          })
+        )
+      );
+
+      const count = attendanceSelectedIds.size;
+      setAttendanceMsg(`Stored attendance for ${count} student${count > 1 ? "s" : ""}.`);
+      setAttendanceSelectedIds(new Set());
+      await refreshAttendanceRecords();
+    } catch (error) {
+      setAttendanceErr(normalizeError(error, "Failed to store attendance."));
+    } finally {
+      setAttendanceBusy(false);
+    }
+  }, [session, attendanceSelectedIds, attendanceJoinedAt, attendanceLeftAt, attendanceDuration, refreshAttendanceRecords]);
 
   const submitAttendance = useCallback(async () => {
     if (!attendance || attendanceSubmittedRef.current) {
@@ -359,8 +525,19 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
       if (!event.candidate) {
         return;
       }
-
       void sendSignal("ice-candidate", { candidate: event.candidate.toJSON() }, remotePeerId);
+    };
+
+    // Renegotiate when tracks are added after initial offer/answer (e.g. late camera)
+    pc.onnegotiationneeded = async () => {
+      if (!shouldInitiateOffer(peerId, remotePeerId)) return;
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await sendSignal("offer", { description: offer }, remotePeerId);
+      } catch {
+        // connection may already be closing
+      }
     };
 
     pc.ontrack = (event) => {
@@ -392,9 +569,16 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
       }
     };
 
+    // ICE failure removes the peer immediately without waiting for connection state
+    pc.oniceconnectionstatechange = () => {
+      if (["failed", "closed"].includes(pc.iceConnectionState)) {
+        removeRemotePeer(remotePeerId);
+      }
+    };
+
     pcMap.current.set(remotePeerId, pc);
     return pc;
-  }, [removeRemotePeer, sendSignal, upsertRemotePeer]);
+  }, [peerId, removeRemotePeer, sendSignal, upsertRemotePeer]);
 
   const createAndSendOffer = useCallback(async (remotePeerId: string, remotePeerName: string) => {
     const pc = createPeerConnection(remotePeerId, remotePeerName);
@@ -419,6 +603,17 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
     try {
       switch (signal.type) {
         case "join": {
+          // Close any stale connection from same user reconnecting with a new peer ID
+          if (signal.sender_user_id != null) {
+            const stalePeer = remotePeersRef.current.find(
+              (p) => p.userId != null && p.userId === signal.sender_user_id && p.id !== remotePeerId
+            );
+            if (stalePeer) {
+              closePeerConnection(stalePeer.id);
+              setRemotePeers((prev) => prev.filter((p) => p.id !== stalePeer.id));
+            }
+          }
+
           upsertRemotePeer({
             id: remotePeerId,
             userId: signal.sender_user_id,
@@ -524,7 +719,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
         setConnectionError(normalizeError(error, "A live peer signal could not be processed."));
       }
     }
-  }, [createAndSendOffer, createPeerConnection, flushPendingCandidates, peerId, removeRemotePeer, sendSignal, upsertRemotePeer, userName]);
+  }, [closePeerConnection, createAndSendOffer, createPeerConnection, flushPendingCandidates, peerId, removeRemotePeer, sendSignal, upsertRemotePeer, userName]);
 
   useEffect(() => {
     isUnmountingRef.current = false;
@@ -931,6 +1126,18 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
     onExit();
   };
 
+  const openChat = () => {
+    setIsChatOpen(true);
+    setIsAttendanceOpen(false);
+  };
+
+  const openAttendance = () => {
+    setIsAttendanceOpen(true);
+    setIsChatOpen(false);
+  };
+
+  const activePanelOpen = isChatOpen || isAttendanceOpen;
+
   return (
     <div className="fixed inset-0 z-50 flex bg-slate-950 text-white font-sans overflow-hidden">
       <div className="flex-1 flex flex-col relative">
@@ -1040,12 +1247,22 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
             <div className="w-px h-8 bg-white/10 mx-2" />
 
             <button
-              onClick={() => setIsChatOpen(!isChatOpen)}
+              onClick={openChat}
               title="Chat"
               className={`p-4 rounded-2xl transition-all hover:scale-110 active:scale-95 ${isChatOpen ? "bg-indigo-600 text-white" : "bg-white/10 hover:bg-white/20 text-white"}`}
             >
               <MessageSquare className="w-6 h-6" />
             </button>
+
+            {isInstructor && session?.sessionId && (
+              <button
+                onClick={openAttendance}
+                title="Attendance"
+                className={`p-4 rounded-2xl transition-all hover:scale-110 active:scale-95 ${isAttendanceOpen ? "bg-emerald-600 text-white" : "bg-white/10 hover:bg-white/20 text-white"}`}
+              >
+                <ClipboardList className="w-6 h-6" />
+              </button>
+            )}
 
             <button
               onClick={() => void handleExit()}
@@ -1058,7 +1275,8 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
         </div>
       </div>
 
-      <div className={`w-96 bg-slate-900 border-l border-white/10 flex flex-col transition-all duration-500 ${isChatOpen ? "mr-0" : "-mr-96"}`}>
+      {/* Chat panel */}
+      <div className={`w-96 bg-slate-900 border-l border-white/10 flex flex-col transition-all duration-500 ${isChatOpen && !isAttendanceOpen ? "mr-0" : "-mr-96"}`}>
         <div className="p-6 border-b border-white/10 flex items-center justify-between bg-slate-950/50">
           <h2 className="font-black text-lg tracking-tight">In-call messages</h2>
           <button onClick={() => setIsChatOpen(false)} className="p-2 hover:bg-white/10 rounded-full">
@@ -1102,6 +1320,201 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
           </div>
         </form>
       </div>
+
+      {/* Instructor attendance panel */}
+      {isInstructor && (
+        <div className={`w-[420px] bg-slate-900 border-l border-white/10 flex flex-col transition-all duration-500 ${isAttendanceOpen ? "mr-0" : "-mr-[420px]"}`}>
+          <div className="p-5 border-b border-white/10 flex items-center justify-between bg-slate-950/50 shrink-0">
+            <div className="flex items-center gap-3">
+              <ClipboardList className="w-5 h-5 text-emerald-400" />
+              <h2 className="font-black text-lg tracking-tight">Attendance</h2>
+              {loadingAttendance && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void refreshAttendanceRecords()}
+                title="Refresh records"
+                className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+              <button onClick={() => setIsAttendanceOpen(false)} className="p-2 hover:bg-white/10 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {/* Store attendance form */}
+            <div className="p-5 border-b border-white/10">
+              <p className="text-xs font-black uppercase tracking-widest text-slate-400 mb-3">Store Attendance</p>
+
+              {attendanceMsg && (
+                <div className="mb-3 flex items-center gap-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
+                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <p className="text-xs font-semibold text-emerald-300">{attendanceMsg}</p>
+                </div>
+              )}
+              {attendanceErr && (
+                <div className="mb-3 flex items-center gap-2 rounded-xl bg-rose-500/10 border border-rose-500/20 px-3 py-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <p className="text-xs font-semibold text-rose-300">{attendanceErr}</p>
+                </div>
+              )}
+
+              {/* Student multiselect dropdown */}
+              <div className="rounded-xl border border-white/10 overflow-hidden mb-3">
+                <div className="flex items-center justify-between px-3 py-2 bg-white/5 border-b border-white/10">
+                  <span className="text-xs font-bold text-slate-400">
+                    {loadingAttendance
+                      ? "Loading students…"
+                      : attendanceEnrolled.length === 0
+                        ? "No enrolled students"
+                        : `${attendanceSelectedIds.size} of ${attendanceEnrolled.length} selected`}
+                  </span>
+                  {attendanceEnrolled.length > 0 && !loadingAttendance && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (attendanceSelectedIds.size === attendanceEnrolled.length) {
+                          setAttendanceSelectedIds(new Set());
+                        } else {
+                          setAttendanceSelectedIds(new Set(attendanceEnrolled.map((s) => s.id)));
+                        }
+                      }}
+                      className="text-xs font-black text-emerald-400 hover:text-emerald-300"
+                    >
+                      {attendanceSelectedIds.size === attendanceEnrolled.length ? "Deselect all" : "Select all"}
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-44 overflow-y-auto bg-slate-950/30">
+                  {loadingAttendance ? (
+                    <div className="flex items-center gap-2 px-3 py-3 text-sm text-slate-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />Loading…
+                    </div>
+                  ) : attendanceEnrolled.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-slate-500">No enrolled students found for this session.</p>
+                  ) : (
+                    attendanceEnrolled.map((s) => (
+                      <label key={s.id} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-white/5 border-b border-white/5 last:border-0">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-emerald-500 rounded"
+                          checked={attendanceSelectedIds.has(s.id)}
+                          onChange={(e) => {
+                            setAttendanceSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(s.id);
+                              else next.delete(s.id);
+                              return next;
+                            });
+                          }}
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{s.name}</p>
+                          <p className="text-xs text-slate-400 truncate">{s.email}</p>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Date/time fields */}
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Joined At</label>
+                  <input
+                    type="datetime-local"
+                    value={attendanceJoinedAt}
+                    onChange={(e) => setAttendanceJoinedAt(e.target.value)}
+                    className="w-full h-9 rounded-xl border border-white/10 bg-white/5 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Left At</label>
+                  <input
+                    type="datetime-local"
+                    value={attendanceLeftAt}
+                    onChange={(e) => setAttendanceLeftAt(e.target.value)}
+                    className="w-full h-9 rounded-xl border border-white/10 bg-white/5 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                  />
+                </div>
+              </div>
+              <div className="mb-3">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Duration (minutes)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={attendanceDuration}
+                  onChange={(e) => setAttendanceDuration(e.target.value)}
+                  placeholder="Auto-calculated"
+                  className="w-full h-9 rounded-xl border border-white/10 bg-white/5 px-3 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50"
+                />
+              </div>
+
+              <button
+                onClick={() => void saveAttendance()}
+                disabled={attendanceBusy || attendanceSelectedIds.size === 0}
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-sm font-black uppercase tracking-wide transition-colors flex items-center justify-center gap-2"
+              >
+                {attendanceBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                Store Attendance
+              </button>
+            </div>
+
+            {/* Attendance records */}
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+                  Attendance Records
+                  {attendanceRecords.length > 0 && (
+                    <span className="ml-2 bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full text-[10px]">{attendanceRecords.length}</span>
+                  )}
+                </p>
+              </div>
+
+              {loadingAttendance ? (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />Loading…
+                </div>
+              ) : attendanceRecords.length === 0 ? (
+                <p className="text-sm text-slate-500">No attendance recorded yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {attendanceRecords.map((record) => (
+                    <div key={record.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-white truncate">{record.name}</p>
+                          <p className="text-xs text-slate-400 truncate">{record.email}</p>
+                        </div>
+                        <div className="shrink-0 bg-emerald-500/20 text-emerald-400 text-[10px] font-black px-2 py-0.5 rounded-full">
+                          {record.duration_minutes} min
+                        </div>
+                      </div>
+                      {(record.joined_at || record.left_at) && (
+                        <div className="mt-2 grid grid-cols-2 gap-1 text-[10px] text-slate-500">
+                          {record.joined_at && (
+                            <span>In: {new Date(record.joined_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                          )}
+                          {record.left_at && (
+                            <span>Out: {new Date(record.left_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Spacer so video tiles don't go behind open panels */}
+      {activePanelOpen && <div className="hidden" aria-hidden />}
     </div>
   );
 }

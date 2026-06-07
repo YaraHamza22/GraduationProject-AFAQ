@@ -16,6 +16,7 @@ export default function InstructorLiveRoute() {
         backHref="/instructor/virtual-meet"
         backLabel="Back To Virtual Meet"
         userName={userName}
+        isInstructor={true}
         attendance={{
           getRequestUrl: getStudentApiRequestUrl,
           token: getStudentToken(),

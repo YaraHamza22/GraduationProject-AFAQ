@@ -10,6 +10,7 @@ type Props = {
   backHref: string;
   backLabel: string;
   userName: string;
+  isInstructor?: boolean;
   attendance?: {
     getRequestUrl: (path: string) => string;
     token: string | null;
@@ -24,7 +25,7 @@ function getSessionIdFromRoomId(roomId: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export default function AfaqLiveRoomPage({ backHref, backLabel, userName, attendance = null }: Props) {
+export default function AfaqLiveRoomPage({ backHref, backLabel, userName, isInstructor = false, attendance = null }: Props) {
   const searchParams = useSearchParams();
   const roomId =
     searchParams.get("room") ||
@@ -52,8 +53,8 @@ export default function AfaqLiveRoomPage({ backHref, backLabel, userName, attend
 
   if (!roomId.trim()) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#cffafe_0%,_#eff6ff_42%,_#f8fafc_100%)] px-4 py-8 dark:bg-[radial-gradient(circle_at_top,_#082f49_0%,_#0f172a_40%,_#020617_100%)] sm:px-6 lg:px-10">
-        <div className="mx-auto max-w-3xl rounded-[32px] border border-white/70 bg-white/85 p-8 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80 dark:text-white">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#cffafe_0%,#eff6ff_42%,#f8fafc_100%)] px-4 py-8 dark:bg-[radial-gradient(circle_at_top,#082f49_0%,#0f172a_40%,#020617_100%)] sm:px-6 lg:px-10">
+        <div className="mx-auto max-w-3xl rounded-4xl border border-white/70 bg-white/85 p-8 shadow-xl backdrop-blur-xl dark:border-cyan-300/20 dark:bg-slate-900/80 dark:text-white">
           <div className="inline-flex items-center gap-2 rounded-full bg-cyan-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-200">
             <Video className="h-3.5 w-3.5" />
             Afaq Live
@@ -74,5 +75,14 @@ export default function AfaqLiveRoomPage({ backHref, backLabel, userName, attend
     );
   }
 
-  return <LiveMeeting roomId={roomId.trim()} userName={userName} attendance={attendanceConfig} session={sessionConfig} onExit={() => window.history.back()} />;
+  return (
+    <LiveMeeting
+      roomId={roomId.trim()}
+      userName={userName}
+      attendance={attendanceConfig}
+      session={sessionConfig}
+      isInstructor={isInstructor}
+      onExit={() => window.history.back()}
+    />
+  );
 }
