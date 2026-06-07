@@ -418,7 +418,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
           }
 
           const pc = createPeerConnection(remotePeerId, remotePeerName);
-          await pc.setRemoteDescription(new RTCSessionDescription(description as RTCSessionDescriptionInit));
+          await pc.setRemoteDescription(new RTCSessionDescription(description as unknown as RTCSessionDescriptionInit));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await sendSignal("answer", { description: answer }, remotePeerId);
@@ -432,7 +432,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
             return;
           }
 
-          await pc.setRemoteDescription(new RTCSessionDescription(description as RTCSessionDescriptionInit));
+          await pc.setRemoteDescription(new RTCSessionDescription(description as unknown as RTCSessionDescriptionInit));
           break;
         }
 
@@ -443,7 +443,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
             return;
           }
 
-          await pc.addIceCandidate(new RTCIceCandidate(candidate as RTCIceCandidateInit));
+          await pc.addIceCandidate(new RTCIceCandidate(candidate as unknown as RTCIceCandidateInit));
           break;
         }
 

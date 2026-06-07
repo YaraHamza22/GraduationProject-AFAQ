@@ -20,6 +20,7 @@ export type LiveSocket = {
 
 export function createLiveSocket(config: LiveSocketConfig): LiveSocket {
   const pusher = new Pusher(config.key, {
+    cluster: "",
     wsHost: config.host,
     wsPort: config.port,
     wssPort: config.port,
