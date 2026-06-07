@@ -506,6 +506,9 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
 
     const pc = new RTCPeerConnection({
       iceServers: joinContextRef.current?.ice_servers?.length ? joinContextRef.current.ice_servers : DEFAULT_ICE_SERVERS,
+      iceCandidatePoolSize: 4,
+      bundlePolicy: "max-bundle",
+      rtcpMuxPolicy: "require",
     });
 
     const stream = new MediaStream();
@@ -610,13 +613,18 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
             videoEnabled: payload.videoEnabled !== false,
           });
 
-          await sendSignal("status", {
-            name: userName,
-            audioEnabled: micStateRef.current,
-            videoEnabled: camStateRef.current,
-          }, remotePeerId);
+          // Reply with a targeted join so the new peer can run shouldInitiateOffer.
+          // Only reply to broadcast joins (target_peer_id == null) to prevent loops.
+          if (!signal.target_peer_id) {
+            await sendSignal("join", {
+              name: userName,
+              audioEnabled: micStateRef.current,
+              videoEnabled: camStateRef.current,
+            }, remotePeerId);
+          }
 
-          if (shouldInitiateOffer(peerId, remotePeerId)) {
+          // Guard with pcMap so we don't double-offer when both sides exchange joins
+          if (shouldInitiateOffer(peerId, remotePeerId) && !pcMap.current.has(remotePeerId)) {
             await createAndSendOffer(remotePeerId, String(payload.name ?? remotePeerName));
           }
           break;
