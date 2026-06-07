@@ -191,6 +191,8 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
   const localStreamRef = useRef<MediaStream | null>(null);
   const remotePeersRef = useRef<RemotePeer[]>([]);
   const pcMap = useRef<Map<string, RTCPeerConnection>>(new Map());
+  // userId → peerId map for O(1) stale-connection detection (doesn't depend on React render timing)
+  const userPeerMap = useRef<Map<number, string>>(new Map());
   const socketRef = useRef<LiveSocket | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const joinedAtRef = useRef<string>(new Date().toISOString());
@@ -420,6 +422,10 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
 
   const removeRemotePeer = useCallback((remotePeerId: string) => {
     closePeerConnection(remotePeerId);
+    // Also remove from userId→peerId map so the next join isn't falsely treated as stale
+    userPeerMap.current.forEach((pid, uid) => {
+      if (pid === remotePeerId) userPeerMap.current.delete(uid);
+    });
     setRemotePeers((prev) => prev.filter((peer) => peer.id !== remotePeerId));
   }, [closePeerConnection]);
 
@@ -506,9 +512,6 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
 
     const pc = new RTCPeerConnection({
       iceServers: joinContextRef.current?.ice_servers?.length ? joinContextRef.current.ice_servers : DEFAULT_ICE_SERVERS,
-      iceCandidatePoolSize: 4,
-      bundlePolicy: "max-bundle",
-      rtcpMuxPolicy: "require",
     });
 
     const stream = new MediaStream();
@@ -575,7 +578,9 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
     const pc = createPeerConnection(remotePeerId, remotePeerName);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await sendSignal("offer", { description: offer }, remotePeerId);
+    // Send the finalised local description (browser may adjust sdp after setLocalDescription)
+    const ld = pc.localDescription;
+    await sendSignal("offer", { description: { type: ld?.type ?? offer.type, sdp: ld?.sdp ?? offer.sdp } }, remotePeerId);
   }, [createPeerConnection, sendSignal]);
 
   const handleLiveSignal = useCallback(async (signal: LiveSignal) => {
@@ -594,20 +599,21 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
     try {
       switch (signal.type) {
         case "join": {
-          // Close any stale connection from same user reconnecting with a new peer ID
-          if (signal.sender_user_id != null) {
-            const stalePeer = remotePeersRef.current.find(
-              (p) => p.userId != null && p.userId === signal.sender_user_id && p.id !== remotePeerId
-            );
-            if (stalePeer) {
-              closePeerConnection(stalePeer.id);
-              setRemotePeers((prev) => prev.filter((p) => p.id !== stalePeer.id));
+          // Use userPeerMap (not React state ref) for stale-connection detection —
+          // it's updated synchronously so it's never stale even under async interleaving.
+          const uid = signal.sender_user_id;
+          if (uid != null) {
+            const prevPeerId = userPeerMap.current.get(uid);
+            if (prevPeerId && prevPeerId !== remotePeerId) {
+              closePeerConnection(prevPeerId);
+              setRemotePeers((prev) => prev.filter((p) => p.id !== prevPeerId));
             }
+            userPeerMap.current.set(uid, remotePeerId);
           }
 
           upsertRemotePeer({
             id: remotePeerId,
-            userId: signal.sender_user_id,
+            userId: uid,
             name: String(payload.name ?? remotePeerName),
             audioEnabled: payload.audioEnabled !== false,
             videoEnabled: payload.videoEnabled !== false,
@@ -632,27 +638,43 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
 
         case "offer": {
           const description = asRecord(payload.description);
-          if (!description) {
-            return;
-          }
+          const sdpString = typeof description?.sdp === "string" ? description.sdp : "";
+          const sdpType = (description?.type as RTCSdpType | undefined) ?? "offer";
+          if (!sdpString) return;
+
+          // Always close any existing PC before processing a new offer — ensures clean
+          // signaling state (avoids "Called in wrong state" errors on reconnect).
+          const buffered = pendingCandidatesMap.current.get(remotePeerId) ?? [];
+          closePeerConnection(remotePeerId);
+          pendingCandidatesMap.current.set(remotePeerId, buffered);
 
           const pc = createPeerConnection(remotePeerId, remotePeerName);
-          await pc.setRemoteDescription(new RTCSessionDescription(description as unknown as RTCSessionDescriptionInit));
+          try {
+            await pc.setRemoteDescription({ type: sdpType, sdp: sdpString });
+          } catch (sdpErr) {
+            closePeerConnection(remotePeerId);
+            throw sdpErr;
+          }
           await flushPendingCandidates(remotePeerId, pc);
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
-          await sendSignal("answer", { description: answer }, remotePeerId);
+          const la = pc.localDescription;
+          await sendSignal("answer", { description: { type: la?.type ?? answer.type, sdp: la?.sdp ?? answer.sdp } }, remotePeerId);
           break;
         }
 
         case "answer": {
           const description = asRecord(payload.description);
+          const sdpString = typeof description?.sdp === "string" ? description.sdp : "";
+          const sdpType = (description?.type as RTCSdpType | undefined) ?? "answer";
           const pc = pcMap.current.get(remotePeerId);
-          if (!pc || !description) {
+          if (!pc || !sdpString) return;
+
+          try {
+            await pc.setRemoteDescription({ type: sdpType, sdp: sdpString });
+          } catch {
             return;
           }
-
-          await pc.setRemoteDescription(new RTCSessionDescription(description as unknown as RTCSessionDescriptionInit));
           await flushPendingCandidates(remotePeerId, pc);
           break;
         }
