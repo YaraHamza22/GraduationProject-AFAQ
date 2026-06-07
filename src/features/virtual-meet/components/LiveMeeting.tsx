@@ -231,11 +231,12 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
   }, [closePeerConnection]);
 
   const sendHttpSignal = useCallback(async (type: LiveSignal["type"], payload: Record<string, unknown> = {}, targetPeerId?: string | null) => {
-    if (!session?.token || !joinContextRef.current?.signal_url) {
+    if (!session?.token) {
       return;
     }
 
-    await fetch(joinContextRef.current.signal_url, {
+    const signalUrl = session.getRequestUrl(`/virtual-sessions/${session.sessionId}/signals`);
+    await fetch(signalUrl, {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -609,7 +610,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
 
       const payload = (await response.json().catch(() => null)) as { data?: JoinContext; message?: string } | null;
       if (!response.ok || !payload?.data) {
-        throw new Error(payload?.message || "Unable to prepare the live room.");
+        return false;
       }
 
       if (cancelled) {
@@ -753,9 +754,9 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
         if (!connected) {
           connectFallbackRoom();
         }
-      } catch (error) {
+      } catch {
         if (!cancelled) {
-          setConnectionError(normalizeError(error, "Unable to connect to the live signaling service."));
+          connectFallbackRoom();
         }
       }
     })();
