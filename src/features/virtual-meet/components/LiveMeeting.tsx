@@ -126,6 +126,15 @@ function shouldInitiateOffer(selfPeerId: string, remotePeerId: string) {
   return selfPeerId.localeCompare(remotePeerId) < 0;
 }
 
+// Chrome M119+ rejects "a=ssrc:<id> msid:..." lines as invalid in Unified Plan —
+// the same info is already carried by "a=msid:" at the m-section level.
+function sanitizeSdp(sdp: string): string {
+  return sdp
+    .split(/\r\n|\r|\n/)
+    .filter((line) => !/^a=ssrc:\d+ msid:/.test(line))
+    .join("\r\n");
+}
+
 function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -580,7 +589,8 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
     await pc.setLocalDescription(offer);
     // Send the finalised local description (browser may adjust sdp after setLocalDescription)
     const ld = pc.localDescription;
-    await sendSignal("offer", { description: { type: ld?.type ?? offer.type, sdp: ld?.sdp ?? offer.sdp } }, remotePeerId);
+    const sdp = sanitizeSdp(ld?.sdp ?? offer.sdp ?? "");
+    await sendSignal("offer", { description: { type: ld?.type ?? offer.type, sdp } }, remotePeerId);
   }, [createPeerConnection, sendSignal]);
 
   const handleLiveSignal = useCallback(async (signal: LiveSignal) => {
@@ -638,7 +648,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
 
         case "offer": {
           const description = asRecord(payload.description);
-          const sdpString = typeof description?.sdp === "string" ? description.sdp : "";
+          const sdpString = sanitizeSdp(typeof description?.sdp === "string" ? description.sdp : "");
           const sdpType = (description?.type as RTCSdpType | undefined) ?? "offer";
           if (!sdpString) return;
 
@@ -659,13 +669,14 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           const la = pc.localDescription;
-          await sendSignal("answer", { description: { type: la?.type ?? answer.type, sdp: la?.sdp ?? answer.sdp } }, remotePeerId);
+          const answerSdp = sanitizeSdp(la?.sdp ?? answer.sdp ?? "");
+          await sendSignal("answer", { description: { type: la?.type ?? answer.type, sdp: answerSdp } }, remotePeerId);
           break;
         }
 
         case "answer": {
           const description = asRecord(payload.description);
-          const sdpString = typeof description?.sdp === "string" ? description.sdp : "";
+          const sdpString = sanitizeSdp(typeof description?.sdp === "string" ? description.sdp : "");
           const sdpType = (description?.type as RTCSdpType | undefined) ?? "answer";
           const pc = pcMap.current.get(remotePeerId);
           if (!pc || !sdpString) return;
