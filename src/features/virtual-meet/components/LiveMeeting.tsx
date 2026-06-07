@@ -528,18 +528,6 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
       void sendSignal("ice-candidate", { candidate: event.candidate.toJSON() }, remotePeerId);
     };
 
-    // Renegotiate when tracks are added after initial offer/answer (e.g. late camera)
-    pc.onnegotiationneeded = async () => {
-      if (!shouldInitiateOffer(peerId, remotePeerId)) return;
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        await sendSignal("offer", { description: offer }, remotePeerId);
-      } catch {
-        // connection may already be closing
-      }
-    };
-
     pc.ontrack = (event) => {
       const [incomingStream] = event.streams;
       if (incomingStream) {
@@ -578,7 +566,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
 
     pcMap.current.set(remotePeerId, pc);
     return pc;
-  }, [peerId, removeRemotePeer, sendSignal, upsertRemotePeer]);
+  }, [removeRemotePeer, sendSignal, upsertRemotePeer]);
 
   const createAndSendOffer = useCallback(async (remotePeerId: string, remotePeerName: string) => {
     const pc = createPeerConnection(remotePeerId, remotePeerName);
