@@ -622,7 +622,7 @@ export default function LiveMeeting({ roomId, userName, onExit, attendance = nul
       setDisplayRoomId(context.room_id || roomId);
 
       const socket = createLiveSocket({
-        authEndpoint: context.broadcast_auth_url,
+        authEndpoint: session.getRequestUrl('/broadcasting/auth'),
         authToken: session.token,
         channelName: context.channel_name,
         key: context.reverb.key,
